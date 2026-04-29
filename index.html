@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d9488">
+<title>문치과병원 재고관리</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Apple SD Gothic Neo", sans-serif; }
+  .tab-btn { transition: all 0.15s; }
+  .tab-btn.active { background: #0d9488; color: white; }
+  .tab-btn:not(.active) { background: white; color: #475569; border: 1px solid #e2e8f0; }
+  .tab-btn:not(.active):hover { background: #f1f5f9; }
+  .big-btn {
+    min-height: 52px; font-size: 16px; font-weight: 600;
+    border-radius: 12px; transition: all 0.15s; cursor: pointer; border: none;
+  }
+  .big-btn:active { transform: scale(0.97); }
+  @keyframes slideIn { from { transform: translate(-50%, -100px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+  .toast { animation: slideIn 0.3s ease-out; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  /* Tailwind 경고 메시지 숨기기 */
+  body > div[id^="headlessui"] { display: none !important; }
+</style>
+</head>
+<body class="bg-slate-50">
+
+<!-- 헤더 -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+  <div class="max-w-6xl mx-auto px-4 py-3">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center text-white text-xl">🦷</div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900">문치과병원 재고관리</h1>
+          <p class="text-xs text-slate-500" id="header-stats">로딩 중...</p>
+        </div>
+      </div>
+      <button onclick="showHelp()" class="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700">❓ 도움말</button>
+    </div>
+
+    <div class="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+      <button onclick="switchTab('release')" id="tab-release" class="tab-btn active py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📤</span><span>반출</span>
+      </button>
+      <button onclick="switchTab('manage')" id="tab-manage" class="tab-btn py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📋</span><span>요청관리</span>
+      </button>
+      <button onclick="switchTab('inbound')" id="tab-inbound" class="tab-btn py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📥</span><span>입고</span>
+      </button>
+      <button onclick="switchTab('inventory')" id="tab-inventory" class="tab-btn py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📦</span><span>재고</span>
+      </button>
+      <button onclick="switchTab('stats')" id="tab-stats" class="tab-btn py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📊</span><span>통계</span>
+      </button>
+      <button onclick="switchTab('documents')" id="tab-documents" class="tab-btn py-2.5 rounded-xl font-bold text-xs sm:text-sm flex flex-col sm:flex-row items-center justify-center gap-1">
+        <span>📁</span><span>문서함</span>
+      </button>
+    </div>
+    <div class="mt-1.5">
+      <button onclick="switchTab('settings')" id="tab-settings" class="tab-btn w-full py-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1">
+        <span>⚙️</span><span>설정 (팀/담당자/품목 관리)</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-5 pb-32">
+  <div id="page-content"></div>
+</main>
+
+<div id="toast" class="hidden fixed top-24 left-1/2 -translate-x-1/2 z-50"></div>
+<div id="modal-container"></div>
+
+<!-- ============================================ -->
+<!-- JavaScript 로드 (순서가 중요!)               -->
+<!-- ============================================ -->
+<!-- 1. 데이터 (의존성 없음) -->
+<script src="js/1-config.js"></script>
+<script src="js/2-data-items.js"></script>
+<script src="js/3-data-history.js"></script>
+
+<!-- 2. 유틸리티 -->
+<script src="js/4-utils.js"></script>
+<script src="js/5-storage.js"></script>
+<script src="js/6-utils-file.js"></script>
+
+<!-- 3. 화면 모듈 (의존 순서 무관, 알파벳/번호순 로드) -->
+<script src="js/7-release.js"></script>
+<script src="js/8-manage.js"></script>
+<script src="js/9-inbound.js"></script>
+<script src="js/10-inventory.js"></script>
+<script src="js/11-stats.js"></script>
+<script src="js/12-documents.js"></script>
+<script src="js/13-settings.js"></script>
+
+<!-- 4. 내보내기/도움말 -->
+<script src="js/14-export.js"></script>
+
+<!-- 5. 메인 진입점 (반드시 마지막) -->
+<script src="js/99-main.js"></script>
+
+</body>
+</html>

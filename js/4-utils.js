@@ -1,0 +1,52 @@
+// ============================================
+// 4-utils.js: 순수 유틸리티 함수
+// ============================================
+// HTML/JS 이스케이프, 금액 포맷, 주차 키 계산
+// 다른 모듈 의존성 없음 (가장 먼저 로드되는 함수 모듈)
+
+// HTML 이스케이프 (XSS 방지)
+function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// JS 문자열 이스케이프 (onclick 속성 안에 문자열 넣을 때)
+function escapeJs(str) {
+  if (str == null) return '';
+  return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+}
+
+// 금액 표시: 1234567 → "1,234,567원"
+function formatWon(n) {
+  if (!n || n < 0) n = 0;
+  return Math.round(n).toLocaleString('ko-KR') + '원';
+}
+
+// 짧은 금액 표시: 큰 금액은 "123만원", "1.5억" 형태
+function formatWonShort(n) {
+  if (!n || n < 0) return '0원';
+  n = Math.round(n);
+  if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '억';
+  if (n >= 10000) return Math.round(n / 10000).toLocaleString('ko-KR') + '만원';
+  return n.toLocaleString('ko-KR') + '원';
+}
+
+// 날짜 → 주차 키 (예: "2025-11-07" → "2025-11-W1")
+function getWeekKey(dateStr) {
+  const d = new Date(dateStr);
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+  const day = d.getDate();
+  const week = Math.ceil(day / 7);
+  return year + '-' + String(month).padStart(2, '0') + '-W' + week;
+}
+
+// 주차 키 → 라벨 (예: "2025-11-W1" → "25년 11월 1주차")
+function formatWeekLabel(weekKey) {
+  if (weekKey.includes('주차')) return weekKey;
+  const m = weekKey.match(/(\d{4})-(\d{2})-W(\d+)/);
+  if (!m) return weekKey;
+  const [, year, month, week] = m;
+  const yy = year.slice(-2);
+  return yy + '년 ' + parseInt(month) + '월 ' + week + '주차';
+}
