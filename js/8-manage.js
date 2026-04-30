@@ -428,7 +428,10 @@ function openCompleteRequestModal(groupId, summary) {
     '<div class="grid grid-cols-2 gap-2">' +
     '<button id="releaser-btn-이충현" onclick="selectReleaser(\'이충현\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">이충현</button>' +
     '<button id="releaser-btn-주경심" onclick="selectReleaser(\'주경심\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">주경심</button>' +
-    '</div></div>' +
+    '</div>' +
+    '<p class="text-xs text-slate-500 mt-3 mb-1">또는 다른 사람이 반출한 경우 직접 입력:</p>' +
+    '<input type="text" id="releaser-custom" oninput="onReleaserCustomInput(this.value)" placeholder="이름 입력" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
     // 반출 일자 (input 우측에 요일 표시)
     '<div>' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자</label>' +
@@ -448,6 +451,21 @@ function openCompleteRequestModal(groupId, summary) {
   window._pendingReleaser = null;
 }
 
+// 확인 버튼 활성/비활성 갱신 (담당자가 정해졌으면 활성)
+function updateCompleteConfirmBtn() {
+  const confirmBtn = document.getElementById('complete-confirm-btn');
+  if (!confirmBtn) return;
+  if (window._pendingReleaser) {
+    confirmBtn.disabled = false;
+    confirmBtn.className = 'flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold';
+    confirmBtn.textContent = '예, 완료 처리';
+  } else {
+    confirmBtn.disabled = true;
+    confirmBtn.className = 'flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold';
+    confirmBtn.textContent = '반출 담당자 선택 필요';
+  }
+}
+
 // 반출 담당자 버튼 클릭 핸들러
 function selectReleaser(name) {
   window._pendingReleaser = name;
@@ -459,20 +477,35 @@ function selectReleaser(name) {
       ? 'py-3 bg-teal-600 border-2 border-teal-600 rounded-xl font-bold text-white transition'
       : 'py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition';
   });
-  // 확인 버튼 활성화
-  const confirmBtn = document.getElementById('complete-confirm-btn');
-  if (confirmBtn) {
-    confirmBtn.disabled = false;
-    confirmBtn.className = 'flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold';
-    confirmBtn.textContent = '예, 완료 처리';
+  // 직접 입력 칸은 비움 (버튼 선택과 입력 칸은 상호 배타)
+  const customInput = document.getElementById('releaser-custom');
+  if (customInput) customInput.value = '';
+  updateCompleteConfirmBtn();
+}
+
+// 직접 입력 칸 입력 핸들러
+// - 입력이 비어있지 않으면 버튼 선택을 해제하고 입력값을 담당자로 사용
+// - 입력이 비면 _pendingReleaser 도 비워서 확인 버튼이 다시 비활성화됨
+function onReleaserCustomInput(value) {
+  const trimmed = (value || '').trim();
+  if (trimmed) {
+    window._pendingReleaser = trimmed;
+    // 버튼 선택 시각 해제
+    ['이충현', '주경심'].forEach(n => {
+      const b = document.getElementById('releaser-btn-' + n);
+      if (b) b.className = 'py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition';
+    });
+  } else {
+    window._pendingReleaser = null;
   }
+  updateCompleteConfirmBtn();
 }
 
 // 모달 확인 버튼 핸들러: 입력값 수집 -> 실제 처리 호출
 function submitCompleteRequest(groupId) {
   const releasedBy = window._pendingReleaser;
   if (!releasedBy) {
-    showAlert('반출 담당자를 선택해주세요', '실제로 반출한 사람을 선택해야 처리됩니다.\n\n위쪽 [반출 담당자] 영역에서\n이충현 또는 주경심 버튼을 눌러주세요.');
+    showAlert('반출 담당자를 선택해주세요', '실제로 반출한 사람을 입력해야 처리됩니다.\n\n[이충현] 또는 [주경심] 버튼을 누르거나,\n다른 사람이면 아래 입력 칸에\n이름을 직접 입력하세요.');
     return;
   }
   const dateInput = document.getElementById('release-date');
