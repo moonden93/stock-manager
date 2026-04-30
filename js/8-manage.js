@@ -408,10 +408,13 @@ function openCompleteRequestModal(requestId, summary) {
     '<button id="releaser-btn-이충현" onclick="selectReleaser(\'이충현\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">이충현</button>' +
     '<button id="releaser-btn-주경심" onclick="selectReleaser(\'주경심\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">주경심</button>' +
     '</div></div>' +
-    // 반출 일자 (라벨 옆에 요일 표시)
+    // 반출 일자 (input 우측에 요일 표시)
     '<div>' +
-    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자 <span id="release-date-dow" class="text-slate-500 font-normal">(' + dowKor(todayStr) + ')</span></label>' +
-    '<input type="date" id="release-date" value="' + todayStr + '" oninput="updateReleaseDateDow()" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자</label>' +
+    '<div class="flex items-center gap-2">' +
+    '<input type="date" id="release-date" value="' + todayStr + '" oninput="updateReleaseDateDow()" class="flex-1 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '<span id="release-date-dow" class="text-base font-bold text-slate-700 px-1">(' + dowKor(todayStr) + ')</span>' +
+    '</div>' +
     '</div>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
