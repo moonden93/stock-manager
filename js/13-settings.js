@@ -247,29 +247,30 @@ function openAddItemDialog() {
   
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
-    '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
-    '<h3 class="text-base font-bold text-slate-900">+ 품목 추가</h3></div>' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">품목 수정</h3></div>' +
     '<div class="px-5 py-5 space-y-3 overflow-y-auto">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">업체</label>' +
-    '<select id="new-item-vendor-select" onchange="document.getElementById(\'new-item-vendor\').value = this.value" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 mb-2">' + vendorOptions + '</select>' +
-    '<input type="text" id="new-item-vendor" placeholder="또는 새 업체 직접 입력" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
-    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명 *</label>' +
-    '<input type="text" id="new-item-name" placeholder="예: Cotton roll" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
+    '<input type="text" id="edit-item-vendor" value="' + escapeHtml(item.vendor) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
+    '<input type="text" id="edit-item-name" value="' + escapeHtml(item.name) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
-    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위 *</label>' +
-    '<input type="text" id="new-item-unit" placeholder="ea, box, 봉" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위</label>' +
+    '<input type="text" id="edit-item-unit" value="' + escapeHtml(item.unit) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단가</label>' +
-    '<input type="number" id="new-item-price" placeholder="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
+    '<input type="number" id="edit-item-price" value="' + (item.price || 0) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '</div>' +
     '<div class="grid grid-cols-2 gap-2">' +
-    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">현재재고</label>' +
-    '<input type="number" id="new-item-stock" value="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
-    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">기준재고</label>' +
-    '<input type="number" id="new-item-min" value="1" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
-    '</div></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">현재 재고</label>' +
+    '<input type="number" id="edit-item-stock" value="' + (item.stock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">⚠️ 부족 알람 기준</label>' +
+    '<input type="number" id="edit-item-min" value="' + (item.minStock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
+    '</div>' +
+    '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 알람 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
+    '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
-    '<button onclick="addItem()" class="flex-1 py-3 bg-teal-600 text-white rounded-lg font-bold">추가</button>' +
+    '<button onclick="saveItem(\'' + item.id + '\')" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold">저장</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
   setTimeout(() => document.getElementById('new-item-name').focus(), 100);
@@ -332,12 +333,19 @@ function saveItem(itemId) {
   const name = (document.getElementById('edit-item-name').value || '').trim();
   const unit = (document.getElementById('edit-item-unit').value || '').trim();
   const price = parseInt(document.getElementById('edit-item-price').value) || 0;
+  const stock = parseInt(document.getElementById('edit-item-stock').value);
+  const minStock = parseInt(document.getElementById('edit-item-min').value);
   if (!vendor || !name || !unit) { showToast('필수 항목 입력 필요', 'error'); return; }
+  if (isNaN(stock) || stock < 0) { showToast('재고는 0 이상이어야 합니다', 'error'); return; }
+  if (isNaN(minStock) || minStock < 0) { showToast('부족 알람 기준은 0 이상이어야 합니다', 'error'); return; }
   item.vendor = vendor;
   item.name = name;
   item.unit = unit;
   item.price = price;
+  item.stock = stock;
+  item.minStock = minStock;
   saveAll();
+  updateHeaderStats();
   closeModal();
   showToast('수정 완료');
   renderSettings();
