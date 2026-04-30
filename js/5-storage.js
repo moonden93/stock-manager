@@ -48,11 +48,24 @@ function loadData() {
     const r = localStorage.getItem('mc_requests');
     if (r) requests = JSON.parse(r);
 
-    // 팀
+    // ============================================
+    // 팀 로드 + 마이그레이션
+    // ============================================
     const t = localStorage.getItem('mc_teams');
     teams = t ? JSON.parse(t) : [...PREBUILT_TEAMS];
-    // 누적 데이터에 있는 팀이 누락됐으면 추가
-    PREBUILT_TEAMS.forEach(pt => { if (!teams.includes(pt)) teams.push(pt); });
+
+    // [신규] 팀 목록 자동 마이그레이션 (한 번만 실행)
+    // 옛 팀명("9F 공통", "11F 공통" 등) → 새 팀명으로 통일
+    // 불필요한 옛 팀 제거 (Dr. 이상민팀 등)
+    // ※ history는 건드리지 않음 (통계의 과거 기록 유지)
+    if (!localStorage.getItem('mc_teams_migrated_v2')) {
+      teams = migrateTeamsV2(teams);
+      localStorage.setItem('mc_teams_migrated_v2', '1');
+    }
+
+    // [변경] PREBUILT_TEAMS의 자동 추가 로직 제거
+    // 이전에는 매번 자동 추가되어, 사용자가 삭제한 팀이 다시 살아났음.
+    // 이제 PREBUILT_TEAMS는 마이그레이션 시에만 사용되고, 평상시에는 사용자 설정 우선.
 
     // 팀 멤버
     const tm = localStorage.getItem('mc_team_members');
@@ -61,6 +74,12 @@ function loadData() {
     // 문서
     const docs = localStorage.getItem('mc_documents');
     documents = docs ? JSON.parse(docs) : [];
+
+    // 마이그레이션이 발생했으면 저장
+    if (localStorage.getItem('mc_teams_migrated_v2_just_ran') === '1') {
+      saveAll();
+      localStorage.removeItem('mc_teams_migrated_v2_just_ran');
+    }
   } catch (e) {
     console.error('로드 오류:', e);
     inventory = INITIAL_ITEMS.map((it, i) => ({ ...it, id: 'M' + String(i).padStart(4, '0') }));
@@ -71,6 +90,63 @@ function loadData() {
   if (typeof updateHeaderStats === 'function') {
     updateHeaderStats();
   }
+}
+
+// ============================================
+// [신규] 팀 목록 마이그레이션 v2
+// ============================================
+// 한 번만 실행되어 옛 팀명을 새 팀명으로 통일하고,
+// 불필요한 옛 팀을 제거합니다.
+// 그 후로는 사용자가 자유롭게 팀을 추가/삭제 가능합니다.
+function migrateTeamsV2(currentTeams) {
+  // 옛 이름 → 새 이름 매핑 (정확히 일치)
+  const renameMap = {
+    '9F 공통': '9층 공통',
+    '11F 공통': '11층 공통'
+  };
+
+  // 운영용 표준 팀 (이 외의 팀은 사용자 추가 팀이거나, 삭제 대상)
+  // 4행 그리드 표시 순서대로 정의
+  const standardOrder = [
+    '9층 공통', 'Dr. 이승주팀', 'Dr. 권혜진팀', 'Dr. 이수연팀',
+    '10층 공통', 'Dr. 병원장팀', 'Dr. 이창률팀',
+    '11층 공통', 'Dr. 이영일팀', 'Dr. 정석형팀', 'Dr. 김세일팀',
+    '기공실'
+  ];
+
+  // 명시적으로 제거할 옛 팀명
+  const teamsToRemove = new Set(['Dr. 이상민팀']);
+
+  // 1단계: 이름 변경 (rename)
+  let renamed = currentTeams.map(t => renameMap[t] || t);
+
+  // 2단계: 제거 대상 삭제
+  renamed = renamed.filter(t => !teamsToRemove.has(t));
+
+  // 3단계: 중복 제거 (rename으로 인해 "9F 공통" → "9층 공통"이 되어 기존 "9층 공통"과 중복될 수 있음)
+  const seen = new Set();
+  const dedup = [];
+  renamed.forEach(t => {
+    if (!seen.has(t)) { seen.add(t); dedup.push(t); }
+  });
+
+  // 4단계: 표준 팀 순서로 재정렬
+  // - 표준 팀은 standardOrder 그대로 (없어도 추가, 있어도 표준 순서로 재배치)
+  // - 비표준(사용자 추가) 팀은 표준 팀들 뒤에 보존
+  const result = [];
+  // 4-1. 표준 팀 전체를 표준 순서대로 추가 (누락된 표준 팀이 자동으로 채워짐)
+  standardOrder.forEach(t => {
+    result.push(t);
+  });
+  // 4-2. 사용자가 추가한 비표준 팀 (표준 순서에 없는 팀) 뒤에 보존
+  dedup.forEach(t => {
+    if (!result.includes(t)) result.push(t);
+  });
+
+  // 마이그레이션이 실제로 발생했는지 표시 (loadData가 saveAll 호출하도록)
+  localStorage.setItem('mc_teams_migrated_v2_just_ran', '1');
+
+  return result;
 }
 
 // ============================================
@@ -99,8 +175,9 @@ function saveAll() {
 function applyPrebuiltHistory() {
   if (!confirm('엑셀 누적 데이터(23주차, 1432건)를 불러옵니다.\n현재 입출고 이력이 모두 교체됩니다. 계속하시겠습니까?')) return;
   history = PREBUILT_HISTORY.slice();
-  // 누락된 팀 보강
-  PREBUILT_TEAMS.forEach(pt => { if (!teams.includes(pt)) teams.push(pt); });
+  // [변경] 자동 팀 보강 로직 제거
+  // 이전: PREBUILT_TEAMS.forEach(pt => { if (!teams.includes(pt)) teams.push(pt); });
+  // 이유: 사용자가 의도적으로 삭제한 팀이 누적 데이터 재로드 시 부활하는 문제 방지
   localStorage.setItem('mc_prebuilt_applied', '1');
   saveAll();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
