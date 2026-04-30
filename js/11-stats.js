@@ -198,7 +198,7 @@ function renderStatsByTeam(baseHistory) {
         html += '<div class="flex items-center text-xs py-0.5 gap-2">' +
           '<span class="text-slate-500 shrink-0">' + escapeHtml(it.vendor) + '</span>' +
           '<span class="flex-1 text-slate-700 truncate">' + escapeHtml(it.name) + '</span>' +
-          '<span class="text-slate-600 shrink-0">' + it.qty + escapeHtml(it.unit) + '</span>' +
+          '<span class="text-slate-600 shrink-0">' + it.qty + '</span>' +
           '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(it.cost) + '</span></div>';
       });
       html += '</div>';
@@ -244,7 +244,7 @@ function renderStatsByVendor(baseHistory) {
       itemList.forEach(it => {
         html += '<div class="flex items-center text-xs py-0.5 gap-2">' +
           '<span class="flex-1 text-slate-700 truncate">' + escapeHtml(it.name) + '</span>' +
-          '<span class="text-slate-600 shrink-0">' + it.qty + escapeHtml(it.unit) + '</span>' +
+          '<span class="text-slate-600 shrink-0">' + it.qty + '</span>' +
           '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(it.cost) + '</span></div>';
       });
       html += '</div>';
@@ -323,7 +323,7 @@ function renderStatsByWeekly(baseHistory) {
           html += '<div class="flex items-center text-xs py-0.5 gap-2">' +
             '<span class="text-slate-500 text-[10px] shrink-0">' + escapeHtml(it.vendor) + '</span>' +
             '<span class="flex-1 text-slate-700 truncate">' + escapeHtml(it.name) + '</span>' +
-            '<span class="text-slate-600 shrink-0">' + it.qty + escapeHtml(it.unit) + '</span>' +
+            '<span class="text-slate-600 shrink-0">' + it.qty + '</span>' +
             '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(it.cost) + '</span></div>';
         });
         html += '</div>';

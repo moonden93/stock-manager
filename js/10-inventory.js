@@ -80,11 +80,10 @@ function renderInventory() {
         '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
         '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock + escapeHtml(item.unit) + 
+        '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock +
         (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
         '<div class="text-right flex-shrink-0">' +
-        '<p class="text-2xl font-bold ' + stockColor + '">' + item.stock + '</p>' +
-        '<p class="text-xs text-slate-500">' + escapeHtml(item.unit) + '</p></div>' +
+        '<p class="text-2xl font-bold ' + stockColor + '">' + item.stock + '</p></div>' +
         '</div></button>';
     });
   }
