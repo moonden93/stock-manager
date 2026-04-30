@@ -151,9 +151,19 @@ function renderRelease() {
     html += '<button onclick="releaseSelectedVendor = \'' + escapeJs(v) + '\'; renderRelease();" class="px-3 py-1.5 text-sm rounded-full ' +
       (releaseSelectedVendor === v ? 'bg-teal-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div>' +
-    '<div class="divide-y divide-slate-100">';
-  
+  html += '</div></div>';
+
+  // ── 목록에 없는 품목 직접 요청 (아코디언, 검색·필터 바로 아래에 배치) ──
+  html += '<div class="px-3 py-2 bg-teal-50/60 border-b border-teal-200">' +
+    '<button onclick="toggleCustomForm()" class="w-full flex items-center justify-between text-left py-1">' +
+    '<span class="text-sm font-bold text-teal-700">📌 목록에 없는 품목? 직접 요청하기</span>' +
+    '<span class="text-teal-600">' + (releaseShowCustomForm ? '▲' : '▼') + '</span>' +
+    '</button>' +
+    (releaseShowCustomForm ? renderCustomItemForm() : '') +
+    '</div>';
+
+  html += '<div class="divide-y divide-slate-100">';
+
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
@@ -185,20 +195,8 @@ function renderRelease() {
     });
   }
 
-  // items 목록 종료
-  html += '</div>';
-
-  // ── 목록에 없는 품목 직접 요청 (아코디언) ──
-  html += '<div class="border-t border-slate-200">' +
-    '<button onclick="toggleCustomForm()" class="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition">' +
-    '<span class="text-sm font-bold text-slate-700">📌 목록에 없는 품목 직접 요청</span>' +
-    '<span class="text-slate-400">' + (releaseShowCustomForm ? '▲' : '▼') + '</span>' +
-    '</button>' +
-    (releaseShowCustomForm ? renderCustomItemForm() : '') +
-    '</div>';
-
-  // 카드 + 루트 종료
-  html += '</div></div>';
+  // items 목록 + 카드 + 루트 종료
+  html += '</div></div></div>';
 
   document.getElementById('page-content').innerHTML = html;
   renderCartBar();
