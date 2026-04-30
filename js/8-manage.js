@@ -327,7 +327,20 @@ function completeRequest(requestId) {
     return item && sel[it.id].qty > item.stock;
   });
   
+  // 재고 부족 시 처리 차단 (경고만 뜨고 종료)
+  if (insufficient.length > 0) {
+    let warnMsg = '🚫 다음 품목이 재고보다 많이 요청되었습니다:\n\n';
+    insufficient.forEach(it => {
+      const item = inventory.find(i => i.id === it.itemId);
+      warnMsg += '· ' + it.name + '\n   요청 ' + sel[it.id].qty + it.unit + ' / 재고 ' + item.stock + it.unit + '\n';
+    });
+    warnMsg += '\n수량을 재고 이내로 조정하거나, 부족한 품목은 체크 해제 후 다시 시도해주세요.';
+    askConfirm('⚠️ 처리할 수 없음', warnMsg, function() {}, '확인', 'red');
+    return;
+  }
+  
   // 부분 처리 안내
+  
   const excludedCount = allItems.length - selectedItems.length;
   const partialQtyItems = selectedItems.filter(it => sel[it.id].qty < it.qty);
   
