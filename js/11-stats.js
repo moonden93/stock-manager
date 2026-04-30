@@ -7,10 +7,11 @@
 // 호출자: 99-main.js의 switchTab('stats')
 
 // ============================================================
-let statsTab = 'team'; // team / vendor / weekly
+let statsTab = 'team'; // team / vendor / weekly / anomaly
 let statsPeriod = 'all'; // all / month / week / custom
 let statsCustomStart = ''; // YYYY-MM-DD
 let statsCustomEnd = '';   // YYYY-MM-DD
+let statsAnomalyTeamFilter = ''; // 이상치 보기의 팀 필터 ('' = 전체)
 
 function renderStats() {
   // 기간 필터링
@@ -554,14 +555,32 @@ function renderStatsByAnomaly() {
 
   const monthLabel = thisMonthStart.getFullYear() + '년 ' + (thisMonthStart.getMonth() + 1) + '월';
 
+  // 안내 박스 + 팀 필터 UI
   let html = '<div class="space-y-3">' +
     '<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">' +
     '<p class="text-xs text-slate-700 leading-relaxed">' +
     '<strong>📈 ' + monthLabel + '</strong> 팀별 사용량을 <strong>지난 3개월 월평균</strong>과 비교합니다.<br>' +
-    '±30% 이상 변동, 신규/중단 품목이 있는 팀만 표시 (이상 없는 팀은 숨김).' +
+    '±30% 이상 변동, 신규/중단 품목이 있는 팀만 표시.' +
     '</p>' +
     '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 적용되지 않습니다 (자체 기준 사용)</p>' +
     '</div>';
+
+  // 팀 필터 (반출관리 스타일)
+  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-3">' +
+    '<p class="text-xs text-slate-500 mb-2">팀별 필터:</p>' +
+    '<div class="flex flex-wrap gap-1">' +
+    '<button onclick="statsAnomalyTeamFilter = \'\'; renderStats();" class="px-3 py-1.5 text-sm rounded-full ' +
+    (!statsAnomalyTeamFilter ? 'bg-amber-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체</button>';
+  // 이상치 있는 팀만 필터 후보로
+  sortedTeams.forEach(t => {
+    const a = teamAnomalies[t];
+    const cnt = a.ups.length + a.downs.length + a.news.length + a.gones.length;
+    if (cnt === 0) return;
+    html += '<button onclick="statsAnomalyTeamFilter = \'' + escapeJs(t) + '\'; renderStats();" class="px-3 py-1.5 text-sm rounded-full ' +
+      (statsAnomalyTeamFilter === t ? 'bg-amber-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' +
+      escapeHtml(t) + ' <span class="text-[10px] opacity-75">(' + cnt + ')</span></button>';
+  });
+  html += '</div></div>';
 
   // 이상치 있는 팀이 한 곳도 없으면 메시지
   const totalCount = Object.values(teamAnomalies).reduce((s, t) =>
@@ -577,22 +596,43 @@ function renderStatsByAnomaly() {
     return html;
   }
 
+  // 팀 필터 적용
+  const teamsToShow = statsAnomalyTeamFilter
+    ? sortedTeams.filter(t => t === statsAnomalyTeamFilter)
+    : sortedTeams;
+
+  if (statsAnomalyTeamFilter && teamsToShow.length === 0) {
+    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
+      '<p class="text-4xl mb-2">✅</p>' +
+      '<p class="text-sm text-slate-500">' + escapeHtml(statsAnomalyTeamFilter) + ' 팀은 이상치 없음</p>' +
+      '</div></div>';
+    return html;
+  }
+
   // 팀별 카드 (이상치 있는 팀만)
-  sortedTeams.forEach(team => {
+  teamsToShow.forEach(team => {
     const a = teamAnomalies[team];
     const total = a.ups.length + a.downs.length + a.news.length + a.gones.length;
     if (total === 0) return;
+
+    const comment = getTeamAnomalyComment(a);
 
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
       '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
       '<div class="flex items-center justify-between gap-2 flex-wrap">' +
       '<h3 class="font-bold text-slate-900">' + escapeHtml(team) + '</h3>' +
+      '<div class="flex items-center gap-2 flex-wrap">' +
       '<div class="flex gap-1.5 text-[11px] font-bold">' +
       (a.ups.length > 0   ? '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full">🔺 ' + a.ups.length + '</span>' : '') +
       (a.downs.length > 0 ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">🔻 ' + a.downs.length + '</span>' : '') +
       (a.news.length > 0  ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">🆕 ' + a.news.length + '</span>' : '') +
       (a.gones.length > 0 ? '<span class="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">⏸ ' + a.gones.length + '</span>' : '') +
-      '</div></div></div>';
+      '</div>' +
+      '<button onclick="openAnomalyDetail(\'' + escapeJs(team) + '\')" class="text-[11px] px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full font-bold">📋 상세</button>' +
+      '</div></div>' +
+      // 코멘트 (절약/관리 권고)
+      (comment ? '<div class="mt-2 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2">' + comment + '</div>' : '') +
+      '</div>';
 
     // 팀 카드 내부: 4분류를 줄별로 (분류 라벨 prefix로 구분)
     html += '<div class="divide-y divide-slate-100">';
@@ -604,7 +644,126 @@ function renderStatsByAnomaly() {
   });
 
   html += '</div>';
+
+  // 모달이 사용할 수 있게 마지막 분석 결과를 전역에 보관
+  window._anomalyData = { teamAnomalies, monthLabel };
+
   return html;
+}
+
+// 팀별 절약/관리 권고 코멘트 자동 생성
+// - 급증·신규에서 평소 대비 추가 발생한 비용 합계 계산
+// - 가장 큰 증가 품목을 찍어서 점검 권장
+function getTeamAnomalyComment(a) {
+  if (a.ups.length === 0 && a.news.length === 0) {
+    if (a.downs.length > 0 || a.gones.length > 0) {
+      return '👍 사용량이 평소보다 적습니다 — 절약 흐름';
+    }
+    return '';
+  }
+  let extraCost = 0;
+  let topItem = null;
+  let topExtra = 0;
+
+  function priceOf(it) {
+    const m = inventory.find(i => i.vendor === it.vendor && i.name === it.name);
+    return m && m.price ? m.price : 0;
+  }
+  a.ups.forEach(it => {
+    const extra = (it.thisQty - it.pastAvg) * priceOf(it);
+    extraCost += extra;
+    if (extra > topExtra) { topExtra = extra; topItem = it; }
+  });
+  a.news.forEach(it => {
+    const extra = it.thisQty * priceOf(it);
+    extraCost += extra;
+    if (extra > topExtra) { topExtra = extra; topItem = it; }
+  });
+
+  if (extraCost <= 0) {
+    // 가격 정보 없는 경우: 수량 기준으로 가장 큰 증가
+    let topQtyItem = null, topQty = 0;
+    a.ups.forEach(it => {
+      const extra = it.thisQty - it.pastAvg;
+      if (extra > topQty) { topQty = extra; topQtyItem = it; }
+    });
+    a.news.forEach(it => {
+      if (it.thisQty > topQty) { topQty = it.thisQty; topQtyItem = it; }
+    });
+    if (topQtyItem) {
+      return '💡 평소보다 많이 사용 중 — <strong>' + escapeHtml(topQtyItem.name) + '</strong> 사용량 점검 권장';
+    }
+    return '';
+  }
+
+  let msg = '💡 평소 대비 약 <strong>' + formatWonShort(extraCost) + '</strong> 추가 지출';
+  if (topItem) {
+    msg += ' — <strong>' + escapeHtml(topItem.name) + '</strong> 사용량 점검 권장';
+  }
+  return msg;
+}
+
+// ============================================
+// 이상치 팀별 상세 모달
+// ============================================
+// 카드의 [📋 상세] 버튼 클릭 시 호출. 더 큰 화면으로 풀 정보 표시.
+function openAnomalyDetail(teamName) {
+  if (!window._anomalyData || !window._anomalyData.teamAnomalies[teamName]) return;
+  const a = window._anomalyData.teamAnomalies[teamName];
+  const monthLabel = window._anomalyData.monthLabel;
+  const comment = getTeamAnomalyComment(a);
+  const total = a.ups.length + a.downs.length + a.news.length + a.gones.length;
+
+  function bigSection(title, items, kind, bgColor, borderColor, textColor) {
+    if (items.length === 0) return '';
+    let body = '<div class="divide-y divide-slate-100">';
+    items.forEach(it => {
+      let diffHtml = '';
+      if (kind === 'up')        diffHtml = '<span class="font-bold ' + textColor + '">+' + Math.round(it.diffPct) + '%</span>';
+      else if (kind === 'down') diffHtml = '<span class="font-bold ' + textColor + '">' + Math.round(it.diffPct) + '%</span>';
+      else if (kind === 'new')  diffHtml = '<span class="font-bold ' + textColor + '">신규</span>';
+      else if (kind === 'gone') diffHtml = '<span class="font-bold ' + textColor + '">중단</span>';
+      body += '<div class="flex items-center text-sm py-3 px-4 gap-3">' +
+        '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs text-slate-500 truncate">' + escapeHtml(it.vendor) + '</p>' +
+        '<p class="text-slate-900 font-medium truncate">' + escapeHtml(it.name) + '</p>' +
+        '</div>' +
+        '<div class="text-right shrink-0">' +
+        '<p class="text-xs text-slate-500">이번 ' + it.thisQty + ' / 평균 ' + it.pastAvg + '</p>' +
+        '<p class="text-base mt-0.5">' + diffHtml + '</p>' +
+        '</div>' +
+        '</div>';
+    });
+    body += '</div>';
+    return '<section class="rounded-xl overflow-hidden border ' + borderColor + '">' +
+      '<div class="px-4 py-2.5 ' + bgColor + ' border-b ' + borderColor + ' flex items-center justify-between">' +
+      '<p class="font-bold text-sm ' + textColor + '">' + title + '</p>' +
+      '<span class="text-xs font-normal text-slate-500">' + items.length + '종</span>' +
+      '</div>' + body + '</section>';
+  }
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
+    '<div class="flex items-center justify-between gap-2">' +
+    '<div>' +
+    '<h3 class="text-base font-bold text-slate-900">📈 ' + escapeHtml(teamName) + ' 이상 사용량</h3>' +
+    '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(monthLabel) + ' / 이상치 ' + total + '건</p>' +
+    '</div>' +
+    '<button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 px-2 py-1">✕</button>' +
+    '</div></div>' +
+    '<div class="overflow-y-auto flex-1 px-5 py-4 space-y-4">' +
+    (comment ? '<div class="bg-amber-50/50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-slate-800">' + comment + '</div>' : '') +
+    bigSection('🔺 급증 — 평소보다 많이 사용 중', a.ups,   'up',   'bg-red-50',     'border-red-200',     'text-red-700') +
+    bigSection('🔻 급감 — 평소보다 적게 사용 중', a.downs, 'down', 'bg-blue-50',    'border-blue-200',    'text-blue-700') +
+    bigSection('🆕 신규 사용 — 지난 3개월에 없던 품목', a.news, 'new', 'bg-emerald-50', 'border-emerald-200', 'text-emerald-700') +
+    bigSection('⏸ 사용 중단 — 평소엔 썼지만 이번 달 0건', a.gones, 'gone', 'bg-slate-50', 'border-slate-200', 'text-slate-700') +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t">' +
+    '<button onclick="closeModal()" class="w-full py-3 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-bold">닫기</button>' +
+    '</div></div></div>';
+
+  document.getElementById('modal-container').innerHTML = html;
 }
 
 // 한 분류의 행들을 렌더 (팀 카드 내부에서 호출)
