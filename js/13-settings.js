@@ -263,10 +263,10 @@ function openAddItemDialog() {
     '<div class="grid grid-cols-2 gap-2">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">현재 재고</label>' +
     '<input type="number" id="edit-item-stock" value="' + (item.stock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
-    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">⚠️ 부족 알람 기준</label>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">⚠️ 부족 기준</label>' +
     '<input type="number" id="edit-item-min" value="' + (item.minStock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '</div>' +
-    '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 알람 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
+    '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
