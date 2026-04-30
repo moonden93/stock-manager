@@ -14,9 +14,18 @@
 // 탭 전환
 // ============================================
 function switchTab(name) {
-  // 설정·문서함 탭은 비밀번호 입력 필요 (매번, 틀리면 재입력)
-  if (name === 'settings' || name === 'documents') {
-    const label = name === 'settings' ? '설정 화면' : '문서함';
+  // 관리자 전용 탭은 비밀번호 입력 필요 (매번, 틀리면 재입력)
+  // - 일반 직원: 요청, 통계만 접근 가능
+  // - 관리자: 비밀번호 입력으로 반출관리/입고/재고/문서함/설정 진입
+  const protectedLabels = {
+    manage: '반출관리',
+    inbound: '입고',
+    inventory: '재고',
+    documents: '문서함',
+    settings: '설정 화면'
+  };
+  if (protectedLabels[name]) {
+    const label = protectedLabels[name];
     let msg = '🔒 ' + label + '\n비밀번호를 입력하세요:';
     while (true) {
       const pw = prompt(msg);
