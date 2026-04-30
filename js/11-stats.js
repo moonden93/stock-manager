@@ -183,7 +183,10 @@ function renderStatsByTeam(baseHistory) {
     
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
       '<div class="flex items-start justify-between mb-2 gap-2">' +
+      '<div class="flex items-center gap-2 flex-wrap">' +
       '<h3 class="text-sm font-bold text-slate-900">' + escapeHtml(t.team) + '</h3>' +
+      '<button onclick="openTeamStatsDetail(\'' + escapeJs(t.team) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full font-bold">📋 상세</button>' +
+      '</div>' +
       '<div class="text-right">' +
       '<div class="text-base font-bold text-blue-700">' + formatWon(t.cost) + '</div>' +
       '<div class="text-xs text-slate-500">' + t.count + '건 · ' + t.qty + '개</div>' +
@@ -191,7 +194,7 @@ function renderStatsByTeam(baseHistory) {
       '<div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">' +
       '<div class="h-full ' + (t.team.includes('층') ? 'bg-cyan-500' : 'bg-blue-500') + ' transition-all" style="width:' + pct + '%"></div>' +
       '</div>';
-    
+
     if (itemList.length > 0) {
       html += '<div class="space-y-1 pt-2 border-t border-slate-100">';
       itemList.forEach(it => {
@@ -331,7 +334,133 @@ function renderStatsByWeekly(baseHistory) {
       html += '</div>';
     });
   }
-  
+
   html += '</div>';
   return html;
+}
+
+// ============================================
+// 팀별 상세 모달 (전체 품목 + 시간순 반출 이력)
+// ============================================
+// renderStats가 사용 중인 statsPeriod / statsCustomStart / statsCustomEnd 필터를 그대로 재사용해
+// "지금 보이는 기간"의 해당 팀 이력만 보여준다.
+function openTeamStatsDetail(teamName) {
+  let baseHistory = history.filter(h => h.type === 'out' && h.team === teamName);
+
+  if (statsPeriod === 'month') {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    baseHistory = baseHistory.filter(h => new Date(h.date) >= monthStart);
+  } else if (statsPeriod === 'week') {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    baseHistory = baseHistory.filter(h => new Date(h.date) >= weekAgo);
+  } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
+    const start = new Date(statsCustomStart + 'T00:00:00');
+    const end = new Date(statsCustomEnd + 'T23:59:59');
+    baseHistory = baseHistory.filter(h => {
+      const d = new Date(h.date);
+      return d >= start && d <= end;
+    });
+  }
+
+  let periodLabel = '전체 기간';
+  if (statsPeriod === 'month') {
+    const m = new Date();
+    periodLabel = m.getFullYear() + '년 ' + (m.getMonth() + 1) + '월';
+  } else if (statsPeriod === 'week') {
+    periodLabel = '최근 7일';
+  } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
+    periodLabel = statsCustomStart + ' ~ ' + statsCustomEnd;
+  }
+
+  const totalQty = baseHistory.reduce((s, h) => s + h.qty, 0);
+  const totalCost = baseHistory.reduce((s, h) => s + h.qty * (h.price || 0), 0);
+
+  // 품목별 합계
+  const itemMap = {};
+  baseHistory.forEach(h => {
+    const k = h.vendor + '::' + h.name;
+    if (!itemMap[k]) itemMap[k] = { vendor: h.vendor, name: h.name, qty: 0, cost: 0, count: 0 };
+    itemMap[k].qty += h.qty;
+    itemMap[k].cost += h.qty * (h.price || 0);
+    itemMap[k].count++;
+  });
+  const itemList = Object.values(itemMap).sort((a, b) => b.cost - a.cost);
+
+  // 시간순 이력 (최근 위)
+  const timeline = baseHistory.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // 품목별 합계 섹션
+  let itemsHtml = '';
+  if (itemList.length === 0) {
+    itemsHtml = '<p class="text-sm text-slate-400 text-center py-4">출고 내역 없음</p>';
+  } else {
+    itemList.forEach(it => {
+      itemsHtml += '<div class="flex items-center text-xs py-1.5 gap-2 border-b border-slate-100 last:border-b-0">' +
+        '<span class="text-slate-500 shrink-0 w-20 truncate">' + escapeHtml(it.vendor) + '</span>' +
+        '<span class="flex-1 text-slate-700 truncate">' + escapeHtml(it.name) + '</span>' +
+        '<span class="text-slate-600 shrink-0 w-12 text-right">' + it.qty + '개</span>' +
+        '<span class="font-bold text-slate-900 shrink-0 w-24 text-right">' + formatWon(it.cost) + '</span>' +
+        '</div>';
+    });
+  }
+
+  // 시간순 반출 이력 섹션
+  let timelineHtml = '';
+  if (timeline.length === 0) {
+    timelineHtml = '<p class="text-sm text-slate-400 text-center py-4">반출 이력 없음</p>';
+  } else {
+    timeline.forEach(h => {
+      const dt = new Date(h.releasedDate || h.date);
+      const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
+      const cost = h.qty * (h.price || 0);
+      const releasedByHtml = h.releasedBy
+        ? '<span>· 📦 <strong>' + escapeHtml(h.releasedBy) + '</strong>님 반출</span>'
+        : '<span class="italic text-slate-400">· 반출 담당자 미기록</span>';
+      timelineHtml += '<div class="text-xs py-2 px-2 border-b border-slate-100 last:border-b-0 hover:bg-white">' +
+        '<div class="flex items-center gap-2 mb-0.5">' +
+        '<span class="text-slate-500 shrink-0 w-10">' + dateStr + '</span>' +
+        '<span class="flex-1 text-slate-800 truncate font-medium">' + escapeHtml(h.name) + '</span>' +
+        '<span class="font-bold text-blue-700 shrink-0 w-12 text-right">' + h.qty + '개</span>' +
+        '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(cost) + '</span>' +
+        '</div>' +
+        '<div class="flex items-center gap-2 text-[11px] text-slate-500 ml-12 flex-wrap">' +
+        '<span>' + escapeHtml(h.vendor || '') + '</span>' +
+        (h.requester ? '<span>· ' + escapeHtml(h.requester) + '님 요청</span>' : '') +
+        releasedByHtml +
+        '</div>' +
+        '</div>';
+    });
+  }
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<div class="flex items-center justify-between gap-2">' +
+    '<div>' +
+    '<h3 class="text-base font-bold text-slate-900">📋 ' + escapeHtml(teamName) + ' 상세</h3>' +
+    '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(periodLabel) + '</p>' +
+    '</div>' +
+    '<div class="text-right">' +
+    '<div class="text-base font-bold text-blue-700">' + formatWon(totalCost) + '</div>' +
+    '<div class="text-[11px] text-slate-500">' + timeline.length + '건 · ' + totalQty + '개</div>' +
+    '</div>' +
+    '</div></div>' +
+    '<div class="overflow-y-auto flex-1 px-5 py-4 space-y-5">' +
+    '<section>' +
+    '<h4 class="text-sm font-bold text-slate-900 mb-2">📦 품목별 합계 <span class="text-xs text-slate-400 font-normal">(' + itemList.length + '종)</span></h4>' +
+    '<div class="bg-slate-50 rounded-xl p-3">' + itemsHtml + '</div>' +
+    '</section>' +
+    '<section>' +
+    '<h4 class="text-sm font-bold text-slate-900 mb-2">📅 반출 이력 <span class="text-xs text-slate-400 font-normal">(' + timeline.length + '건, 최근순)</span></h4>' +
+    '<div class="bg-slate-50 rounded-xl p-3">' + timelineHtml + '</div>' +
+    '</section>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t">' +
+    '<button onclick="closeModal()" class="w-full py-3 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-bold">닫기</button>' +
+    '</div></div></div>';
+
+  document.getElementById('modal-container').innerHTML = html;
 }
