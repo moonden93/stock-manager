@@ -65,7 +65,8 @@ function askConfirm(title, message, onYes, btnText, btnColor) {
   const colors = {
     amber: { bg: 'bg-amber-50', border: 'border-amber-200', btn: 'bg-amber-600 hover:bg-amber-700' },
     red:   { bg: 'bg-red-50',   border: 'border-red-200',   btn: 'bg-red-600 hover:bg-red-700' },
-    teal:  { bg: 'bg-teal-50',  border: 'border-teal-200',  btn: 'bg-teal-600 hover:bg-teal-700' }
+    teal:    { bg: 'bg-teal-50',    border: 'border-teal-200',    btn: 'bg-teal-600 hover:bg-teal-700' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', btn: 'bg-emerald-600 hover:bg-emerald-700' }
   };
   const c = colors[btnColor];
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
