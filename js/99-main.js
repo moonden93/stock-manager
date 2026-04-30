@@ -113,26 +113,6 @@ function closeModal() {
   if (c) c.innerHTML = '';
 }
 
-// ============================================
-// IME-safe 검색 디바운스 헬퍼
-// ============================================
-// 검색창 입력 시 page-content 전체를 re-render → input destroy → 한국어 IME 조합 깨짐.
-// 해결: 입력 후 짧은 지연(150ms) 뒤 render. 그 사이 새 IME composition이 시작되면 render 취소.
-// → 한국어 두벌식에서 ㄱ 확정 후 ㅈ 조합 시작 케이스에서 input이 살아남음.
-let _searchRenderTimer = null;
-function scheduleSearchRender(renderFn) {
-  if (_searchRenderTimer) clearTimeout(_searchRenderTimer);
-  _searchRenderTimer = setTimeout(() => {
-    _searchRenderTimer = null;
-    if (typeof renderFn === 'function') renderFn();
-  }, 150);
-}
-function cancelSearchRender() {
-  if (_searchRenderTimer) {
-    clearTimeout(_searchRenderTimer);
-    _searchRenderTimer = null;
-  }
-}
 
 // ============================================
 // 안내/경고 모달 (확인 버튼 1개)

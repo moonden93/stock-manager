@@ -10,24 +10,61 @@ let invSearchTerm = '';
 let invFilter = 'all';
 let invVendorFilter = '';
 
-function renderInventory() {
-  const out = inventory.filter(i => i.stock === 0).length;
-  const low = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
-  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
-  
+function getInventoryFilteredItems() {
   let filtered = inventory;
   if (invFilter === 'out') filtered = filtered.filter(i => i.stock === 0);
   if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock <= i.minStock);
   if (invFilter === 'normal') filtered = filtered.filter(i => i.stock > i.minStock);
   if (invVendorFilter) filtered = filtered.filter(i => i.vendor === invVendorFilter);
   if (invSearchTerm) {
-    // 일반 검색 + 한글 초성 검색 (예: "ㄱㅈ" → "거즈")
     filtered = filtered.filter(i => matchesSearch(i.name, invSearchTerm) || matchesSearch(i.vendor, invSearchTerm));
   }
-  
+  return filtered;
+}
+
+function _inventoryItemRowHtml(item) {
+  const status = item.stock === 0 ? 'out' : item.stock <= item.minStock ? 'low' : 'normal';
+  const colors = { out: 'bg-red-50', low: 'bg-amber-50/50', normal: '' };
+  const icons = { out: '🔴', low: '🟡', normal: '🟢' };
+  const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
+  return '<button onclick="openEditDialog(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:bg-slate-100 ' + colors[status] + '">' +
+    '<div class="flex items-center gap-3">' +
+    '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
+    '<div class="flex-1 min-w-0">' +
+    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
+    '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock +
+    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
+    '<div class="text-right flex-shrink-0">' +
+    '<p class="text-2xl font-bold ' + stockColor + '">' + item.stock + '</p></div>' +
+    '</div></button>';
+}
+
+// 검색 결과 목록 + 카운트만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
+function renderInventoryItems() {
+  const filtered = getInventoryFilteredItems();
+  const countEl = document.getElementById('inventory-items-count');
+  if (countEl) countEl.innerHTML = '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정';
+  const listEl = document.getElementById('inventory-items-list');
+  if (!listEl) return;
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="py-12 text-center text-slate-400">결과 없음</div>';
+  } else {
+    let html = '';
+    filtered.forEach(item => { html += _inventoryItemRowHtml(item); });
+    listEl.innerHTML = html;
+  }
+}
+
+function renderInventory() {
+  const out = inventory.filter(i => i.stock === 0).length;
+  const low = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
+  const filtered = getInventoryFilteredItems();
+
   let html = '<div class="space-y-4">' +
     '<div class="grid grid-cols-3 gap-2">' +
-    '<button onclick="invFilter = \'all\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' + 
+    '<button onclick="invFilter = \'all\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'all' ? 'border-slate-700' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">전체</p><p class="text-2xl font-bold text-slate-900">' + inventory.length + '</p></button>' +
     '<button onclick="invFilter = \'low\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
@@ -37,14 +74,12 @@ function renderInventory() {
     (invFilter === 'out' ? 'border-red-500' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">🔴 품절</p><p class="text-2xl font-bold text-red-600">' + out + '</p></button>' +
     '</div>' +
-    
+
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(invSearchTerm) + '" ' +
-    'oninput="invSearchTerm = this.value; if (!this._ime) scheduleSearchRender(renderInventory);" ' +
-    'oncompositionstart="this._ime = 1; cancelSearchRender();" ' +
-    'oncompositionend="this._ime = 0; invSearchTerm = this.value; scheduleSearchRender(renderInventory);" ' +
-    'placeholder="🔍 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
+    'oninput="invSearchTerm = this.value; renderInventoryItems();" ' +
+    'placeholder="🔍 검색" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><div class="flex flex-wrap gap-1">' +
     '<button onclick="invVendorFilter = \'\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
     (!invVendorFilter ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체 업체</button>';
@@ -53,37 +88,18 @@ function renderInventory() {
       (invVendorFilter === v ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
   html += '</div></div>' +
-    '<div class="px-4 py-2 bg-slate-50 text-xs text-slate-600">' +
+    '<div id="inventory-items-count" class="px-4 py-2 bg-slate-50 text-xs text-slate-600">' +
     '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정' +
     '</div>' +
-    '<div class="divide-y divide-slate-100">';
+    '<div id="inventory-items-list" class="divide-y divide-slate-100">';
 
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">결과 없음</div>';
   } else {
-    filtered.forEach(item => {
-      const status = item.stock === 0 ? 'out' : item.stock <= item.minStock ? 'low' : 'normal';
-      const colors = { out: 'bg-red-50', low: 'bg-amber-50/50', normal: '' };
-      const icons = { out: '🔴', low: '🟡', normal: '🟢' };
-      const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
-      
-      html += '<button onclick="openEditDialog(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:bg-slate-100 ' + colors[status] + '">' +
-        '<div class="flex items-center gap-3">' +
-        '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
-        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock +
-        (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
-        '<div class="text-right flex-shrink-0">' +
-        '<p class="text-2xl font-bold ' + stockColor + '">' + item.stock + '</p></div>' +
-        '</div></button>';
-    });
+    filtered.forEach(item => { html += _inventoryItemRowHtml(item); });
   }
-  
-  html += '</div>';
 
-  html += '</div></div>';
+  html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
 }
 

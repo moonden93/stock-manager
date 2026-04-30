@@ -32,18 +32,66 @@ function getStandardTeams() {
   return flat;
 }
 
-function renderRelease() {
-  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
-  const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];
-  
-  const filtered = inventory.filter(i => {
+// 현재 검색/벤더 필터를 적용한 inventory 반환
+function getReleaseFilteredItems() {
+  return inventory.filter(i => {
     if (releaseSelectedVendor && i.vendor !== releaseSelectedVendor) return false;
     if (releaseSearchTerm) {
-      // 일반 검색 + 한글 초성 검색 (예: "ㄱㅈ" → "거즈")
       if (!matchesSearch(i.name, releaseSearchTerm) && !matchesSearch(i.vendor, releaseSearchTerm)) return false;
     }
     return true;
   });
+}
+
+// 한 품목 행 HTML (renderRelease, renderReleaseItems 양쪽에서 사용)
+function _releaseItemRowHtml(item) {
+  const inCart = cart.find(c => c.itemId === item.id);
+  const cartQty = inCart ? inCart.qty : 0;
+  const stockColor = item.stock === 0 ? 'text-red-600' : item.stock <= item.minStock ? 'text-amber-600' : 'text-slate-700';
+  const insufficient = cartQty > item.stock;
+
+  let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
+    '<div class="flex items-center gap-3">' +
+    '<div class="flex-1 min-w-0">' +
+    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
+    '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
+    (item.stock === 0 ? ' · 🔴 품절' : item.stock <= item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
+    '<div class="flex items-center gap-2">';
+
+  if (cartQty > 0) {
+    html += '<button onclick="changeCartQty(\'' + item.id + '\', -1)" class="w-10 h-10 bg-slate-200 hover:bg-slate-300 rounded-lg text-xl font-bold">−</button>' +
+      '<span class="text-xl font-bold text-teal-700 min-w-[32px] text-center">' + cartQty + '</span>' +
+      '<button onclick="changeCartQty(\'' + item.id + '\', 1)" class="w-10 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xl font-bold">+</button>';
+  } else {
+    html += '<button onclick="addToCart(\'' + item.id + '\')" class="px-4 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-base font-bold">+ 담기</button>';
+  }
+  html += '</div></div>' +
+    (insufficient ? '<p class="text-xs text-amber-700 mt-1">⚠️ 재고보다 많이 담음</p>' : '') +
+    '</div>';
+  return html;
+}
+
+// 검색 결과 목록 + 카운트만 부분 갱신 (검색 input element를 destroy 안 함 → IME 안전)
+function renderReleaseItems() {
+  const filtered = getReleaseFilteredItems();
+  const countEl = document.getElementById('release-items-count');
+  if (countEl) countEl.textContent = filtered.length + '개';
+  const listEl = document.getElementById('release-items-list');
+  if (!listEl) return;
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
+  } else {
+    let html = '';
+    filtered.forEach(item => { html += _releaseItemRowHtml(item); });
+    listEl.innerHTML = html;
+  }
+}
+
+function renderRelease() {
+  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
+  const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];
+  const filtered = getReleaseFilteredItems();
   
   let html = '<div class="space-y-4">' +
     // Step 1: 팀 선택
@@ -138,13 +186,11 @@ function renderRelease() {
     '<div class="px-4 py-3 bg-slate-50 flex items-center gap-2">' +
     '<span class="w-7 h-7 bg-slate-400 text-white rounded-full flex items-center justify-center font-bold">3</span>' +
     '<h3 class="font-bold text-slate-900">품목 선택</h3>' +
-    '<span class="ml-auto text-xs text-slate-500">' + filtered.length + '개</span></div>' +
+    '<span class="ml-auto text-xs text-slate-500" id="release-items-count">' + filtered.length + '개</span></div>' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(releaseSearchTerm) + '" ' +
-    'oninput="releaseSearchTerm = this.value; if (!this._ime) scheduleSearchRender(renderRelease);" ' +
-    'oncompositionstart="this._ime = 1; cancelSearchRender();" ' +
-    'oncompositionend="this._ime = 0; releaseSearchTerm = this.value; scheduleSearchRender(renderRelease);" ' +
-    'placeholder="🔍 품목명 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
+    'oninput="releaseSearchTerm = this.value; renderReleaseItems();" ' +
+    'placeholder="🔍 품목명 검색" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><p class="text-xs text-slate-500 mb-2">업체:</p>' +
     '<div class="flex flex-wrap gap-1">' +
     '<button onclick="releaseSelectedVendor = \'\'; renderRelease();" class="px-3 py-1.5 text-sm rounded-full ' +
@@ -168,39 +214,12 @@ function renderRelease() {
     (releaseShowCustomForm ? renderCustomItemForm() : '') +
     '</div>';
 
-  html += '<div class="divide-y divide-slate-100">';
-
+  html += '<div id="release-items-list" class="divide-y divide-slate-100">';
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
-    filtered.forEach(item => {
-      const inCart = cart.find(c => c.itemId === item.id);
-      const cartQty = inCart ? inCart.qty : 0;
-      const stockColor = item.stock === 0 ? 'text-red-600' : item.stock <= item.minStock ? 'text-amber-600' : 'text-slate-700';
-      const insufficient = cartQty > item.stock;
-      
-      html += '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
-        '<div class="flex items-center gap-3">' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
-        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
-        (item.stock === 0 ? ' · 🔴 품절' : item.stock <= item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
-        '<div class="flex items-center gap-2">';
-      
-      if (cartQty > 0) {
-        html += '<button onclick="changeCartQty(\'' + item.id + '\', -1)" class="w-10 h-10 bg-slate-200 hover:bg-slate-300 rounded-lg text-xl font-bold">−</button>' +
-          '<span class="text-xl font-bold text-teal-700 min-w-[32px] text-center">' + cartQty + '</span>' +
-          '<button onclick="changeCartQty(\'' + item.id + '\', 1)" class="w-10 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xl font-bold">+</button>';
-      } else {
-        html += '<button onclick="addToCart(\'' + item.id + '\')" class="px-4 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-base font-bold">+ 담기</button>';
-      }
-      html += '</div></div>' +
-        (insufficient ? '<p class="text-xs text-amber-700 mt-1">⚠️ 재고보다 많이 담음</p>' : '') +
-        '</div>';
-    });
+    filtered.forEach(item => { html += _releaseItemRowHtml(item); });
   }
-
   // items 목록 + 카드 + 루트 종료
   html += '</div></div></div>';
 

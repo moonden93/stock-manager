@@ -8,16 +8,43 @@
 let inboundSearchTerm = '';
 let inboundSelectedVendor = '';
 
-function renderInbound() {
-  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
-  const filtered = inventory.filter(i => {
+function getInboundFilteredItems() {
+  return inventory.filter(i => {
     if (inboundSelectedVendor && i.vendor !== inboundSelectedVendor) return false;
     if (inboundSearchTerm) {
-      // 일반 검색 + 한글 초성 검색 (예: "ㄱㅈ" → "거즈")
       if (!matchesSearch(i.name, inboundSearchTerm) && !matchesSearch(i.vendor, inboundSearchTerm)) return false;
     }
     return true;
   });
+}
+
+function _inboundItemRowHtml(item) {
+  return '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
+    '<div class="flex-1 min-w-0">' +
+    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
+    '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong></p></div>' +
+    '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
+    '</div></div>';
+}
+
+// 검색 결과 목록만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
+function renderInboundItems() {
+  const filtered = getInboundFilteredItems();
+  const listEl = document.getElementById('inbound-items-list');
+  if (!listEl) return;
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
+  } else {
+    let html = '';
+    filtered.forEach(item => { html += _inboundItemRowHtml(item); });
+    listEl.innerHTML = html;
+  }
+}
+
+function renderInbound() {
+  const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
+  const filtered = getInboundFilteredItems();
 
   let html = '<div class="space-y-4">' +
     '<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">' +
@@ -26,10 +53,8 @@ function renderInbound() {
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(inboundSearchTerm) + '" ' +
-    'oninput="inboundSearchTerm = this.value; if (!this._ime) scheduleSearchRender(renderInbound);" ' +
-    'oncompositionstart="this._ime = 1; cancelSearchRender();" ' +
-    'oncompositionend="this._ime = 0; inboundSearchTerm = this.value; scheduleSearchRender(renderInbound);" ' +
-    'placeholder="🔍 품목 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" /></div>' +
+    'oninput="inboundSearchTerm = this.value; renderInboundItems();" ' +
+    'placeholder="🔍 품목 검색" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><p class="text-xs text-slate-500 mb-2">업체:</p>' +
     '<div class="flex flex-wrap gap-1">' +
     '<button onclick="inboundSelectedVendor = \'\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
@@ -38,20 +63,12 @@ function renderInbound() {
     html += '<button onclick="inboundSelectedVendor = \'' + escapeJs(v) + '\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
       (inboundSelectedVendor === v ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div><div class="divide-y divide-slate-100">';
+  html += '</div></div><div id="inbound-items-list" class="divide-y divide-slate-100">';
 
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
-    filtered.forEach(item => {
-      html += '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
-        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong></p></div>' +
-        '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
-        '</div></div>';
-    });
+    filtered.forEach(item => { html += _inboundItemRowHtml(item); });
   }
 
   html += '</div></div></div>';
