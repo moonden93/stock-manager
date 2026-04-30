@@ -42,9 +42,15 @@ function renderTeamsSettings() {
   
   teams.forEach((team, idx) => {
     const members = teamMembers[team] || [];
-    html += '<div class="px-4 py-3">' +
+    html += '<div class="px-4 py-3 team-row" draggable="true" data-team-idx="' + idx + '" ' +
+      'ondragstart="handleTeamDragStart(event, ' + idx + ')" ' +
+      'ondragover="handleTeamDragOver(event)" ' +
+      'ondragleave="handleTeamDragLeave(event)" ' +
+      'ondrop="handleTeamDrop(event, ' + idx + ')" ' +
+      'ondragend="handleTeamDragEnd(event)">' +
       '<div class="flex items-center gap-2 mb-2">' +
-      '<div class="w-2 h-2 rounded-full ' + (team.includes('층') ? 'bg-cyan-500' : 'bg-blue-500') + '"></div>' +
+      '<span class="cursor-move text-slate-400 hover:text-slate-600 select-none px-1" title="드래그해서 순서 변경">⋮⋮</span>' +
+      '<div class="w-2 h-2 rounded-full ' + (team.includes('층') || team.startsWith('9F') || team.startsWith('10F') || team.startsWith('11F') ? 'bg-cyan-500' : 'bg-blue-500') + '"></div>' +
       '<span class="flex-1 text-sm font-bold text-slate-900">' + escapeHtml(team) + '</span>' +
       '<button onclick="openEditTeamNameDialog(' + idx + ')" class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">✏️</button>' +
       '<button onclick="removeTeam(' + idx + ')" class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">🗑️</button>' +
@@ -740,4 +746,60 @@ function applyExcelChanges() {
   const msg = '적용 완료! 추가 ' + c.toAdd.length + ' / 수정 ' + c.toUpdate.length + ' / 삭제 ' + c.toDelete.length;
   showToast(msg, 'success');
   renderSettings();
+}
+
+// ============================================
+// 팀 순서 드래그&드롭
+// ============================================
+let draggedTeamIdx = null;
+
+function handleTeamDragStart(event, idx) {
+  draggedTeamIdx = idx;
+  event.dataTransfer.effectAllowed = 'move';
+  event.target.classList.add('opacity-40');
+}
+
+function handleTeamDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  // 드롭 위치 표시
+  const row = event.currentTarget;
+  if (!row.classList.contains('border-t-4')) {
+    // 드롭 라인 표시
+    document.querySelectorAll('.team-row').forEach(r => {
+      r.classList.remove('border-t-4', 'border-blue-500', 'border-b-4');
+    });
+    row.classList.add('border-t-4', 'border-blue-500');
+  }
+}
+
+function handleTeamDragLeave(event) {
+  // 마우스가 영역을 떠나면 표시 제거
+  event.currentTarget.classList.remove('border-t-4', 'border-blue-500');
+}
+
+function handleTeamDrop(event, targetIdx) {
+  event.preventDefault();
+  if (draggedTeamIdx === null || draggedTeamIdx === targetIdx) return;
+  
+  // teams 배열 재정렬
+  const moved = teams[draggedTeamIdx];
+  teams.splice(draggedTeamIdx, 1);
+  // 위로 옮기는 경우와 아래로 옮기는 경우 인덱스 조정
+  const newIdx = draggedTeamIdx < targetIdx ? targetIdx - 1 : targetIdx;
+  teams.splice(newIdx, 0, moved);
+  
+  saveAll();
+  showToast('"' + moved + '" 위치 변경됨', 'success');
+  draggedTeamIdx = null;
+  renderSettings();
+}
+
+function handleTeamDragEnd(event) {
+  // 정리: 모든 시각적 표시 제거
+  event.target.classList.remove('opacity-40');
+  document.querySelectorAll('.team-row').forEach(r => {
+    r.classList.remove('border-t-4', 'border-blue-500', 'border-b-4', 'opacity-40');
+  });
+  draggedTeamIdx = null;
 }
