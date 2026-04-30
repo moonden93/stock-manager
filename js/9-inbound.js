@@ -112,7 +112,11 @@ function adjustQty(delta) {
 function confirmInbound(itemId) {
   const item = inventory.find(i => i.id === itemId);
   const qty = parseInt(document.getElementById('inbound-qty').value) || 0;
-  if (qty < 1) { showToast('수량 입력 필요', 'error'); return; }
+  if (qty < 1) {
+    showAlert('수량을 입력해주세요', '입고 수량은 1 이상이어야 합니다.\n\n+ / − 버튼으로 조정하거나\n숫자를 직접 입력하세요.');
+    setTimeout(() => { const el = document.getElementById('inbound-qty'); if (el) { el.focus(); el.select(); } }, 50);
+    return;
+  }
 
   // 입고 일자 (사용자 입력값, 빈 값이면 오늘)
   const dateInput = document.getElementById('inbound-date');

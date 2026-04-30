@@ -328,8 +328,16 @@ function addCustomItemToCart() {
   const draft = window._pendingCustomItem || {};
   const name = (draft.name || '').trim();
   const qty = parseInt(draft.qty) || 0;
-  if (!name) { showToast('품목명 입력 필요', 'error'); return; }
-  if (qty < 1) { showToast('수량은 1 이상이어야 합니다', 'error'); return; }
+  if (!name) {
+    showAlert('품목명을 입력해주세요', '직접 요청할 품목의 이름을 적어주세요.\n\n예: 새로운 임플란트 드릴');
+    setTimeout(() => { const el = document.getElementById('custom-name'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (qty < 1) {
+    showAlert('수량을 입력해주세요', '수량은 1 이상이어야 합니다.\n\n+ / − 버튼으로 조정하거나\n숫자를 직접 입력하세요.');
+    setTimeout(() => { const el = document.getElementById('custom-qty'); if (el) { el.focus(); el.select(); } }, 50);
+    return;
+  }
 
   const customId = 'CUSTOM_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const images = (window._pendingCustomImages || []).slice();
@@ -420,8 +428,8 @@ function renderCartBar() {
     '<div class="flex-1"><p class="text-xs text-slate-500">담은 품목 ' + cart.length + '종 · 총 ' + totalQty + '개</p>' +
     (!canSubmit ? '<p class="text-xs text-amber-600 font-medium">⚠️ ' + (!releaseSelectedTeam ? '팀 선택' : '담당자 입력') + ' 필요</p>' : '') + '</div>' +
     '<button onclick="cart = []; renderRelease();" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700">취소</button>' +
-    '<button onclick="confirmRelease()" ' + (!canSubmit ? 'disabled' : '') + ' class="big-btn flex-1 max-w-[240px] ' +
-    (canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed') + '">' +
+    '<button onclick="confirmRelease()" class="big-btn flex-1 max-w-[240px] ' +
+    (canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-300 hover:bg-slate-400 text-slate-700') + '">' +
     '📋 반출 요청 (' + totalQty + '개)</button>' +
     '</div></div>';
   cartBar.innerHTML = inner;
@@ -432,7 +440,20 @@ function updateCartBar() {
 }
 
 function confirmRelease() {
-  if (!releaseSelectedTeam || !releaseSelectedRequester || cart.length === 0) return;
+  if (cart.length === 0) {
+    showAlert('담은 품목이 없습니다', '아래 [3. 품목 선택]에서\n+ 담기 버튼을 눌러 품목을 추가해주세요.\n\n목록에 없는 품목은\n📌 목록에 없는 품목 직접 요청 버튼을 사용하세요.');
+    return;
+  }
+  if (!releaseSelectedTeam) {
+    showAlert('팀을 선택해주세요', '먼저 사용할 팀을 선택해야 요청할 수 있습니다.\n\n맨 위 [1. 팀 선택]에서\n해당 팀 버튼을 눌러주세요.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (!releaseSelectedRequester || !releaseSelectedRequester.trim()) {
+    showAlert('담당자를 입력해주세요', '요청 담당자가 비어 있습니다.\n\n[2. 요청 담당자]에서\n빠른 선택 버튼을 누르거나\n담당자 이름을 직접 입력하세요.');
+    setTimeout(() => { const el = document.getElementById('requester-input'); if (el) el.focus(); }, 50);
+    return;
+  }
   
   let message = '[' + releaseSelectedTeam + '] ' + releaseSelectedRequester + '님 반출 요청\n\n';
   message += cart.map(function(c) { return '· ' + c.name + ' ' + c.qty; }).join('\n');

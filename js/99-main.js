@@ -105,6 +105,33 @@ function closeModal() {
 }
 
 // ============================================
+// 안내/경고 모달 (확인 버튼 1개)
+// ============================================
+// - 단순 토스트로는 놓치기 쉬운 "사용자 행동이 필요한" 상황에서 사용.
+// - 예: 필수 입력 누락, 중복, 형식 오류 등.
+// - 사용자가 "확인"을 눌러야 사라지므로 메시지를 반드시 인지하게 됨.
+function showAlert(title, message, btnColor) {
+  btnColor = btnColor || 'amber';
+  const colors = {
+    amber: { bg: 'bg-amber-50', border: 'border-amber-200', btn: 'bg-amber-600 hover:bg-amber-700' },
+    red:   { bg: 'bg-red-50',   border: 'border-red-200',   btn: 'bg-red-600 hover:bg-red-700' },
+    teal:    { bg: 'bg-teal-50',    border: 'border-teal-200',    btn: 'bg-teal-600 hover:bg-teal-700' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', btn: 'bg-emerald-600 hover:bg-emerald-700' },
+    blue:  { bg: 'bg-blue-50',  border: 'border-blue-200',  btn: 'bg-blue-600 hover:bg-blue-700' }
+  };
+  const c = colors[btnColor] || colors.amber;
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 ' + c.bg + ' border-b ' + c.border + '">' +
+    '<h3 class="text-base font-bold text-slate-900">⚠️ ' + title + '</h3></div>' +
+    '<div class="px-5 py-5"><p class="text-sm text-slate-700 whitespace-pre-line leading-relaxed">' + message + '</p></div>' +
+    '<div class="px-5 py-4 bg-slate-50 border-t">' +
+    '<button onclick="closeModal()" class="w-full py-3 ' + c.btn + ' text-white rounded-lg font-bold">확인</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+// ============================================
 // 헤더 통계 표시
 // ============================================
 function updateHeaderStats() {

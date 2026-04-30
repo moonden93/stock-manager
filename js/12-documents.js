@@ -220,9 +220,12 @@ function confirmUpload() {
   const category = document.getElementById('upload-category').value;
   const note = (document.getElementById('upload-note').value || '').trim();
 
-  if (!vendor) { showToast('업체 입력 필요', 'error'); return; }
+  if (!vendor) {
+    showAlert('업체명을 입력해주세요', '업체명은 필수 입력 항목입니다.\n\n위쪽 [업체] 영역에서\n목록에서 선택하거나\n새 업체명을 직접 입력하세요.');
+    return;
+  }
   if (!window._pendingUpload || window._pendingUpload.files.length === 0) {
-    showToast('파일 선택 필요', 'error');
+    showAlert('파일을 선택해주세요', '업로드할 파일을 1개 이상\n선택해야 등록할 수 있습니다.\n\n[파일 추가] 버튼을 눌러\nPDF/이미지/엑셀 파일을 선택하세요.');
     return;
   }
 

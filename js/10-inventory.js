@@ -113,7 +113,10 @@ function saveEditStock(itemId) {
   if (!item) return;
   const newStock = parseInt(document.getElementById('edit-stock').value);
   const newMin = parseInt(document.getElementById('edit-min').value);
-  if (isNaN(newStock) || isNaN(newMin)) { showToast('숫자 입력 필요', 'error'); return; }
+  if (isNaN(newStock) || isNaN(newMin)) {
+    showAlert('숫자만 입력 가능합니다', '재고 수량과 기준 재고는\n숫자로만 입력해주세요.\n\n빈 값이나 글자는 저장할 수 없습니다.');
+    return;
+  }
   item.stock = newStock;
   item.minStock = newMin;
   saveAll();

@@ -134,11 +134,11 @@ function applyCustomDateRange() {
   const end = endEl.value;
   
   if (!start || !end) {
-    showToast('시작일과 종료일을 모두 선택해주세요', 'error');
+    showAlert('날짜를 선택해주세요', '시작일과 종료일을 모두 입력해야\n기간 조회가 가능합니다.\n\n비어 있는 날짜 칸을 눌러\n달력에서 골라주세요.');
     return;
   }
   if (start > end) {
-    showToast('시작일이 종료일보다 늦을 수 없습니다', 'error');
+    showAlert('날짜 범위가 잘못되었습니다', '시작일은 종료일보다\n빠르거나 같아야 합니다.\n\n두 날짜의 순서를 확인해주세요.');
     return;
   }
   

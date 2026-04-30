@@ -255,8 +255,15 @@ function openAddTeamDialog() {
 
 function addTeam() {
   const name = (document.getElementById('new-team-name').value || '').trim();
-  if (!name) { showToast('팀 이름 입력 필요', 'error'); return; }
-  if (teams.includes(name)) { showToast('이미 존재하는 팀', 'error'); return; }
+  if (!name) {
+    showAlert('팀 이름을 입력해주세요', '추가할 팀 이름이 비어 있습니다.\n\n예: Dr. 홍길동팀');
+    setTimeout(() => { const el = document.getElementById('new-team-name'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (teams.includes(name)) {
+    showAlert('이미 존재하는 팀입니다', '"' + name + '" 팀이 이미 등록되어 있습니다.\n\n다른 이름을 사용해주세요.');
+    return;
+  }
   teams.push(name);
   markSettingsDirty();
   closeModal();
@@ -283,10 +290,17 @@ function openEditTeamNameDialog(idx) {
 
 function saveTeamName(idx) {
   const newName = (document.getElementById('edit-team-name').value || '').trim();
-  if (!newName) { showToast('이름 필요', 'error'); return; }
+  if (!newName) {
+    showAlert('팀 이름을 입력해주세요', '팀 이름이 비어 있습니다.\n\n변경할 이름을 입력해주세요.');
+    setTimeout(() => { const el = document.getElementById('edit-team-name'); if (el) { el.focus(); el.select(); } }, 50);
+    return;
+  }
   const oldName = teams[idx];
   if (newName === oldName) { closeModal(); return; }
-  if (teams.includes(newName)) { showToast('이미 존재하는 팀', 'error'); return; }
+  if (teams.includes(newName)) {
+    showAlert('이미 존재하는 팀입니다', '"' + newName + '" 팀이 이미 등록되어 있습니다.\n\n다른 이름을 사용해주세요.');
+    return;
+  }
   teams[idx] = newName;
   if (teamMembers[oldName]) {
     teamMembers[newName] = teamMembers[oldName];
@@ -329,9 +343,16 @@ function openAddMemberDialog(team) {
 
 function addMember(team) {
   const name = (document.getElementById('new-member-name').value || '').trim();
-  if (!name) { showToast('이름 필요', 'error'); return; }
+  if (!name) {
+    showAlert('담당자 이름을 입력해주세요', '추가할 담당자 이름이 비어 있습니다.\n\n예: 김간호사');
+    setTimeout(() => { const el = document.getElementById('new-member-name'); if (el) el.focus(); }, 50);
+    return;
+  }
   if (!teamMembers[team]) teamMembers[team] = [];
-  if (teamMembers[team].includes(name)) { showToast('이미 등록됨', 'error'); return; }
+  if (teamMembers[team].includes(name)) {
+    showAlert('이미 등록된 담당자입니다', '"' + name + '"은(는) ' + team + '에\n이미 등록되어 있습니다.\n\n다른 이름을 사용하거나\n기존 담당자를 확인해주세요.');
+    return;
+  }
   teamMembers[team].push(name);
   markSettingsDirty();
   closeModal();
@@ -399,9 +420,21 @@ function addItem() {
   const stock = parseInt(document.getElementById('new-item-stock').value) || 0;
   const minStock = parseInt(document.getElementById('new-item-min').value) || 0;
   
-  if (!vendor) { showToast('업체 입력 필요', 'error'); return; }
-  if (!name) { showToast('품명 입력 필요', 'error'); return; }
-  if (!unit) { showToast('단위 입력 필요', 'error'); return; }
+  if (!vendor) {
+    showAlert('업체명을 입력해주세요', '업체명은 필수 입력 항목입니다.\n\n위쪽 [업체] 영역에서\n목록에서 선택하거나\n새 업체명을 직접 입력하세요.');
+    setTimeout(() => { const el = document.getElementById('new-item-vendor'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (!name) {
+    showAlert('품명을 입력해주세요', '품명은 필수 입력 항목입니다.\n\n예: Denture bur #9369');
+    setTimeout(() => { const el = document.getElementById('new-item-name'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (!unit) {
+    showAlert('단위를 입력해주세요', '단위는 필수 입력 항목입니다.\n\n예: ea, box, 갑');
+    setTimeout(() => { const el = document.getElementById('new-item-unit'); if (el) el.focus(); }, 50);
+    return;
+  }
   
   const newItem = {
     id: 'M' + Date.now(),
@@ -461,9 +494,31 @@ function saveItem(itemId) {
   const price = parseInt(document.getElementById('edit-item-price').value) || 0;
   const stock = parseInt(document.getElementById('edit-item-stock').value);
   const minStock = parseInt(document.getElementById('edit-item-min').value);
-  if (!vendor || !name || !unit) { showToast('필수 항목 입력 필요', 'error'); return; }
-  if (isNaN(stock) || stock < 0) { showToast('재고는 0 이상이어야 합니다', 'error'); return; }
-  if (isNaN(minStock) || minStock < 0) { showToast('부족 기준은 0 이상이어야 합니다', 'error'); return; }
+  if (!vendor) {
+    showAlert('업체명을 입력해주세요', '업체명은 필수 입력 항목입니다.');
+    setTimeout(() => { const el = document.getElementById('edit-item-vendor'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (!name) {
+    showAlert('품명을 입력해주세요', '품명은 필수 입력 항목입니다.');
+    setTimeout(() => { const el = document.getElementById('edit-item-name'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (!unit) {
+    showAlert('단위를 입력해주세요', '단위는 필수 입력 항목입니다.\n\n예: ea, box, 갑');
+    setTimeout(() => { const el = document.getElementById('edit-item-unit'); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (isNaN(stock) || stock < 0) {
+    showAlert('재고는 0 이상이어야 합니다', '현재 재고에 숫자(0 이상)를 입력해주세요.');
+    setTimeout(() => { const el = document.getElementById('edit-item-stock'); if (el) { el.focus(); el.select(); } }, 50);
+    return;
+  }
+  if (isNaN(minStock) || minStock < 0) {
+    showAlert('부족 기준은 0 이상이어야 합니다', '⚠️ 부족 기준에 숫자(0 이상)를 입력해주세요.\n\n재고가 이 수량 이하로 떨어지면\n🟡 부족 표시가 나타납니다.');
+    setTimeout(() => { const el = document.getElementById('edit-item-min'); if (el) { el.focus(); el.select(); } }, 50);
+    return;
+  }
   item.vendor = vendor;
   item.name = name;
   item.unit = unit;
@@ -575,7 +630,7 @@ function handleExcelUpload(event) {
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
       
       if (rows.length < 2) {
-        showToast('Excel 파일이 비어있거나 형식이 잘못되었습니다', 'error');
+        showAlert('Excel 파일이 비어있습니다', '데이터 행이 없거나\n형식이 잘못된 파일입니다.\n\n첫 번째 행에 헤더,\n두 번째 행부터 품목 데이터가\n들어 있어야 합니다.');
         event.target.value = '';
         return;
       }
@@ -595,7 +650,7 @@ function handleExcelUpload(event) {
       });
       
       if (missing.length > 0) {
-        showToast('Excel 형식 오류: ' + missing.join(', ') + ' 컬럼이 없습니다', 'error');
+        showAlert('Excel 형식 오류', '다음 컬럼이 없습니다:\n\n' + missing.join(', ') + '\n\n첫 행의 컬럼 이름을 확인해주세요.\n필수 컬럼: 업체, 품목명, 단위,\n  단가(원), 재고, 부족기준');
         event.target.value = '';
         return;
       }
@@ -654,12 +709,14 @@ function analyzeExcelChanges(rows, colIdx) {
   }
   
   if (errors.length > 0) {
-    showToast('오류 ' + errors.length + '건: ' + errors[0] + (errors.length > 1 ? ' 외 ' + (errors.length - 1) + '건' : ''), 'error');
+    const preview = errors.slice(0, 5).join('\n');
+    const more = errors.length > 5 ? '\n... 외 ' + (errors.length - 5) + '건' : '';
+    showAlert('Excel 데이터 오류 ' + errors.length + '건', preview + more + '\n\n해당 행을 확인하고\n수정 후 다시 불러와주세요.', 'red');
     return;
   }
-  
+
   if (excelItems.length === 0) {
-    showToast('Excel에 유효한 데이터가 없습니다', 'error');
+    showAlert('유효한 데이터가 없습니다', 'Excel에 등록할 수 있는\n품목이 한 개도 없습니다.\n\n파일 내용을 확인해주세요.');
     return;
   }
   

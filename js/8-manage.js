@@ -336,7 +336,7 @@ function completeRequest(groupId) {
   // 선택된 항목만 추출
   const selectedItems = allItems.filter(it => sel[it.id] && sel[it.id].checked);
   if (selectedItems.length === 0) {
-    showToast('선택된 품목이 없습니다', 'error');
+    showAlert('선택된 품목이 없습니다', '완료 처리할 품목을 먼저 선택해주세요.\n\n각 품목 왼쪽의 체크박스를 누르거나\n맨 위 [전체 선택]을 누르면\n모든 품목이 선택됩니다.');
     return;
   }
   
@@ -471,10 +471,16 @@ function selectReleaser(name) {
 // 모달 확인 버튼 핸들러: 입력값 수집 -> 실제 처리 호출
 function submitCompleteRequest(groupId) {
   const releasedBy = window._pendingReleaser;
-  if (!releasedBy) { showToast('반출 담당자 선택 필요', 'error'); return; }
+  if (!releasedBy) {
+    showAlert('반출 담당자를 선택해주세요', '실제로 반출한 사람을 선택해야 처리됩니다.\n\n위쪽 [반출 담당자] 영역에서\n이충현 또는 주경심 버튼을 눌러주세요.');
+    return;
+  }
   const dateInput = document.getElementById('release-date');
   const dateStr = dateInput && dateInput.value;
-  if (!dateStr) { showToast('반출 일자 입력 필요', 'error'); return; }
+  if (!dateStr) {
+    showAlert('반출 일자를 입력해주세요', '반출이 이루어진 날짜를 골라주세요.\n\n날짜 입력 칸을 눌러\n달력에서 날짜를 선택할 수 있습니다.');
+    return;
+  }
   // YYYY-MM-DD -> ISO (UTC midnight)
   const releasedDate = new Date(dateStr + 'T00:00:00.000Z').toISOString();
   closeModal();
@@ -491,7 +497,7 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
 
   const sel = manageSelection[groupId] || {};
   const selectedItems = allItems.filter(it => sel[it.id] && sel[it.id].checked);
-  if (selectedItems.length === 0) { showToast('선택된 품목이 없습니다', 'error'); return; }
+  if (selectedItems.length === 0) { showAlert('선택된 품목이 없습니다', '완료 처리할 품목을 먼저 선택해주세요.'); return; }
 
   const selectedTotalQty = selectedItems.reduce((s, it) => s + sel[it.id].qty, 0);
   const completeDate = new Date().toISOString();
