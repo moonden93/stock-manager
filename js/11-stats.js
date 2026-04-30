@@ -618,7 +618,7 @@ function renderStatsByAnomaly() {
     const comment = getTeamAnomalyComment(a);
 
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
-      '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
+      '<div class="px-4 py-3 bg-slate-50">' +
       '<div class="flex items-center justify-between gap-2 flex-wrap">' +
       '<h3 class="font-bold text-slate-900">' + escapeHtml(team) + '</h3>' +
       '<div class="flex items-center gap-2 flex-wrap">' +
@@ -630,17 +630,9 @@ function renderStatsByAnomaly() {
       '</div>' +
       '<button onclick="openAnomalyDetail(\'' + escapeJs(team) + '\')" class="text-[11px] px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full font-bold">📋 상세</button>' +
       '</div></div>' +
-      // 코멘트 (절약/관리 권고)
-      (comment ? '<div class="mt-2 text-xs text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-2">' + comment + '</div>' : '') +
+      // 코멘트 (절약/관리 권고) — 카드 본문은 코멘트까지만, 행 상세는 [📋 상세] 모달에서만
+      (comment ? '<div class="px-4 pb-4 pt-1 text-xs text-slate-700">' + comment + '</div>' : '') +
       '</div>';
-
-    // 팀 카드 내부: 4분류를 줄별로 (분류 라벨 prefix로 구분)
-    html += '<div class="divide-y divide-slate-100">';
-    html += renderAnomalyRows(a.ups, 'up');
-    html += renderAnomalyRows(a.downs, 'down');
-    html += renderAnomalyRows(a.news, 'new');
-    html += renderAnomalyRows(a.gones, 'gone');
-    html += '</div></div>';
   });
 
   html += '</div>';
@@ -652,8 +644,9 @@ function renderStatsByAnomaly() {
 }
 
 // 팀별 절약/관리 권고 코멘트 자동 생성
-// - 급증·신규에서 평소 대비 추가 발생한 비용 합계 계산
-// - 가장 큰 증가 품목을 찍어서 점검 권장
+// - 추가 지출 합계
+// - 영향이 큰 상위 2개 품목의 실제 수치(평소 → 이번 + 추가 비용)를 구체적으로 노출
+//   → 운영자가 어떤 품목을 얼마나 줄여야 하는지 즉시 판단 가능
 function getTeamAnomalyComment(a) {
   if (a.ups.length === 0 && a.news.length === 0) {
     if (a.downs.length > 0 || a.gones.length > 0) {
@@ -661,46 +654,53 @@ function getTeamAnomalyComment(a) {
     }
     return '';
   }
-  let extraCost = 0;
-  let topItem = null;
-  let topExtra = 0;
 
   function priceOf(it) {
     const m = inventory.find(i => i.vendor === it.vendor && i.name === it.name);
     return m && m.price ? m.price : 0;
   }
+
+  // 영향 품목 모음 (급증 + 신규)
+  const contribs = [];
+  let extraCost = 0;
   a.ups.forEach(it => {
-    const extra = (it.thisQty - it.pastAvg) * priceOf(it);
+    const extraQty = it.thisQty - it.pastAvg;
+    const extra = extraQty * priceOf(it);
     extraCost += extra;
-    if (extra > topExtra) { topExtra = extra; topItem = it; }
+    contribs.push({ ...it, extraQty, extra, kind: 'up' });
   });
   a.news.forEach(it => {
     const extra = it.thisQty * priceOf(it);
     extraCost += extra;
-    if (extra > topExtra) { topExtra = extra; topItem = it; }
+    contribs.push({ ...it, extraQty: it.thisQty, extra, kind: 'new' });
   });
 
-  if (extraCost <= 0) {
-    // 가격 정보 없는 경우: 수량 기준으로 가장 큰 증가
-    let topQtyItem = null, topQty = 0;
-    a.ups.forEach(it => {
-      const extra = it.thisQty - it.pastAvg;
-      if (extra > topQty) { topQty = extra; topQtyItem = it; }
-    });
-    a.news.forEach(it => {
-      if (it.thisQty > topQty) { topQty = it.thisQty; topQtyItem = it; }
-    });
-    if (topQtyItem) {
-      return '💡 평소보다 많이 사용 중 — <strong>' + escapeHtml(topQtyItem.name) + '</strong> 사용량 점검 권장';
-    }
-    return '';
+  // 상위 영향 품목 형식화 (가격 있으면 비용 기준, 없으면 수량 기준)
+  function formatTop(items) {
+    return items.map(it => {
+      if (it.kind === 'new') {
+        const costPart = it.extra > 0 ? ' <span class="text-slate-500">(+' + formatWonShort(it.extra) + ')</span>' : '';
+        return '<strong>' + escapeHtml(it.name) + '</strong> 신규 ' + it.thisQty + '개' + costPart;
+      }
+      const before = Math.round(it.pastAvg * 10) / 10;
+      const costPart = it.extra > 0 ? ' <span class="text-slate-500">(+' + formatWonShort(it.extra) + ')</span>' : '';
+      return '<strong>' + escapeHtml(it.name) + '</strong> ' + before + '→' + it.thisQty + '개' + costPart;
+    }).join(', ');
   }
 
-  let msg = '💡 평소 대비 약 <strong>' + formatWonShort(extraCost) + '</strong> 추가 지출';
-  if (topItem) {
-    msg += ' — <strong>' + escapeHtml(topItem.name) + '</strong> 사용량 점검 권장';
+  if (extraCost > 0) {
+    contribs.sort((x, y) => y.extra - x.extra);
+    const top = contribs.slice(0, 2).filter(x => x.extra > 0);
+    let msg = '💡 평소 대비 약 <strong>' + formatWonShort(extraCost) + '</strong> 추가 지출';
+    if (top.length > 0) msg += ' · ' + formatTop(top);
+    return msg;
   }
-  return msg;
+
+  // 가격 정보 없으면 수량 기준 상위 2개
+  contribs.sort((x, y) => y.extraQty - x.extraQty);
+  const top = contribs.slice(0, 2).filter(x => x.extraQty > 0);
+  if (top.length === 0) return '';
+  return '💡 평소보다 많이 사용 중 · ' + formatTop(top);
 }
 
 // ============================================
