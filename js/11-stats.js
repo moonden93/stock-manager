@@ -162,10 +162,18 @@ function renderStatsByTeam(baseHistory) {
     teamStats[h.team].items[k].qty += h.qty;
     teamStats[h.team].items[k].cost += h.qty * (h.price || 0);
   });
+  // 정렬: 설정 팀 관리 순서(teams 배열) 기준. 그 외 옛 팀명은 뒤에.
   const teamList = Object.entries(teamStats)
     .map(([t, v]) => ({ team: t, ...v }))
     .filter(t => t.qty > 0)
-    .sort((a, b) => b.cost - a.cost);
+    .sort((a, b) => {
+      const ai = teams.indexOf(a.team);
+      const bi = teams.indexOf(b.team);
+      if (ai === -1 && bi === -1) return a.team.localeCompare(b.team);
+      if (ai === -1) return 1;
+      if (bi === -1) return -1;
+      return ai - bi;
+    });
   const maxCost = Math.max(1, ...teamList.map(t => t.cost));
   
   let html = '<div class="space-y-2">';
