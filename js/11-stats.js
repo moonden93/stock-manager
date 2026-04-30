@@ -487,99 +487,146 @@ function renderStatsByAnomaly() {
     return d >= threeMonthsAgoStart && d < thisMonthStart;
   });
 
-  // 품목별 합산 헬퍼
-  function aggregate(arr) {
+  // 팀별 + 품목별로 합산
+  // → { 팀명: { 'vendor::name': { vendor, name, qty, cost } } }
+  function aggregateByTeamItem(arr) {
     const map = {};
     arr.forEach(h => {
+      const team = h.team || '(팀 미지정)';
+      if (!map[team]) map[team] = {};
       const k = h.vendor + '::' + h.name;
-      if (!map[k]) map[k] = { vendor: h.vendor, name: h.name, qty: 0, cost: 0 };
-      map[k].qty += h.qty;
-      map[k].cost += h.qty * (h.price || 0);
+      if (!map[team][k]) map[team][k] = { vendor: h.vendor, name: h.name, qty: 0, cost: 0 };
+      map[team][k].qty += h.qty;
+      map[team][k].cost += h.qty * (h.price || 0);
     });
     return map;
   }
 
-  const thisMap = aggregate(thisMonth);
-  const past3Map = aggregate(past3);
-  const allKeys = new Set([...Object.keys(thisMap), ...Object.keys(past3Map)]);
+  const thisByTeam = aggregateByTeamItem(thisMonth);
+  const past3ByTeam = aggregateByTeamItem(past3);
+  const allTeams = new Set([...Object.keys(thisByTeam), ...Object.keys(past3ByTeam)]);
 
-  const ups = [], downs = [], news = [], gones = [];
-  allKeys.forEach(k => {
-    const thisQty = thisMap[k] ? thisMap[k].qty : 0;
-    const pastQty = past3Map[k] ? past3Map[k].qty : 0;
-    const pastAvg = pastQty / 3; // 월 평균
-    const meta = thisMap[k] || past3Map[k];
-    const row = { ...meta, thisQty, pastAvg: Math.round(pastAvg * 10) / 10 };
+  // 각 팀별로 4분류 이상치 계산
+  const teamAnomalies = {};
+  allTeams.forEach(team => {
+    const thisItems = thisByTeam[team] || {};
+    const past3Items = past3ByTeam[team] || {};
+    const allKeys = new Set([...Object.keys(thisItems), ...Object.keys(past3Items)]);
 
-    if (pastAvg === 0 && thisQty > 0) {
-      news.push(row);
-    } else if (pastAvg > 0 && thisQty === 0) {
-      row.diffPct = -100;
-      gones.push(row);
-    } else if (pastAvg > 0) {
-      const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
-      row.diffPct = diffPct;
-      if (diffPct >= 30) ups.push(row);
-      else if (diffPct <= -30) downs.push(row);
-    }
+    const ups = [], downs = [], news = [], gones = [];
+    allKeys.forEach(k => {
+      const thisQty = thisItems[k] ? thisItems[k].qty : 0;
+      const pastQty = past3Items[k] ? past3Items[k].qty : 0;
+      const pastAvg = pastQty / 3;
+      const meta = thisItems[k] || past3Items[k];
+      const row = { ...meta, thisQty, pastAvg: Math.round(pastAvg * 10) / 10 };
+
+      if (pastAvg === 0 && thisQty > 0) {
+        news.push(row);
+      } else if (pastAvg > 0 && thisQty === 0) {
+        row.diffPct = -100;
+        gones.push(row);
+      } else if (pastAvg > 0) {
+        const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
+        row.diffPct = diffPct;
+        if (diffPct >= 30) ups.push(row);
+        else if (diffPct <= -30) downs.push(row);
+      }
+    });
+
+    ups.sort((a, b) => b.diffPct - a.diffPct);
+    downs.sort((a, b) => a.diffPct - b.diffPct);
+    news.sort((a, b) => b.thisQty - a.thisQty);
+    gones.sort((a, b) => b.pastAvg - a.pastAvg);
+
+    teamAnomalies[team] = { ups, downs, news, gones };
   });
 
-  ups.sort((a, b) => b.diffPct - a.diffPct);
-  downs.sort((a, b) => a.diffPct - b.diffPct);
-  news.sort((a, b) => b.thisQty - a.thisQty);
-  gones.sort((a, b) => b.pastAvg - a.pastAvg);
+  // 팀 정렬: 설정 teams 순서 → 그 외(옛 팀명, 미지정) 뒤에
+  const sortedTeams = Array.from(allTeams).sort((a, b) => {
+    const ai = teams.indexOf(a);
+    const bi = teams.indexOf(b);
+    if (ai === -1 && bi === -1) return a.localeCompare(b);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
 
   const monthLabel = thisMonthStart.getFullYear() + '년 ' + (thisMonthStart.getMonth() + 1) + '월';
 
   let html = '<div class="space-y-3">' +
     '<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">' +
     '<p class="text-xs text-slate-700 leading-relaxed">' +
-    '<strong>📈 ' + monthLabel + '</strong> 사용량을 <strong>지난 3개월 월평균</strong>과 비교합니다.<br>' +
-    '평소 대비 ±30% 이상 변동된 품목, 신규/중단된 품목을 모아서 표시.' +
+    '<strong>📈 ' + monthLabel + '</strong> 팀별 사용량을 <strong>지난 3개월 월평균</strong>과 비교합니다.<br>' +
+    '±30% 이상 변동, 신규/중단 품목이 있는 팀만 표시 (이상 없는 팀은 숨김).' +
     '</p>' +
-    '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 이상치 보기에 적용되지 않습니다 (자체 기준 사용)</p>' +
+    '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 적용되지 않습니다 (자체 기준 사용)</p>' +
     '</div>';
 
-  html += renderAnomalySection('🔺 급증', '평소보다 많이 사용 중', ups, 'up', 'red');
-  html += renderAnomalySection('🔻 급감', '평소보다 적게 사용 중', downs, 'down', 'blue');
-  html += renderAnomalySection('🆕 신규 사용', '지난 3개월에는 없었음', news, 'new', 'emerald');
-  html += renderAnomalySection('⏸ 사용 중단', '평소엔 사용했지만 이번 달 0건', gones, 'gone', 'slate');
+  // 이상치 있는 팀이 한 곳도 없으면 메시지
+  const totalCount = Object.values(teamAnomalies).reduce((s, t) =>
+    s + t.ups.length + t.downs.length + t.news.length + t.gones.length, 0);
 
-  if (ups.length === 0 && downs.length === 0 && news.length === 0 && gones.length === 0) {
+  if (totalCount === 0) {
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
       '<p class="text-4xl mb-2">✅</p>' +
       '<p class="text-sm text-slate-500">이상 사용량 없음</p>' +
-      '<p class="text-xs text-slate-400 mt-1">평소와 비슷한 사용 패턴입니다</p>' +
+      '<p class="text-xs text-slate-400 mt-1">모든 팀이 평소와 비슷한 사용 패턴입니다</p>' +
       '</div>';
+    html += '</div>';
+    return html;
   }
+
+  // 팀별 카드 (이상치 있는 팀만)
+  sortedTeams.forEach(team => {
+    const a = teamAnomalies[team];
+    const total = a.ups.length + a.downs.length + a.news.length + a.gones.length;
+    if (total === 0) return;
+
+    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
+      '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
+      '<div class="flex items-center justify-between gap-2 flex-wrap">' +
+      '<h3 class="font-bold text-slate-900">' + escapeHtml(team) + '</h3>' +
+      '<div class="flex gap-1.5 text-[11px] font-bold">' +
+      (a.ups.length > 0   ? '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full">🔺 ' + a.ups.length + '</span>' : '') +
+      (a.downs.length > 0 ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">🔻 ' + a.downs.length + '</span>' : '') +
+      (a.news.length > 0  ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">🆕 ' + a.news.length + '</span>' : '') +
+      (a.gones.length > 0 ? '<span class="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">⏸ ' + a.gones.length + '</span>' : '') +
+      '</div></div></div>';
+
+    // 팀 카드 내부: 4분류를 줄별로 (분류 라벨 prefix로 구분)
+    html += '<div class="divide-y divide-slate-100">';
+    html += renderAnomalyRows(a.ups, 'up');
+    html += renderAnomalyRows(a.downs, 'down');
+    html += renderAnomalyRows(a.news, 'new');
+    html += renderAnomalyRows(a.gones, 'gone');
+    html += '</div></div>';
+  });
 
   html += '</div>';
   return html;
 }
 
-function renderAnomalySection(title, subtitle, items, kind, color) {
+// 한 분류의 행들을 렌더 (팀 카드 내부에서 호출)
+function renderAnomalyRows(items, kind) {
   if (items.length === 0) return '';
-  const colors = {
-    red:     { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     val: 'text-red-600' },
-    blue:    { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-700',    val: 'text-blue-600' },
-    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', val: 'text-emerald-600' },
-    slate:   { bg: 'bg-slate-50',   border: 'border-slate-200',   text: 'text-slate-700',   val: 'text-slate-500' }
+  const meta = {
+    up:   { label: '🔺 급증', valColor: 'text-red-600',     bg: 'bg-red-50/40' },
+    down: { label: '🔻 급감', valColor: 'text-blue-600',    bg: 'bg-blue-50/40' },
+    new:  { label: '🆕 신규', valColor: 'text-emerald-600', bg: 'bg-emerald-50/40' },
+    gone: { label: '⏸ 중단', valColor: 'text-slate-500',   bg: 'bg-slate-50/60' }
   };
-  const c = colors[color];
-  let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
-    '<div class="px-4 py-3 ' + c.bg + ' border-b ' + c.border + '">' +
-    '<p class="font-bold text-sm ' + c.text + '">' + title + ' <span class="text-xs font-normal text-slate-500">(' + items.length + '종)</span></p>' +
-    '<p class="text-[11px] text-slate-500 mt-0.5">' + subtitle + '</p>' +
-    '</div>' +
-    '<div class="divide-y divide-slate-100">';
+  const m = meta[kind];
+  let html = '';
   items.forEach(it => {
     let diffHtml = '';
-    if (kind === 'up')        diffHtml = '<span class="font-bold ' + c.val + '">+' + Math.round(it.diffPct) + '%</span>';
-    else if (kind === 'down') diffHtml = '<span class="font-bold ' + c.val + '">' + Math.round(it.diffPct) + '%</span>';
-    else if (kind === 'new')  diffHtml = '<span class="font-bold ' + c.val + '">신규</span>';
-    else if (kind === 'gone') diffHtml = '<span class="font-bold ' + c.val + '">중단</span>';
+    if (kind === 'up')        diffHtml = '<span class="font-bold ' + m.valColor + '">+' + Math.round(it.diffPct) + '%</span>';
+    else if (kind === 'down') diffHtml = '<span class="font-bold ' + m.valColor + '">' + Math.round(it.diffPct) + '%</span>';
+    else if (kind === 'new')  diffHtml = '<span class="font-bold ' + m.valColor + '">신규</span>';
+    else if (kind === 'gone') diffHtml = '<span class="font-bold ' + m.valColor + '">중단</span>';
 
-    html += '<div class="flex items-center text-xs py-2 px-4 gap-2">' +
+    html += '<div class="flex items-center text-xs py-2 px-4 gap-2 ' + m.bg + '">' +
+      '<span class="text-[10px] font-bold ' + m.valColor + ' shrink-0 w-10">' + m.label + '</span>' +
       '<div class="flex-1 min-w-0">' +
       '<p class="text-[11px] text-slate-500 truncate">' + escapeHtml(it.vendor) + '</p>' +
       '<p class="text-slate-800 truncate">' + escapeHtml(it.name) + '</p>' +
@@ -590,6 +637,5 @@ function renderAnomalySection(title, subtitle, items, kind, color) {
       '</div>' +
       '</div>';
   });
-  html += '</div></div>';
   return html;
 }
