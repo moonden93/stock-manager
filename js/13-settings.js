@@ -756,50 +756,48 @@ let draggedTeamIdx = null;
 function handleTeamDragStart(event, idx) {
   draggedTeamIdx = idx;
   event.dataTransfer.effectAllowed = 'move';
-  event.target.classList.add('opacity-40');
+  // 드래그 중인 항목 강조
+  event.currentTarget.style.opacity = '0.3';
+  event.currentTarget.style.transform = 'scale(0.97)';
+  event.currentTarget.style.transition = 'all 0.15s';
 }
 
 function handleTeamDragOver(event) {
   event.preventDefault();
   event.dataTransfer.dropEffect = 'move';
-  // 드롭 위치 표시
+  
   const row = event.currentTarget;
-  if (!row.classList.contains('border-t-4')) {
-    // 드롭 라인 표시
-    document.querySelectorAll('.team-row').forEach(r => {
-      r.classList.remove('border-t-4', 'border-blue-500', 'border-b-4');
-    });
-    row.classList.add('border-t-4', 'border-blue-500');
+  const targetIdx = parseInt(row.getAttribute('data-team-idx'));
+  
+  // 자기 자신 위로는 표시 안함
+  if (targetIdx === draggedTeamIdx) return;
+  
+  // 모든 다른 행의 표시 제거
+  document.querySelectorAll('.team-row').forEach(r => {
+    r.style.borderTop = '';
+    r.style.borderBottom = '';
+    r.style.background = '';
+  });
+  
+  // 마우스 위치에 따라 위/아래 결정
+  const rect = row.getBoundingClientRect();
+  const midpoint = rect.top + rect.height / 2;
+  
+  if (event.clientY < midpoint) {
+    // 위쪽 절반: 이 행 위에 삽입
+    row.style.borderTop = '4px solid #3b82f6';
+    row.style.background = 'linear-gradient(to bottom, #dbeafe 0%, transparent 30%)';
+  } else {
+    // 아래쪽 절반: 이 행 아래에 삽입
+    row.style.borderBottom = '4px solid #3b82f6';
+    row.style.background = 'linear-gradient(to top, #dbeafe 0%, transparent 30%)';
   }
 }
 
 function handleTeamDragLeave(event) {
   // 마우스가 영역을 떠나면 표시 제거
-  event.currentTarget.classList.remove('border-t-4', 'border-blue-500');
-}
-
-function handleTeamDrop(event, targetIdx) {
-  event.preventDefault();
-  if (draggedTeamIdx === null || draggedTeamIdx === targetIdx) return;
-  
-  // teams 배열 재정렬
-  const moved = teams[draggedTeamIdx];
-  teams.splice(draggedTeamIdx, 1);
-  // 위로 옮기는 경우와 아래로 옮기는 경우 인덱스 조정
-  const newIdx = draggedTeamIdx < targetIdx ? targetIdx - 1 : targetIdx;
-  teams.splice(newIdx, 0, moved);
-  
-  saveAll();
-  showToast('"' + moved + '" 위치 변경됨', 'success');
-  draggedTeamIdx = null;
-  renderSettings();
-}
-
-function handleTeamDragEnd(event) {
-  // 정리: 모든 시각적 표시 제거
-  event.target.classList.remove('opacity-40');
-  document.querySelectorAll('.team-row').forEach(r => {
-    r.classList.remove('border-t-4', 'border-blue-500', 'border-b-4', 'opacity-40');
-  });
-  draggedTeamIdx = null;
-}
+  const row = event.currentTarget;
+  // 자식 요소로 이동한 경우는 무시 (깜빡임 방지)
+  if (row.contains(event.relatedTarget)) return;
+  row.style.borderTop = '';
+  row.style.borderBottom = '';
