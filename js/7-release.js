@@ -90,12 +90,12 @@ function renderRelease() {
       (releaseSelectedVendor === v ? 'bg-teal-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
   html += '</div></div>' +
-    '<div class="max-h-[500px] overflow-y-auto divide-y divide-slate-100">';
+    '<div class="divide-y divide-slate-100">';
   
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
-    filtered.slice(0, 100).forEach(item => {
+    filtered.forEach(item => {
       const inCart = cart.find(c => c.itemId === item.id);
       const cartQty = inCart ? inCart.qty : 0;
       const stockColor = item.stock === 0 ? 'text-red-600' : item.stock <= item.minStock ? 'text-amber-600' : 'text-slate-700';
@@ -121,9 +121,6 @@ function renderRelease() {
         (insufficient ? '<p class="text-xs text-amber-700 mt-1">⚠️ 재고보다 많이 담음</p>' : '') +
         '</div>';
     });
-    if (filtered.length > 100) {
-      html += '<div class="py-3 text-center text-xs text-slate-400 bg-slate-50">상위 100개 표시 (전체 ' + filtered.length + '개) · 검색으로 좁혀보세요</div>';
-    }
   }
   
   html += '</div></div></div>';
