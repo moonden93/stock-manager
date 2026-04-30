@@ -194,7 +194,7 @@ function renderItemsSettings() {
     '<p class="text-[11px] text-slate-500 mt-2">💡 Excel로 일괄 수정: 다운로드 → Excel에서 편집 → 업로드 → 변경사항 확인 후 적용</p>' +
     '</div>' +
     '<div class="bg-white px-4 py-3 border-b border-slate-100">' +
-    '<input type="text" id="settings-search" placeholder="🔍 품목 검색..." oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '<input type="text" id="settings-search" placeholder="🔍 품목 검색 (초성도 가능: ㄱㅈ → 거즈)" oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div>' +
     '<div id="settings-items-list" class="divide-y divide-slate-100">';
   
@@ -220,10 +220,9 @@ function renderSettingsItemRow(item) {
 }
 
 function filterSettingsItems() {
-  const term = (document.getElementById('settings-search').value || '').toLowerCase();
-  const filtered = inventory.filter(i => 
-    i.name.toLowerCase().includes(term) || i.vendor.toLowerCase().includes(term)
-  );
+  const term = document.getElementById('settings-search').value || '';
+  // 일반 검색 + 한글 초성 검색
+  const filtered = inventory.filter(i => matchesSearch(i.name, term) || matchesSearch(i.vendor, term));
   const list = document.getElementById('settings-items-list');
   if (filtered.length === 0) {
     list.innerHTML = '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
