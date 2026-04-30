@@ -1,7 +1,7 @@
 // ============================================
 // 9-inbound.js: 입고 화면
 // ============================================
-// 의존: 6-utils-file.js (readFileAsBase64, getFileIcon, formatFileSize)
+// 의존: 4-utils.js (escapeHtml, escapeJs)
 //       모든 이전 모듈
 // 호출자: 99-main.js의 switchTab('inbound')
 
@@ -18,7 +18,7 @@ function renderInbound() {
     }
     return true;
   });
-  
+
   let html = '<div class="space-y-4">' +
     '<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">' +
     '<h2 class="text-lg font-bold text-slate-900 mb-1">📥 입고 등록</h2>' +
@@ -50,7 +50,7 @@ function renderInbound() {
         '</div></div>';
     });
   }
-  
+
   html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
 }
@@ -58,9 +58,6 @@ function renderInbound() {
 function openInboundDialog(itemId) {
   const item = inventory.find(i => i.id === itemId);
   if (!item) return;
-
-  // 첨부 임시 저장소 초기화
-  window._pendingAttachments = [];
 
   // 오늘 날짜 (로컬 기준, YYYY-MM-DD)
   const now = new Date();
@@ -85,82 +82,24 @@ function openInboundDialog(itemId) {
     '<p class="text-xs text-slate-500 mb-4">입고 후: <span id="after-stock" class="font-bold text-emerald-700">' + (item.stock + 1) + '</span></p>' +
 
     // 입고 일자
-    '<div class="mb-4">' +
+    '<div class="mb-2">' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
     '<input type="date" id="inbound-date" value="' + todayStr + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
     '</div>' +
 
-    // 첨부 영역
-    '<div class="border-t pt-4">' +
-    '<label class="text-sm font-bold text-slate-700 mb-2 block">📎 거래명세서/주문서 첨부 (선택)</label>' +
-    '<label class="block w-full px-3 py-4 text-xs text-center text-slate-500 bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer transition">' +
-    '<div class="text-2xl mb-1">📤</div>' +
-    '<p class="font-medium text-slate-600">파일 선택하기</p>' +
-    '<p class="text-[10px] text-slate-400 mt-1">PDF · 이미지 · 엑셀 · 워드 (5MB 이하)</p>' +
-    '<input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.xlsx,.xls,.docx,.doc,.txt,.hwp,.hwpx" onchange="handleInboundFiles(event)" class="hidden" />' +
-    '</label>' +
-    '<div id="inbound-files-list" class="mt-2 space-y-1"></div>' +
-    '</div>' +
-    
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
     '<button onclick="confirmInbound(\'' + item.id + '\')" class="flex-1 py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">✅ 입고 등록</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
-  
+
   const input = document.getElementById('inbound-qty');
   const after = document.getElementById('after-stock');
   input.addEventListener('input', function() {
     after.textContent = item.stock + (parseInt(this.value) || 0);
   });
   setTimeout(() => input.focus(), 100);
-}
-
-async function handleInboundFiles(e) {
-  const files = Array.from(e.target.files || []);
-  for (const file of files) {
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('"' + file.name + '"은(는) 5MB 초과', 'error');
-      continue;
-    }
-    try {
-      const base64 = await readFileAsBase64(file);
-      window._pendingAttachments.push({
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        data: base64
-      });
-    } catch (err) {
-      showToast('파일 읽기 실패: ' + file.name, 'error');
-    }
-  }
-  e.target.value = '';
-  renderInboundFilesList();
-}
-
-function renderInboundFilesList() {
-  const list = document.getElementById('inbound-files-list');
-  if (!list) return;
-  const atts = window._pendingAttachments || [];
-  if (atts.length === 0) { list.innerHTML = ''; return; }
-  let html = '';
-  atts.forEach((att, idx) => {
-    html += '<div class="flex items-center gap-2 px-2 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs">' +
-      '<span class="text-base">' + getFileIcon(att.type) + '</span>' +
-      '<span class="flex-1 truncate text-slate-700">' + escapeHtml(att.name) + '</span>' +
-      '<span class="text-[10px] text-slate-500">' + formatFileSize(att.size) + '</span>' +
-      '<button onclick="removeInboundFile(' + idx + ')" class="text-slate-400 hover:text-red-500 px-1">×</button>' +
-      '</div>';
-  });
-  list.innerHTML = html;
-}
-
-function removeInboundFile(idx) {
-  if (!window._pendingAttachments) return;
-  window._pendingAttachments.splice(idx, 1);
-  renderInboundFilesList();
 }
 
 function adjustQty(delta) {
@@ -182,42 +121,17 @@ function confirmInbound(itemId) {
     ? new Date(dateStr + 'T00:00:00.000Z').toISOString()
     : new Date().toISOString();
 
-  const atts = window._pendingAttachments || [];
-  const historyId = 'H' + Date.now() + '_' + itemId;
-
   item.stock += qty;
   history.push({
-    id: historyId,
+    id: 'H' + Date.now() + '_' + itemId,
     type: 'in',
     date: inboundDate,
-    itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit,
-    hasDocs: atts.length > 0
+    itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit
   });
 
-  // 첨부 문서 저장 (입고문서는 입고일과 동일 처리)
-  if (atts.length > 0) {
-    atts.forEach((att, idx) => {
-      documents.push({
-        id: 'D' + Date.now() + '_' + idx,
-        name: att.name,
-        type: att.type,
-        size: att.size,
-        data: att.data,
-        uploadDate: inboundDate,
-        vendor: item.vendor,
-        itemId: itemId,
-        itemName: item.name,
-        historyId: historyId,
-        category: '입고문서',
-        note: ''
-      });
-    });
-  }
-  
   saveAll();
   updateHeaderStats();
-  window._pendingAttachments = [];
   closeModal();
-  showToast('입고 완료! ' + item.name + ' +' + qty + (atts.length > 0 ? ' (📎 ' + atts.length + '개)' : ''), 'success');
+  showToast('입고 완료! ' + item.name + ' +' + qty, 'success');
   renderInbound();
 }
