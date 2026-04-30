@@ -73,15 +73,18 @@ function renderItemsSettings() {
   let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
     '<div class="px-4 py-3 bg-slate-50 border-b flex items-center justify-between">' +
     '<h3 class="text-sm font-bold text-slate-900">품목 관리 (' + inventory.length + '개, 업체 ' + vendors.length + '개)</h3>' +
+    '<div class="flex gap-2">' +
+    '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel</button>' +
     '<button onclick="openAddItemDialog()" class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700">+ 품목 추가</button>' +
+    '</div>' +
     '</div>' +
     '<div class="px-4 py-3 border-b border-slate-100">' +
     '<input type="text" id="settings-search" placeholder="🔍 품목 검색..." oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div>' +
-    '<div id="settings-items-list" class="max-h-[600px] overflow-y-auto divide-y divide-slate-100">';
+    '<div id="settings-items-list" class="divide-y divide-slate-100">';
   
-  // 처음엔 첫 50개만 표시
-  inventory.slice(0, 50).forEach(item => {
+  // 모든 품목 표시
+  inventory.forEach(item => {
     html += renderSettingsItemRow(item);
   });
   
@@ -115,10 +118,7 @@ function filterSettingsItems() {
     list.innerHTML = '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
     let html = '';
-    filtered.slice(0, 100).forEach(item => { html += renderSettingsItemRow(item); });
-    if (filtered.length > 100) {
-      html += '<div class="py-3 text-center text-xs text-slate-400 bg-slate-50">상위 100개 (전체 ' + filtered.length + '개)</div>';
-    }
+    filtered.forEach(item => { html += renderSettingsItemRow(item); });
     list.innerHTML = html;
   }
 }
@@ -353,4 +353,126 @@ function removeItem(itemId) {
     showToast('삭제됨');
     renderSettings();
   }, '삭제', 'red');
+}
+// ============================================
+// 품목 목록 Excel 다운로드
+// ============================================
+function exportItemsToExcel() {
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel 라이브러리 로드 실패. 페이지를 새로고침해주세요.', 'error');
+    return;
+  }
+  
+  if (inventory.length === 0) {
+    showToast('내보낼 품목이 없습니다', 'error');
+    return;
+  }
+  
+  const today = new Date().toISOString().slice(0, 10);
+  const wb = XLSX.utils.book_new();
+  
+  // 시트 ①: 전체 품목 목록
+  const allRows = [
+    ['치과 재료 품목 목록'],
+    ['추출일', today, '총 품목', inventory.length + '개'],
+    [],
+    ['업체', '품목명', '단위', '단가(원)', '재고', '최소재고', '재고상태']
+  ];
+  
+  // 업체별로 정렬 후 품목명으로 정렬
+  const sorted = [...inventory].sort((a, b) => {
+    if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
+    return a.name.localeCompare(b.name);
+  });
+  
+  sorted.forEach(item => {
+    let status = '정상';
+    if (item.stock === 0) status = '🔴 품절';
+    else if (item.stock <= (item.minStock || 0)) status = '🟡 부족';
+    
+    allRows.push([
+      item.vendor,
+      item.name,
+      item.unit || '',
+      item.price || 0,
+      item.stock || 0,
+      item.minStock || 0,
+      status
+    ]);
+  });
+  
+  const wsAll = XLSX.utils.aoa_to_sheet(allRows);
+  // 단가/재고/최소재고 컬럼에 천 단위 콤마 적용
+  const range = XLSX.utils.decode_range(wsAll['!ref'] || 'A1');
+  for (let R = 4; R <= range.e.r; R++) {
+    [3, 4, 5].forEach(C => {
+      const addr = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = wsAll[addr];
+      if (cell && typeof cell.v === 'number') {
+        cell.t = 'n';
+        cell.z = '#,##0';
+      }
+    });
+  }
+  // 컬럼 너비
+  wsAll['!cols'] = [
+    { wch: 14 }, // 업체
+    { wch: 30 }, // 품목명
+    { wch: 8 },  // 단위
+    { wch: 12 }, // 단가
+    { wch: 8 },  // 재고
+    { wch: 10 }, // 최소재고
+    { wch: 10 }  // 상태
+  ];
+  XLSX.utils.book_append_sheet(wb, wsAll, '전체품목');
+  
+  // 시트 ②: 업체별 시트
+  const vendorGroups = {};
+  inventory.forEach(item => {
+    if (!vendorGroups[item.vendor]) vendorGroups[item.vendor] = [];
+    vendorGroups[item.vendor].push(item);
+  });
+  
+  Object.keys(vendorGroups).sort().forEach(vendor => {
+    const items = vendorGroups[vendor].sort((a, b) => a.name.localeCompare(b.name));
+    const rows = [
+      [vendor + ' 품목 목록'],
+      ['총 품목', items.length + '개'],
+      [],
+      ['품목명', '단위', '단가(원)', '재고', '최소재고']
+    ];
+    
+    items.forEach(item => {
+      rows.push([
+        item.name,
+        item.unit || '',
+        item.price || 0,
+        item.stock || 0,
+        item.minStock || 0
+      ]);
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const r = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    for (let R = 3; R <= r.e.r; R++) {
+      [2, 3, 4].forEach(C => {
+        const addr = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[addr];
+        if (cell && typeof cell.v === 'number') {
+          cell.t = 'n';
+          cell.z = '#,##0';
+        }
+      });
+    }
+    ws['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 10 }];
+    
+    // 시트명 정리 (31자 제한, 특수문자 제거)
+    let sheetName = String(vendor).replace(/[\\/?*\[\]:]/g, '_');
+    if (sheetName.length > 31) sheetName = sheetName.slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+  
+  const filename = '치과재료_품목목록_' + today + '.xlsx';
+  XLSX.writeFile(wb, filename);
+  showToast('Excel 다운로드 완료 (' + (Object.keys(vendorGroups).length + 1) + '개 시트)', 'success');
 }
