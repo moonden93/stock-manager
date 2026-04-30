@@ -369,6 +369,24 @@ function completeRequest(requestId) {
 // ============================================
 // 완료 처리 모달 (반출 담당자 / 반출 일자 입력)
 // ============================================
+
+// YYYY-MM-DD 문자열 -> 한글 요일 (로컬 기준)
+function dowKor(yyyymmdd) {
+  const parts = yyyymmdd.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return '';
+  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  return days[new Date(parts[0], parts[1] - 1, parts[2]).getDay()];
+}
+
+// 날짜 input 변경 시 라벨 옆 요일 갱신
+function updateReleaseDateDow() {
+  const input = document.getElementById('release-date');
+  const span = document.getElementById('release-date-dow');
+  if (!input || !span) return;
+  const dow = dowKor(input.value);
+  span.textContent = dow ? '(' + dow + ')' : '';
+}
+
 function openCompleteRequestModal(requestId, summary) {
   // 오늘 날짜 (로컬 기준)
   const now = new Date();
@@ -390,10 +408,10 @@ function openCompleteRequestModal(requestId, summary) {
     '<button id="releaser-btn-이충현" onclick="selectReleaser(\'이충현\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">이충현</button>' +
     '<button id="releaser-btn-주경심" onclick="selectReleaser(\'주경심\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">주경심</button>' +
     '</div></div>' +
-    // 반출 일자
+    // 반출 일자 (라벨 옆에 요일 표시)
     '<div>' +
-    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자</label>' +
-    '<input type="date" id="release-date" value="' + todayStr + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자 <span id="release-date-dow" class="text-slate-500 font-normal">(' + dowKor(todayStr) + ')</span></label>' +
+    '<input type="date" id="release-date" value="' + todayStr + '" oninput="updateReleaseDateDow()" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
