@@ -111,5 +111,33 @@
 <!-- 5. 메인 진입점 (반드시 마지막) -->
 <script src="js/99-main.js"></script>
 
+<!-- 6. Firebase SDK (모든 JS 로드 후) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCTbS9JLCiGIjqviYrW5_KMIZOSA95oYSU",
+    authDomain: "moon-dental-stock.firebaseapp.com",
+    projectId: "moon-dental-stock",
+    storageBucket: "moon-dental-stock.firebasestorage.app",
+    messagingSenderId: "630268704768",
+    appId: "1:630268704768:web:06c0da645ed160ce1c40e5"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window.firebaseDB = db;
+  window.firebaseDoc = doc;
+  window.firebaseGetDoc = getDoc;
+  window.firebaseSetDoc = setDoc;
+  window.firebaseOnSnapshot = onSnapshot;
+  window.firebaseServerTimestamp = serverTimestamp;
+  window.firebaseReady = true;
+
+  window.dispatchEvent(new Event('firebaseReady'));
+</script>
+
 </body>
 </html>

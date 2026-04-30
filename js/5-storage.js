@@ -161,9 +161,9 @@ function migrateTeamsV2(currentTeams) {
 }
 
 // ============================================
-// 모든 데이터 저장
+// localStorage 저장 (오프라인 백업)
 // ============================================
-function saveAll() {
+function saveToLocalStorage() {
   try {
     localStorage.setItem('mc_inventory', JSON.stringify(inventory));
     localStorage.setItem('mc_history', JSON.stringify(history));
@@ -178,6 +178,88 @@ function saveAll() {
       console.error('저장 실패:', e);
     }
   }
+}
+
+// ============================================
+// Firebase Firestore 저장 (클라우드 메인)
+// ============================================
+async function saveToFirebase() {
+  if (!window.firebaseReady) return;
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    await window.firebaseSetDoc(docRef, {
+      inventory: inventory,
+      history: history,
+      requests: requests,
+      teams: teams,
+      teamMembers: teamMembers,
+      documents: documents,
+      lastUpdated: window.firebaseServerTimestamp()
+    });
+    console.log('✅ Firebase 저장 성공');
+  } catch (err) {
+    console.error('❌ Firebase 저장 실패:', err);
+    if (typeof showToast === 'function') showToast('클라우드 저장 실패 (로컬은 저장됨)', 'error');
+  }
+}
+
+// ============================================
+// Firebase Firestore에서 로드
+// ============================================
+async function loadFromFirebase() {
+  if (!window.firebaseReady) return false;
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    const snapshot = await window.firebaseGetDoc(docRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      if (data.inventory) inventory = data.inventory;
+      if (data.history) history = data.history;
+      if (data.requests) requests = data.requests;
+      if (data.teams) teams = data.teams;
+      if (data.teamMembers) teamMembers = data.teamMembers;
+      if (data.documents) documents = data.documents;
+      saveToLocalStorage();
+      console.log('✅ Firebase 로드 성공');
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('❌ Firebase 로드 실패:', err);
+    return false;
+  }
+}
+
+// ============================================
+// Firebase 실시간 동기화 리스너
+// ============================================
+function setupFirebaseSync() {
+  if (!window.firebaseReady) return;
+  const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+  window.firebaseOnSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
+      const data = snapshot.data();
+      if (data.inventory) inventory = data.inventory;
+      if (data.history) history = data.history;
+      if (data.requests) requests = data.requests;
+      if (data.teams) teams = data.teams;
+      if (data.teamMembers) teamMembers = data.teamMembers;
+      if (data.documents) documents = data.documents;
+      saveToLocalStorage();
+      if (typeof updateHeaderStats === 'function') updateHeaderStats();
+      const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
+      if (typeof renderFn === 'function') renderFn();
+      console.log('🔄 동기화 완료');
+    }
+  });
+}
+
+// ============================================
+// 모든 데이터 저장 (localStorage + Firebase)
+// ============================================
+function saveAll() {
+  saveToLocalStorage();
+  saveToFirebase(); // 비동기, await 안 함 (fire-and-forget)
 }
 
 // ============================================
