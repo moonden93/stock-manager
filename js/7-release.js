@@ -9,6 +9,26 @@ let releaseSelectedRequester = '';
 let releaseSelectedVendor = '';
 let releaseSearchTerm = '';
 
+// ============================================
+// 팀 그리드 레이아웃 정의 (4행)
+// ============================================
+// 각 행은 한 줄에 표시되는 팀들의 배열
+// 표준 팀이 없는 경우(사용자가 삭제) 그 자리는 빈 칸으로 둠
+// 표준에 없는 사용자 추가 팀은 마지막 "기타" 행에 자동 추가됨
+const RELEASE_TEAM_ROWS = [
+  ["9층 공통", "Dr. 이승주팀", "Dr. 권혜진팀", "Dr. 이수연팀"],
+  ["10층 공통", "Dr. 병원장팀", "Dr. 이창률팀"],
+  ["11층 공통", "Dr. 이영일팀", "Dr. 정석형팀", "Dr. 김세일팀"],
+  ["기공실"]
+];
+
+// 표준 팀 평탄화 (사용자 추가 팀 판단용)
+function getStandardTeams() {
+  const flat = [];
+  RELEASE_TEAM_ROWS.forEach(row => row.forEach(t => flat.push(t)));
+  return flat;
+}
+
 function renderRelease() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];
@@ -29,14 +49,53 @@ function renderRelease() {
     '<span class="w-7 h-7 ' + (releaseSelectedTeam ? 'bg-emerald-500' : 'bg-teal-500') + ' text-white rounded-full flex items-center justify-center font-bold">' + (releaseSelectedTeam ? '✓' : '1') + '</span>' +
     '<h3 class="font-bold text-slate-900">팀 선택</h3>' +
     (releaseSelectedTeam ? '<span class="ml-auto text-sm text-emerald-700 font-bold">' + escapeHtml(releaseSelectedTeam) + '</span>' : '') +
-    '</div><div class="p-3 grid grid-cols-2 sm:grid-cols-3 gap-2">';
+    '</div>' +
+    '<div class="p-3 space-y-2">';
   
-  teams.forEach(team => {
-    const isSelected = releaseSelectedTeam === team;
-    html += '<button onclick="selectReleaseTeam(\'' + escapeJs(team) + '\')" class="py-3 px-2 rounded-lg font-bold text-sm transition ' + 
-      (isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200') + '">' + 
-      escapeHtml(team) + '</button>';
+  // 4행 그리드 렌더링
+  RELEASE_TEAM_ROWS.forEach(row => {
+    html += '<div class="grid grid-cols-4 gap-2">';
+    row.forEach(team => {
+      // teams 배열(localStorage 기반)에 있는 팀만 활성화, 없으면 흐리게
+      const exists = teams.includes(team);
+      if (!exists) {
+        // 운영자가 삭제한 표준 팀은 빈 칸 처리 (자리 유지)
+        html += '<div></div>';
+        return;
+      }
+      const isSelected = releaseSelectedTeam === team;
+      html += '<button onclick="selectReleaseTeam(\'' + escapeJs(team) + '\')" class="py-3 px-2 rounded-lg font-bold text-sm transition ' + 
+        (isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200') + '">' + 
+        escapeHtml(team) + '</button>';
+    });
+    // 행에 빈 자리 채우기 (4칸 미만이면 빈 div로 채워서 정렬 유지)
+    for (let i = row.length; i < 4; i++) {
+      html += '<div></div>';
+    }
+    html += '</div>';
   });
+
+  // 표준에 없는 사용자 추가 팀들 (있으면 마지막에 별도 표시)
+  const standard = getStandardTeams();
+  const extraTeams = teams.filter(t => !standard.includes(t));
+  if (extraTeams.length > 0) {
+    html += '<div class="pt-2 border-t border-slate-100">' +
+      '<p class="text-[11px] text-slate-500 mb-2 px-1">기타 팀</p>' +
+      '<div class="grid grid-cols-4 gap-2">';
+    extraTeams.forEach(team => {
+      const isSelected = releaseSelectedTeam === team;
+      html += '<button onclick="selectReleaseTeam(\'' + escapeJs(team) + '\')" class="py-3 px-2 rounded-lg font-bold text-sm transition ' + 
+        (isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200') + '">' + 
+        escapeHtml(team) + '</button>';
+    });
+    // 4칸 정렬용 빈 칸
+    const remainder = extraTeams.length % 4;
+    if (remainder !== 0) {
+      for (let i = 0; i < (4 - remainder); i++) html += '<div></div>';
+    }
+    html += '</div></div>';
+  }
+
   html += '</div></div>';
   
   // Step 2: 담당자
