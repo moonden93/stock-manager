@@ -65,15 +65,26 @@ function renderSettings() {
 
   let html = '<div class="space-y-4">';
 
-  // 미저장 변경사항이 있을 때만 저장/되돌리기 바 노출
-  if (settingsDirty) {
-    html += '<div class="sticky top-0 z-30 bg-amber-50 border-2 border-amber-300 rounded-2xl px-4 py-3 shadow-sm flex items-center gap-2">' +
-      '<span class="text-xl">⚠️</span>' +
-      '<span class="text-sm font-medium text-slate-800 flex-1">저장하지 않은 변경사항이 있습니다</span>' +
-      '<button onclick="cancelSettings()" class="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-50">되돌리기</button>' +
-      '<button onclick="saveSettings()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">💾 저장</button>' +
-      '</div>';
-  }
+  // 저장/되돌리기 바: 항상 노출. dirty 여부에 따라 색상/문구만 변경.
+  const barClass = settingsDirty
+    ? 'bg-amber-50 border-amber-300'
+    : 'bg-slate-50 border-slate-200';
+  const barIcon = settingsDirty ? '⚠️' : '✓';
+  const barMsg = settingsDirty
+    ? '저장하지 않은 변경사항이 있습니다'
+    : '변경사항 없음';
+  const saveBtnClass = settingsDirty
+    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+    : 'bg-slate-200 text-slate-400 cursor-not-allowed';
+  const cancelBtnClass = settingsDirty
+    ? 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+    : 'bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed';
+  html += '<div class="sticky top-0 z-30 ' + barClass + ' border-2 rounded-2xl px-4 py-3 shadow-sm flex items-center gap-2">' +
+    '<span class="text-xl">' + barIcon + '</span>' +
+    '<span class="text-sm font-medium text-slate-800 flex-1">' + barMsg + '</span>' +
+    '<button onclick="cancelSettings()" class="px-3 py-1.5 ' + cancelBtnClass + ' text-xs font-bold rounded-lg">되돌리기</button>' +
+    '<button onclick="saveSettings()" class="px-3 py-1.5 ' + saveBtnClass + ' text-xs font-bold rounded-lg">💾 저장</button>' +
+    '</div>';
 
   html +=
     '<div class="bg-slate-100 border border-slate-200 rounded-2xl p-4">' +
