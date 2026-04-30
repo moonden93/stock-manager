@@ -132,7 +132,13 @@ function openUploadDialog() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   let vendorOptions = '<option value="">-- 업체 선택 --</option>';
   vendors.forEach(v => { vendorOptions += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
-  
+
+  // 오늘 날짜 (로컬 기준, YYYY-MM-DD)
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-purple-50 border-b border-purple-200">' +
@@ -145,6 +151,8 @@ function openUploadDialog() {
     '<select id="upload-category" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-purple-500">' +
     '<option>계약서</option><option>주문서</option><option>거래명세서</option><option>입고문서</option><option>기타</option>' +
     '</select></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">📅 문서 일자</label>' +
+    '<input type="date" id="doc-upload-date" value="' + todayStr + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-purple-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">메모 (선택)</label>' +
     '<input type="text" id="upload-note" placeholder="예: 2026년 정기 계약서" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-purple-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">파일 *</label>' +
@@ -211,13 +219,20 @@ function confirmUpload() {
   const vendor = (document.getElementById('upload-vendor').value || document.getElementById('upload-vendor-select').value || '').trim();
   const category = document.getElementById('upload-category').value;
   const note = (document.getElementById('upload-note').value || '').trim();
-  
+
   if (!vendor) { showToast('업체 입력 필요', 'error'); return; }
   if (!window._pendingUpload || window._pendingUpload.files.length === 0) {
     showToast('파일 선택 필요', 'error');
     return;
   }
-  
+
+  // 문서 일자 (사용자 입력값, 빈 값이면 오늘)
+  const dateInput = document.getElementById('doc-upload-date');
+  const dateStr = dateInput && dateInput.value;
+  const docDate = dateStr
+    ? new Date(dateStr + 'T00:00:00.000Z').toISOString()
+    : new Date().toISOString();
+
   window._pendingUpload.files.forEach((f, idx) => {
     documents.push({
       id: 'D' + Date.now() + '_' + idx,
@@ -225,7 +240,7 @@ function confirmUpload() {
       type: f.type,
       size: f.size,
       data: f.data,
-      uploadDate: new Date().toISOString(),
+      uploadDate: docDate,
       vendor: vendor,
       category: category,
       note: note

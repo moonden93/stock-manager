@@ -61,10 +61,16 @@ function renderInbound() {
 function openInboundDialog(itemId) {
   const item = inventory.find(i => i.id === itemId);
   if (!item) return;
-  
+
   // 첨부 임시 저장소 초기화
   window._pendingAttachments = [];
-  
+
+  // 오늘 날짜 (로컬 기준, YYYY-MM-DD)
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
@@ -80,7 +86,13 @@ function openInboundDialog(itemId) {
     '<button onclick="adjustQty(1)" class="w-12 h-14 bg-slate-200 hover:bg-slate-300 rounded-xl text-2xl font-bold">+</button>' +
     '</div>' +
     '<p class="text-xs text-slate-500 mb-4">입고 후: <span id="after-stock" class="font-bold text-emerald-700">' + (item.stock + 1) + '</span></p>' +
-    
+
+    // 입고 일자
+    '<div class="mb-4">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
+    '<input type="date" id="inbound-date" value="' + todayStr + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
+    '</div>' +
+
     // 첨부 영역
     '<div class="border-t pt-4">' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📎 거래명세서/주문서 첨부 (선택)</label>' +
@@ -165,20 +177,27 @@ function confirmInbound(itemId) {
   const item = inventory.find(i => i.id === itemId);
   const qty = parseInt(document.getElementById('inbound-qty').value) || 0;
   if (qty < 1) { showToast('수량 입력 필요', 'error'); return; }
-  
+
+  // 입고 일자 (사용자 입력값, 빈 값이면 오늘)
+  const dateInput = document.getElementById('inbound-date');
+  const dateStr = dateInput && dateInput.value;
+  const inboundDate = dateStr
+    ? new Date(dateStr + 'T00:00:00.000Z').toISOString()
+    : new Date().toISOString();
+
   const atts = window._pendingAttachments || [];
   const historyId = 'H' + Date.now() + '_' + itemId;
-  
+
   item.stock += qty;
   history.push({
     id: historyId,
     type: 'in',
-    date: new Date().toISOString(),
+    date: inboundDate,
     itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit,
     hasDocs: atts.length > 0
   });
-  
-  // 첨부 문서 저장
+
+  // 첨부 문서 저장 (입고문서는 입고일과 동일 처리)
   if (atts.length > 0) {
     atts.forEach((att, idx) => {
       documents.push({
@@ -187,7 +206,7 @@ function confirmInbound(itemId) {
         type: att.type,
         size: att.size,
         data: att.data,
-        uploadDate: new Date().toISOString(),
+        uploadDate: inboundDate,
         vendor: item.vendor,
         itemId: itemId,
         itemName: item.name,
