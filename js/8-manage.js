@@ -208,10 +208,15 @@ function renderManage() {
             'onchange="toggleItemCheck(\'' + gid + '\', \'' + it.id + '\', this.checked)" ' +
             'class="w-5 h-5 accent-emerald-600 cursor-pointer flex-shrink-0" />' +
             '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor) + '</p>' +
-            '<p class="text-sm text-slate-800 truncate">' + escapeHtml(it.name) + '</p>' +
-            '<p class="text-xs text-slate-500">요청 ' + it.qty + ' · 재고 ' + stock +
-            (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '') + '</p>' +
+            '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</p>' +
+            '<p class="text-sm text-slate-800 truncate">' +
+            (it.isCustom ? '<span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1 align-middle">🆕 직접 요청</span>' : '') +
+            escapeHtml(it.name) + '</p>' +
+            '<p class="text-xs text-slate-500">요청 ' + it.qty +
+            (it.isCustom
+              ? ' · <button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700">상세보기</button>'
+              : ' · 재고 ' + stock + (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '')) +
+            '</p>' +
             '</div>';
 
           if (isChecked) {
@@ -232,11 +237,14 @@ function renderManage() {
 
           html += '</div>';
         } else {
-          // 완료 상태: 기존 표시 방식
+          // 완료 상태: 기존 표시 방식 (직접 요청은 🆕 배지 + 상세보기)
           html += '<div class="flex items-center text-xs text-slate-600 py-1">' +
             '<span class="text-slate-400 mr-2">·</span>' +
-            '<span class="text-slate-500 mr-2">' + escapeHtml(it.vendor) + '</span>' +
-            '<span class="flex-1">' + escapeHtml(it.name) + '</span>' +
+            '<span class="text-slate-500 mr-2">' + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</span>' +
+            '<span class="flex-1 truncate">' +
+            (it.isCustom ? '<span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1 align-middle">🆕</span>' : '') +
+            escapeHtml(it.name) + '</span>' +
+            (it.isCustom ? '<button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700 mr-2 whitespace-nowrap">상세보기</button>' : '') +
             '<span class="font-bold text-blue-600 ml-2">' + it.qty + '</span>' +
             '</div>';
         }
@@ -492,26 +500,33 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     const item = inventory.find(i => i.id === it.itemId);
     const releaseQty = sel[it.id].qty;
 
+    // 재고 차감 (인벤토리에 있는 정규 품목만; 직접 요청은 인벤토리 외부)
     if (item) {
-      // 재고 차감
       item.stock -= releaseQty;
-      // 이력 기록 (releasedBy/releasedDate 포함, requestId는 항목의 원래 값 사용)
-      history.push({
-        id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
-        type: 'out',
-        date: completeDate,
-        itemId: it.itemId,
-        vendor: it.vendor,
-        name: it.name,
-        qty: releaseQty,
-        unit: it.unit,
-        team: it.team,
-        requester: it.requester,
-        requestId: it.requestId,
-        releasedBy: releasedBy,
-        releasedDate: releasedDate
-      });
     }
+
+    // 이력 기록은 항상 (직접 요청 포함). isCustom일 때 설명/사진 보존.
+    const histRec = {
+      id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
+      type: 'out',
+      date: completeDate,
+      itemId: it.itemId,
+      vendor: it.vendor,
+      name: it.name,
+      qty: releaseQty,
+      unit: it.unit,
+      team: it.team,
+      requester: it.requester,
+      requestId: it.requestId,
+      releasedBy: releasedBy,
+      releasedDate: releasedDate
+    };
+    if (it.isCustom) {
+      histRec.isCustom = true;
+      histRec.customDescription = it.customDescription || '';
+      histRec.customImages = it.customImages || [];
+    }
+    history.push(histRec);
 
     if (releaseQty === it.qty) {
       // 전량 반출: 요청 status 변경
@@ -522,7 +537,7 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     } else {
       // 부분 반출: 원래 요청은 잔여 수량으로 유지, 완료된 부분을 별도 레코드로 추가
       it.qty = it.qty - releaseQty;
-      requests.push({
+      const newReq = {
         id: it.id + '_done_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
         requestId: it.requestId,
         status: 'completed',
@@ -537,7 +552,13 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
         requester: it.requester,
         releasedBy: releasedBy,
         releasedDate: releasedDate
-      });
+      };
+      if (it.isCustom) {
+        newReq.isCustom = true;
+        newReq.customDescription = it.customDescription || '';
+        newReq.customImages = it.customImages || [];
+      }
+      requests.push(newReq);
     }
   });
 
@@ -599,4 +620,70 @@ function deleteRequestGroup(groupId) {
     showToast(isPending ? '대기 요청이 삭제되었습니다' : '완료 요청이 취소되고 재고가 복원되었습니다');
     renderManage();
   }, confirmText, 'red');
+}
+
+// ============================================
+// 직접 요청(isCustom) 상세 보기 모달
+// ============================================
+function openCustomItemDetail(reqItemId) {
+  const item = requests.find(r => r.id === reqItemId);
+  if (!item || !item.isCustom) return;
+
+  const desc = item.customDescription || '';
+  const images = item.customImages || [];
+
+  let imagesHtml;
+  if (images.length > 0) {
+    imagesHtml = '<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">';
+    images.forEach((img, idx) => {
+      imagesHtml += '<button onclick="previewCustomImage(\'' + escapeJs(reqItemId) + '\', ' + idx + ')" ' +
+        'class="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200 hover:border-teal-400 transition">' +
+        '<img src="' + img.data + '" alt="' + escapeHtml(img.name) + '" class="w-full h-full object-cover" />' +
+        '</button>';
+    });
+    imagesHtml += '</div>';
+  } else {
+    imagesHtml = '<p class="text-sm text-slate-400 italic">첨부된 사진 없음</p>';
+  }
+
+  const dt = new Date(item.date);
+  const dateStr = dt.getFullYear() + '-' +
+    String(dt.getMonth() + 1).padStart(2, '0') + '-' +
+    String(dt.getDate()).padStart(2, '0');
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
+    '<h3 class="text-base font-bold text-slate-900">🆕 ' + escapeHtml(item.name) + '</h3>' +
+    '<p class="text-xs text-slate-500 mt-1">' +
+    escapeHtml(item.vendor || '업체 미지정') + ' · ' + escapeHtml(item.team) + ' · ' + escapeHtml(item.requester) + '님 · ' +
+    dateStr + ' · 요청 ' + item.qty + (item.unit ? ' ' + escapeHtml(item.unit) : '') +
+    '</p></div>' +
+    '<div class="px-5 py-5 overflow-y-auto space-y-4">' +
+    '<div><h4 class="text-sm font-bold text-slate-700 mb-2">상세 설명</h4>' +
+    (desc
+      ? '<p class="text-sm text-slate-700 whitespace-pre-line leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-100">' + escapeHtml(desc) + '</p>'
+      : '<p class="text-sm text-slate-400 italic">설명 없음</p>') +
+    '</div>' +
+    '<div><h4 class="text-sm font-bold text-slate-700 mb-2">참고 사진 (' + images.length + '장)</h4>' +
+    imagesHtml + '</div>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t">' +
+    '<button onclick="closeModal()" class="w-full py-3 bg-slate-200 hover:bg-slate-300 rounded-lg font-bold text-slate-700">닫기</button>' +
+    '</div></div></div>';
+
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+// 직접 요청 사진 풀스크린 프리뷰 (닫으면 모달 전체가 닫힘 - 단일 컨테이너 구조)
+function previewCustomImage(reqItemId, imageIdx) {
+  const item = requests.find(r => r.id === reqItemId);
+  if (!item || !item.customImages || !item.customImages[imageIdx]) return;
+  const img = item.customImages[imageIdx];
+  const html = '<div class="fixed inset-0 bg-black/90 z-[60] flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<img src="' + img.data + '" alt="' + escapeHtml(img.name) + '" ' +
+    'class="max-w-full max-h-full object-contain" onclick="event.stopPropagation()" />' +
+    '<button onclick="closeModal()" class="fixed top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 text-white rounded-full text-xl flex items-center justify-center">✕</button>' +
+    '</div>';
+  document.getElementById('modal-container').innerHTML = html;
 }

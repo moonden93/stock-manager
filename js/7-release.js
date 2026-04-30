@@ -9,6 +9,10 @@ let releaseSelectedRequester = '';
 let releaseSelectedVendor = '';
 let releaseSearchTerm = '';
 
+// 목록에 없는 품목 직접 요청 (아코디언 + 폼 상태)
+let releaseShowCustomForm = false;
+// window._pendingCustomItem / window._pendingCustomImages 는 toggleCustomForm 시점에 lazy init
+
 // ============================================
 // 팀 그리드 레이아웃 정의 (4행)
 // ============================================
@@ -180,11 +184,173 @@ function renderRelease() {
         '</div>';
     });
   }
-  
-  html += '</div></div></div>';
-  
+
+  // items 목록 종료
+  html += '</div>';
+
+  // ── 목록에 없는 품목 직접 요청 (아코디언) ──
+  html += '<div class="border-t border-slate-200">' +
+    '<button onclick="toggleCustomForm()" class="w-full px-4 py-3 flex items-center justify-between hover:bg-slate-50 transition">' +
+    '<span class="text-sm font-bold text-slate-700">📌 목록에 없는 품목 직접 요청</span>' +
+    '<span class="text-slate-400">' + (releaseShowCustomForm ? '▲' : '▼') + '</span>' +
+    '</button>' +
+    (releaseShowCustomForm ? renderCustomItemForm() : '') +
+    '</div>';
+
+  // 카드 + 루트 종료
+  html += '</div></div>';
+
   document.getElementById('page-content').innerHTML = html;
   renderCartBar();
+}
+
+// 직접 요청 폼 HTML 생성 (state는 window._pendingCustomItem / _pendingCustomImages 에서)
+function renderCustomItemForm() {
+  const draft = window._pendingCustomItem || { name: '', vendor: '', qty: 1, unit: '', description: '' };
+  const images = window._pendingCustomImages || [];
+
+  let imagePreview = '';
+  if (images.length > 0) {
+    imagePreview = '<div class="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-2">';
+    images.forEach((img, idx) => {
+      imagePreview += '<div class="relative aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200">' +
+        '<img src="' + img.data + '" alt="' + escapeHtml(img.name) + '" class="w-full h-full object-cover" />' +
+        '<button onclick="removeCustomImage(' + idx + ')" class="absolute top-1 right-1 w-6 h-6 bg-black/60 hover:bg-red-500 text-white rounded-full text-xs flex items-center justify-center">×</button>' +
+        '</div>';
+    });
+    imagePreview += '</div>';
+  }
+
+  return '<div class="px-4 pb-4 space-y-3 bg-slate-50/50">' +
+    // 품목명
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">품목명 <span class="text-red-500">*</span></label>' +
+    '<input type="text" id="custom-name" value="' + escapeHtml(draft.name) + '" ' +
+    'oninput="window._pendingCustomItem.name = this.value" ' +
+    'placeholder="예: 새로운 임플란트 드릴" class="w-full px-3 py-2.5 text-base bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
+
+    // 업체 + 수량/단위 (반응형: 모바일 1열, sm 2열)
+    '<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">' +
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">업체명</label>' +
+    '<input type="text" id="custom-vendor" value="' + escapeHtml(draft.vendor) + '" ' +
+    'oninput="window._pendingCustomItem.vendor = this.value" ' +
+    'placeholder="아는 경우 입력 (예: 새한치재)" class="w-full px-3 py-2.5 text-base bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
+    '<div class="grid grid-cols-2 gap-2">' +
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">수량 <span class="text-red-500">*</span></label>' +
+    '<input type="number" id="custom-qty" value="' + (draft.qty || 1) + '" min="1" ' +
+    'oninput="window._pendingCustomItem.qty = parseInt(this.value) || 1" ' +
+    'class="w-full px-3 py-2.5 text-base bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">단위</label>' +
+    '<input type="text" id="custom-unit" value="' + escapeHtml(draft.unit) + '" ' +
+    'oninput="window._pendingCustomItem.unit = this.value" ' +
+    'placeholder="ea, box" class="w-full px-3 py-2.5 text-base bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
+    '</div>' +
+    '</div>' +
+
+    // 설명
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">상세 설명</label>' +
+    '<textarea id="custom-desc" rows="3" ' +
+    'oninput="window._pendingCustomItem.description = this.value" ' +
+    'placeholder="제품의 특징, 규격, 용도 등을 자세히 적어주세요" ' +
+    'class="w-full px-3 py-2.5 text-base bg-white border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500">' +
+    escapeHtml(draft.description) + '</textarea></div>' +
+
+    // 사진
+    '<div><label class="text-xs font-bold text-slate-700 mb-1 block">참고 사진</label>' +
+    '<label class="block w-full px-3 py-3 text-xs text-center text-slate-500 bg-white border-2 border-dashed border-slate-300 rounded-xl hover:border-teal-400 hover:bg-teal-50 cursor-pointer transition">' +
+    '<div class="text-2xl mb-1">📸</div>' +
+    '<p class="font-medium">사진 추가 (여러 장 가능, 각 5MB 이하)</p>' +
+    '<input type="file" multiple accept="image/*" onchange="handleCustomImages(event)" class="hidden" />' +
+    '</label>' +
+    imagePreview +
+    '</div>' +
+
+    // 추가 버튼
+    '<button onclick="addCustomItemToCart()" class="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold">+ 장바구니에 추가</button>' +
+    '</div>';
+}
+
+// 아코디언 토글 (열 때 임시 저장소 lazy init)
+function toggleCustomForm() {
+  releaseShowCustomForm = !releaseShowCustomForm;
+  if (releaseShowCustomForm) {
+    if (!window._pendingCustomItem) {
+      window._pendingCustomItem = { name: '', vendor: '', qty: 1, unit: '', description: '' };
+    }
+    if (!window._pendingCustomImages) {
+      window._pendingCustomImages = [];
+    }
+  }
+  renderRelease();
+}
+
+// 사진 업로드 처리
+async function handleCustomImages(e) {
+  const files = Array.from(e.target.files || []);
+  if (!window._pendingCustomImages) window._pendingCustomImages = [];
+  for (const file of files) {
+    if (!file.type || !file.type.startsWith('image/')) {
+      showToast('"' + file.name + '"은(는) 이미지 파일이 아닙니다', 'error');
+      continue;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('"' + file.name + '"은(는) 5MB 초과', 'error');
+      continue;
+    }
+    try {
+      const base64 = await readFileAsBase64(file);
+      window._pendingCustomImages.push({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        data: base64
+      });
+    } catch (err) {
+      showToast('파일 읽기 실패: ' + file.name, 'error');
+    }
+  }
+  e.target.value = '';
+  renderRelease();
+}
+
+function removeCustomImage(idx) {
+  if (!window._pendingCustomImages) return;
+  window._pendingCustomImages.splice(idx, 1);
+  renderRelease();
+}
+
+// 직접 요청 항목을 cart에 추가
+function addCustomItemToCart() {
+  const draft = window._pendingCustomItem || {};
+  const name = (draft.name || '').trim();
+  const qty = parseInt(draft.qty) || 0;
+  if (!name) { showToast('품목명 입력 필요', 'error'); return; }
+  if (qty < 1) { showToast('수량은 1 이상이어야 합니다', 'error'); return; }
+
+  const customId = 'CUSTOM_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const images = (window._pendingCustomImages || []).slice();
+
+  cart.push({
+    itemId: customId,
+    qty: qty,
+    vendor: (draft.vendor || '').trim(),
+    name: name,
+    unit: (draft.unit || '').trim(),
+    stock: 0,
+    isCustom: true,
+    customDescription: (draft.description || '').trim(),
+    customImages: images
+  });
+
+  // 폼 초기화 + 아코디언 자동 닫기
+  window._pendingCustomItem = { name: '', vendor: '', qty: 1, unit: '', description: '' };
+  window._pendingCustomImages = [];
+  releaseShowCustomForm = false;
+  showToast('직접 요청 항목 담김: ' + name);
+  renderRelease();
 }
 
 function selectReleaseTeam(team) {
@@ -242,9 +408,10 @@ function renderCartBar() {
     '<div class="flex items-center gap-2 mb-2 overflow-x-auto pb-1">';
   cart.forEach(c => {
     inner += '<div class="flex-shrink-0 px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-full text-xs flex items-center gap-1.5">' +
+      (c.isCustom ? '<span title="직접 요청">🆕</span>' : '') +
       '<span class="font-medium">' + escapeHtml(c.name) + '</span>' +
       '<span class="font-bold text-teal-700">' + c.qty + '</span>' +
-      '<button onclick="removeFromCart(\'' + c.itemId + '\')" class="text-slate-400 hover:text-red-500 ml-1">×</button>' +
+      '<button onclick="removeFromCart(\'' + escapeJs(c.itemId) + '\')" class="text-slate-400 hover:text-red-500 ml-1">×</button>' +
       '</div>';
   });
   inner += '</div>' +
@@ -277,7 +444,7 @@ function confirmRelease() {
     
     // 요청만 등록 (재고 차감/이력 기록 안 함)
     cart.forEach(c => {
-      requests.push({
+      const reqRecord = {
         id: reqId + '_' + c.itemId,
         requestId: reqId,
         status: 'pending',
@@ -289,7 +456,14 @@ function confirmRelease() {
         unit: c.unit,
         team: releaseSelectedTeam,
         requester: releaseSelectedRequester
-      });
+      };
+      // 직접 요청 항목: 설명 + 사진 보존
+      if (c.isCustom) {
+        reqRecord.isCustom = true;
+        reqRecord.customDescription = c.customDescription || '';
+        reqRecord.customImages = c.customImages || [];
+      }
+      requests.push(reqRecord);
     });
     
     saveAll();
