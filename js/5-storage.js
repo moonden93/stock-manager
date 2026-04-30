@@ -161,10 +161,54 @@ function migrateTeamsV2(currentTeams) {
 }
 
 // ============================================
+// 데이터 sanity check
+// ============================================
+// 핵심 데이터(inventory + teams)가 둘 다 비어있으면 "비정상 상태"로 간주.
+// → 이런 데이터를 클라우드에 올리지도, 클라우드에서 받지도 않는다.
+// 빈 상태 발생 케이스: 새 브라우저/시크릿 탭/캐시 청소 직후 첫 로드, 어떤 버그로 메모리가 비었을 때 등
+function isDataSuspicious(d) {
+  if (!d) return true;
+  const invEmpty = !Array.isArray(d.inventory) || d.inventory.length === 0;
+  const teamsEmpty = !Array.isArray(d.teams) || d.teams.length === 0;
+  return invEmpty && teamsEmpty;
+}
+
+// 변경사항 적용 헬퍼: 클라우드 데이터를 로컬에 반영하되 보호 규칙 적용
+// - inventory/teams: 클라우드가 비어있으면 무시 (옛 정상 데이터 보호)
+// - teamMembers: 클라우드가 비어있고 로컬에 있으면 로컬 유지
+//   (담당자 데이터가 한 번 사라지면 다시 복구하기 번거로워서 특별 보호)
+// - history/requests/documents: 빈 배열도 정상 변경으로 간주 (의도적 삭제 가능)
+function applyCloudData(data) {
+  if (Array.isArray(data.inventory) && data.inventory.length > 0) inventory = data.inventory;
+  if (Array.isArray(data.history)) history = data.history;
+  if (Array.isArray(data.requests)) requests = data.requests;
+  if (Array.isArray(data.teams) && data.teams.length > 0) teams = data.teams;
+
+  const cloudMembers = data.teamMembers;
+  const cloudHasMembers = cloudMembers && typeof cloudMembers === 'object' && Object.keys(cloudMembers).length > 0;
+  const localHasMembers = teamMembers && Object.keys(teamMembers).length > 0;
+  if (cloudHasMembers) {
+    teamMembers = cloudMembers;
+  } else if (!localHasMembers) {
+    teamMembers = cloudMembers || {};
+  }
+  // (cloud 비어있고 local에 있으면) 로컬 유지 → 다음 saveAll 시 자동으로 클라우드에 반영
+
+  if (Array.isArray(data.documents)) documents = data.documents;
+}
+
+// ============================================
 // localStorage 저장 (오프라인 백업)
 // ============================================
 function saveToLocalStorage() {
   try {
+    // 직전 상태의 핵심 데이터(teams + teamMembers) 백업
+    // teamMembers/teams가 갑자기 사라져도 콘솔에서 mcRestoreFromBackup() 으로 복구 가능
+    const prevTeams = localStorage.getItem('mc_teams');
+    const prevMembers = localStorage.getItem('mc_team_members');
+    if (prevTeams && prevTeams !== '[]') localStorage.setItem('mc_teams_backup', prevTeams);
+    if (prevMembers && prevMembers !== '{}') localStorage.setItem('mc_team_members_backup', prevMembers);
+
     localStorage.setItem('mc_inventory', JSON.stringify(inventory));
     localStorage.setItem('mc_history', JSON.stringify(history));
     localStorage.setItem('mc_requests', JSON.stringify(requests));
@@ -185,6 +229,14 @@ function saveToLocalStorage() {
 // ============================================
 async function saveToFirebase() {
   if (!window.firebaseReady) return;
+
+  // 보호: 비정상적으로 비어있는 상태로 클라우드를 덮어쓰지 않음
+  // (앱 초기화 도중 또는 새 브라우저의 첫 로드 직후 saveAll이 호출돼도 클라우드 데이터 보존)
+  if (isDataSuspicious({ inventory, teams })) {
+    console.warn('⚠️ 로컬 데이터가 비어있어 Firebase 저장을 거부했습니다 (클라우드 보호 모드)');
+    return;
+  }
+
   try {
     const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
     await window.firebaseSetDoc(docRef, {
@@ -204,7 +256,7 @@ async function saveToFirebase() {
 }
 
 // ============================================
-// Firebase Firestore에서 로드
+// Firebase Firestore에서 로드 (앱 시작 시 1회)
 // ============================================
 async function loadFromFirebase() {
   if (!window.firebaseReady) return false;
@@ -213,12 +265,14 @@ async function loadFromFirebase() {
     const snapshot = await window.firebaseGetDoc(docRef);
     if (snapshot.exists()) {
       const data = snapshot.data();
-      if (data.inventory) inventory = data.inventory;
-      if (data.history) history = data.history;
-      if (data.requests) requests = data.requests;
-      if (data.teams) teams = data.teams;
-      if (data.teamMembers) teamMembers = data.teamMembers;
-      if (data.documents) documents = data.documents;
+
+      // 보호: 클라우드가 비정상이면 무시. 로컬이 메인 역할 → 다음 saveAll에서 정상화됨.
+      if (isDataSuspicious(data)) {
+        console.warn('⚠️ Firebase 데이터가 비어있어 무시 (로컬 데이터 유지)');
+        return false;
+      }
+
+      applyCloudData(data);
       saveToLocalStorage();
       console.log('✅ Firebase 로드 성공');
       return true;
@@ -239,12 +293,14 @@ function setupFirebaseSync() {
   window.firebaseOnSnapshot(docRef, (snapshot) => {
     if (snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
       const data = snapshot.data();
-      if (data.inventory) inventory = data.inventory;
-      if (data.history) history = data.history;
-      if (data.requests) requests = data.requests;
-      if (data.teams) teams = data.teams;
-      if (data.teamMembers) teamMembers = data.teamMembers;
-      if (data.documents) documents = data.documents;
+
+      // 보호: 다른 기기가 빈 상태로 동기화 데이터를 보냈다면 무시 (이번 사고의 원인)
+      if (isDataSuspicious(data)) {
+        console.warn('⚠️ Firebase 동기화 데이터가 비어있어 무시 (현재 데이터 유지)');
+        return;
+      }
+
+      applyCloudData(data);
       saveToLocalStorage();
       if (typeof updateHeaderStats === 'function') updateHeaderStats();
       const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
@@ -253,6 +309,34 @@ function setupFirebaseSync() {
     }
   });
 }
+
+// ============================================
+// 백업 복구 (콘솔에서 mcRestoreFromBackup() 호출)
+// ============================================
+// 만약 또 teamMembers가 사라지면 F12 → Console에서 mcRestoreFromBackup() 입력 → Enter
+function mcRestoreFromBackup() {
+  const backupTeams = localStorage.getItem('mc_teams_backup');
+  const backupMembers = localStorage.getItem('mc_team_members_backup');
+  if (!backupTeams && !backupMembers) {
+    console.warn('백업이 없습니다');
+    return false;
+  }
+  try {
+    if (backupTeams) teams = JSON.parse(backupTeams);
+    if (backupMembers) teamMembers = JSON.parse(backupMembers);
+    saveAll();
+    if (typeof updateHeaderStats === 'function') updateHeaderStats();
+    if (typeof switchTab === 'function') switchTab(currentTab);
+    console.log('✅ 백업에서 복구 완료. 팀:', teams.length + '개, 담당자 그룹:', Object.keys(teamMembers).length + '개');
+    if (typeof showToast === 'function') showToast('백업에서 복구 완료', 'success');
+    return true;
+  } catch (e) {
+    console.error('복구 실패:', e);
+    return false;
+  }
+}
+// 콘솔에서 호출 가능하도록 window에 노출
+if (typeof window !== 'undefined') window.mcRestoreFromBackup = mcRestoreFromBackup;
 
 // ============================================
 // 모든 데이터 저장 (localStorage + Firebase)
