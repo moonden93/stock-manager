@@ -199,7 +199,7 @@ function renderCartBar() {
     '<button onclick="cart = []; renderRelease();" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700">취소</button>' +
     '<button onclick="confirmRelease()" ' + (!canSubmit ? 'disabled' : '') + ' class="big-btn flex-1 max-w-[240px] ' +
     (canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed') + '">' +
-    '✅ 반출 완료 (' + totalQty + '개)</button>' +
+    '📋 반출 요청 (' + totalQty + '개)</button>' +
     '</div></div>';
   cartBar.innerHTML = inner;
 }
@@ -211,63 +211,39 @@ function updateCartBar() {
 function confirmRelease() {
   if (!releaseSelectedTeam || !releaseSelectedRequester || cart.length === 0) return;
   
-  const insufficient = cart.filter(c => {
-    const item = inventory.find(i => i.id === c.itemId);
-    return item && c.qty > item.stock;
-  });
-  
-  let message = '[' + releaseSelectedTeam + '] ' + releaseSelectedRequester + '님에게\n\n';
+  let message = '[' + releaseSelectedTeam + '] ' + releaseSelectedRequester + '님 반출 요청\n\n';
   message += cart.map(function(c) { return '· ' + c.name + ' ' + c.qty + c.unit; }).join('\n');
-  message += '\n\n총 ' + cart.reduce(function(s, c) { return s + c.qty; }, 0) + '개를 반출하시겠습니까?';
-  if (insufficient.length > 0) {
-    message += '\n\n⚠️ 주의: ' + insufficient.length + '개 품목이 재고보다 많습니다';
-  }
+  message += '\n\n총 ' + cart.reduce(function(s, c) { return s + c.qty; }, 0) + '개를 요청하시겠습니까?';
+  message += '\n\n💡 실제 반출(재고 차감)은 [요청관리]에서 "반출 완료" 버튼을 눌러야 처리됩니다.';
   
-  askConfirm('반출 확인', message, function() {
+  askConfirm('반출 요청 등록', message, function() {
     const reqId = 'R' + Date.now();
     const reqDate = new Date().toISOString();
     
-    // 재고 차감 + 이력 + 요청 기록
+    // 요청만 등록 (재고 차감/이력 기록 안 함)
     cart.forEach(c => {
-      const item = inventory.find(i => i.id === c.itemId);
-      if (item) {
-        item.stock -= c.qty;
-        history.push({
-          id: 'H' + Date.now() + '_' + c.itemId,
-          type: 'out',
-          date: reqDate,
-          itemId: c.itemId,
-          vendor: c.vendor,
-          name: c.name,
-          qty: c.qty,
-          unit: c.unit,
-          team: releaseSelectedTeam,
-          requester: releaseSelectedRequester,
-          requestId: reqId
-        });
-        requests.push({
-          id: reqId + '_' + c.itemId,
-          requestId: reqId,
-          status: 'completed',
-          date: reqDate,
-          itemId: c.itemId,
-          vendor: c.vendor,
-          name: c.name,
-          qty: c.qty,
-          unit: c.unit,
-          team: releaseSelectedTeam,
-          requester: releaseSelectedRequester
-        });
-      }
+      requests.push({
+        id: reqId + '_' + c.itemId,
+        requestId: reqId,
+        status: 'pending',
+        date: reqDate,
+        itemId: c.itemId,
+        vendor: c.vendor,
+        name: c.name,
+        qty: c.qty,
+        unit: c.unit,
+        team: releaseSelectedTeam,
+        requester: releaseSelectedRequester
+      });
     });
     
     saveAll();
     updateHeaderStats();
     const totalQty = cart.reduce((s, c) => s + c.qty, 0);
-    showToast('반출 완료! ' + cart.length + '종 ' + totalQty + '개', 'success');
+    showToast('반출 요청 등록 완료! ' + cart.length + '종 ' + totalQty + '개 (요청관리에서 처리하세요)', 'success');
     cart = [];
     releaseSearchTerm = '';
     releaseSelectedVendor = '';
     renderRelease();
-  }, '예, 반출', 'teal');
+  }, '예, 요청', 'teal');
 }
