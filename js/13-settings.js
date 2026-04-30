@@ -3,9 +3,11 @@
 // ============================================
 // 의존: 5-storage.js (saveAll, applyPrebuiltHistory, inventory, teams, teamMembers)
 //       모든 이전 모듈
+//       SheetJS(XLSX) 라이브러리 (index.html에서 CDN 로드)
 // 호출자: 99-main.js의 switchTab('settings')
 
 let settingsTab = 'teams'; // teams / items
+let pendingExcelChanges = null; // Excel 업로드 미리보기 임시 저장
 
 function renderSettings() {
   let html = '<div class="space-y-4">' +
@@ -71,12 +73,18 @@ function renderItemsSettings() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   
   let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
-    '<div class="px-4 py-3 bg-slate-50 border-b flex items-center justify-between">' +
+    '<div class="px-4 py-3 bg-slate-50 border-b">' +
+    '<div class="flex items-center justify-between mb-2">' +
     '<h3 class="text-sm font-bold text-slate-900">품목 관리 (' + inventory.length + '개, 업체 ' + vendors.length + '개)</h3>' +
-    '<div class="flex gap-2">' +
-    '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel</button>' +
+    '</div>' +
+    '<div class="flex flex-wrap gap-2">' +
+    '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel 다운로드</button>' +
+    '<label class="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 cursor-pointer">' +
+    '📤 Excel 업로드<input type="file" accept=".xlsx,.xls" onchange="handleExcelUpload(event)" class="hidden" />' +
+    '</label>' +
     '<button onclick="openAddItemDialog()" class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700">+ 품목 추가</button>' +
     '</div>' +
+    '<p class="text-[11px] text-slate-500 mt-2">💡 Excel로 일괄 수정: 다운로드 → Excel에서 편집 → 업로드 → 변경사항 확인 후 적용</p>' +
     '</div>' +
     '<div class="px-4 py-3 border-b border-slate-100">' +
     '<input type="text" id="settings-search" placeholder="🔍 품목 검색..." oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
@@ -120,7 +128,7 @@ function filterSettingsItems() {
 }
 
 // ============================================
-// 팀 추가
+// 팀 관련 함수들
 // ============================================
 function openAddTeamDialog() {
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
@@ -173,7 +181,6 @@ function saveTeamName(idx) {
   if (newName === oldName) { closeModal(); return; }
   if (teams.includes(newName)) { showToast('이미 존재하는 팀', 'error'); return; }
   teams[idx] = newName;
-  // teamMembers 키 변경
   if (teamMembers[oldName]) {
     teamMembers[newName] = teamMembers[oldName];
     delete teamMembers[oldName];
@@ -392,39 +399,31 @@ function exportItemsToExcel() {
   const today = new Date().toISOString().slice(0, 10);
   const wb = XLSX.utils.book_new();
   
-  // 시트 ①: 전체 품목 목록
+  // 시트 ①: 전체 품목 목록 (이게 업로드용 표준 형식!)
+  // 헤더: 업체 | 품목명 | 단위 | 단가(원) | 재고 | 부족기준
   const allRows = [
-    ['치과 재료 품목 목록'],
-    ['추출일', today, '총 품목', inventory.length + '개'],
-    [],
-    ['업체', '품목명', '단위', '단가(원)', '재고', '부족기준', '재고상태']
+    ['업체', '품목명', '단위', '단가(원)', '재고', '부족기준']
   ];
   
-  // 업체별로 정렬 후 품목명으로 정렬
   const sorted = [...inventory].sort((a, b) => {
     if (a.vendor !== b.vendor) return a.vendor.localeCompare(b.vendor);
     return a.name.localeCompare(b.name);
   });
   
   sorted.forEach(item => {
-    let status = '정상';
-    if (item.stock === 0) status = '🔴 품절';
-    else if (item.stock <= (item.minStock || 0)) status = '🟡 부족';
-    
     allRows.push([
       item.vendor,
       item.name,
       item.unit || '',
       item.price || 0,
       item.stock || 0,
-      item.minStock || 0,
-      status
+      item.minStock || 0
     ]);
   });
   
   const wsAll = XLSX.utils.aoa_to_sheet(allRows);
   const range = XLSX.utils.decode_range(wsAll['!ref'] || 'A1');
-  for (let R = 4; R <= range.e.r; R++) {
+  for (let R = 1; R <= range.e.r; R++) {
     [3, 4, 5].forEach(C => {
       const addr = XLSX.utils.encode_cell({ r: R, c: C });
       const cell = wsAll[addr];
@@ -435,56 +434,310 @@ function exportItemsToExcel() {
     });
   }
   wsAll['!cols'] = [
-    { wch: 14 }, { wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 10 }
+    { wch: 14 }, { wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 10 }
   ];
-  XLSX.utils.book_append_sheet(wb, wsAll, '전체품목');
-  
-  // 시트 ②: 업체별 시트
-  const vendorGroups = {};
-  inventory.forEach(item => {
-    if (!vendorGroups[item.vendor]) vendorGroups[item.vendor] = [];
-    vendorGroups[item.vendor].push(item);
-  });
-  
-  Object.keys(vendorGroups).sort().forEach(vendor => {
-    const items = vendorGroups[vendor].sort((a, b) => a.name.localeCompare(b.name));
-    const rows = [
-      [vendor + ' 품목 목록'],
-      ['총 품목', items.length + '개'],
-      [],
-      ['품목명', '단위', '단가(원)', '재고', '부족기준']
-    ];
-    
-    items.forEach(item => {
-      rows.push([
-        item.name,
-        item.unit || '',
-        item.price || 0,
-        item.stock || 0,
-        item.minStock || 0
-      ]);
-    });
-    
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const r = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    for (let R = 3; R <= r.e.r; R++) {
-      [2, 3, 4].forEach(C => {
-        const addr = XLSX.utils.encode_cell({ r: R, c: C });
-        const cell = ws[addr];
-        if (cell && typeof cell.v === 'number') {
-          cell.t = 'n';
-          cell.z = '#,##0';
-        }
-      });
-    }
-    ws['!cols'] = [{ wch: 30 }, { wch: 8 }, { wch: 12 }, { wch: 8 }, { wch: 10 }];
-    
-    let sheetName = String(vendor).replace(/[\\/?*\[\]:]/g, '_');
-    if (sheetName.length > 31) sheetName = sheetName.slice(0, 31);
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-  });
+  XLSX.utils.book_append_sheet(wb, wsAll, '품목목록');
   
   const filename = '치과재료_품목목록_' + today + '.xlsx';
   XLSX.writeFile(wb, filename);
-  showToast('Excel 다운로드 완료 (' + (Object.keys(vendorGroups).length + 1) + '개 시트)', 'success');
+  showToast('Excel 다운로드 완료 (수정 후 다시 업로드 가능)', 'success');
+}
+
+// ============================================
+// Excel 업로드 - 변경사항 분석 및 미리보기
+// ============================================
+function handleExcelUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  if (typeof XLSX === 'undefined') {
+    showToast('Excel 라이브러리 로드 실패. 페이지를 새로고침해주세요.', 'error');
+    event.target.value = '';
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      
+      // 첫 번째 시트 사용
+      const sheetName = wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      
+      if (rows.length < 2) {
+        showToast('Excel 파일이 비어있거나 형식이 잘못되었습니다', 'error');
+        event.target.value = '';
+        return;
+      }
+      
+      // 헤더 검증
+      const header = rows[0].map(h => String(h).trim());
+      const requiredCols = ['업체', '품목명', '단위', '단가(원)', '재고', '부족기준'];
+      const colIdx = {};
+      let missing = [];
+      requiredCols.forEach(col => {
+        // 정확히 일치하거나, '단가' 같은 부분 일치도 허용
+        let idx = header.findIndex(h => h === col);
+        if (idx === -1 && col === '단가(원)') idx = header.findIndex(h => h === '단가');
+        if (idx === -1 && col === '부족기준') idx = header.findIndex(h => h === '부족 기준' || h === '최소재고');
+        if (idx === -1) missing.push(col);
+        else colIdx[col] = idx;
+      });
+      
+      if (missing.length > 0) {
+        showToast('Excel 형식 오류: ' + missing.join(', ') + ' 컬럼이 없습니다', 'error');
+        event.target.value = '';
+        return;
+      }
+      
+      // 데이터 파싱 + 변경사항 분석
+      analyzeExcelChanges(rows, colIdx);
+      
+    } catch (err) {
+      console.error('Excel 파싱 오류:', err);
+      showToast('Excel 파일을 읽을 수 없습니다', 'error');
+    }
+    event.target.value = '';
+  };
+  reader.onerror = function() {
+    showToast('파일 읽기 실패', 'error');
+    event.target.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Excel 데이터와 현재 inventory를 비교하여 변경사항 추출
+function analyzeExcelChanges(rows, colIdx) {
+  const excelItems = [];
+  const errors = [];
+  
+  // Excel 행 파싱 (헤더 다음 줄부터)
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    
+    const vendor = String(row[colIdx['업체']] || '').trim();
+    const name = String(row[colIdx['품목명']] || '').trim();
+    const unit = String(row[colIdx['단위']] || '').trim();
+    const price = parseInt(row[colIdx['단가(원)']]) || 0;
+    const stock = parseInt(row[colIdx['재고']]);
+    const minStock = parseInt(row[colIdx['부족기준']]);
+    
+    // 빈 행은 건너뜀
+    if (!vendor && !name) continue;
+    
+    // 필수 항목 체크
+    if (!vendor || !name || !unit) {
+      errors.push((i + 1) + '행: 업체/품목명/단위는 필수');
+      continue;
+    }
+    if (isNaN(stock) || stock < 0) {
+      errors.push((i + 1) + '행 [' + name + ']: 재고가 잘못됨');
+      continue;
+    }
+    if (isNaN(minStock) || minStock < 0) {
+      errors.push((i + 1) + '행 [' + name + ']: 부족기준이 잘못됨');
+      continue;
+    }
+    
+    excelItems.push({ vendor, name, unit, price, stock, minStock });
+  }
+  
+  if (errors.length > 0) {
+    showToast('오류 ' + errors.length + '건: ' + errors[0] + (errors.length > 1 ? ' 외 ' + (errors.length - 1) + '건' : ''), 'error');
+    return;
+  }
+  
+  if (excelItems.length === 0) {
+    showToast('Excel에 유효한 데이터가 없습니다', 'error');
+    return;
+  }
+  
+  // 매칭 키: 업체+품목명
+  const makeKey = (it) => it.vendor + '||' + it.name;
+  
+  const currentMap = {};
+  inventory.forEach(it => { currentMap[makeKey(it)] = it; });
+  
+  const excelKeys = new Set(excelItems.map(makeKey));
+  
+  const toAdd = [];      // Excel에만 있음 → 추가
+  const toUpdate = [];   // 둘 다 있는데 다름 → 수정
+  const unchanged = [];  // 둘 다 있고 같음 → 변동 없음
+  const toDelete = [];   // 시스템에만 있음 → 삭제 후보
+  
+  excelItems.forEach(ex => {
+    const key = makeKey(ex);
+    const cur = currentMap[key];
+    if (!cur) {
+      toAdd.push(ex);
+    } else {
+      // 변경사항 비교
+      const diff = [];
+      if ((cur.unit || '') !== ex.unit) diff.push({ field: '단위', from: cur.unit, to: ex.unit });
+      if ((cur.price || 0) !== ex.price) diff.push({ field: '단가', from: cur.price || 0, to: ex.price });
+      if ((cur.stock || 0) !== ex.stock) diff.push({ field: '재고', from: cur.stock || 0, to: ex.stock });
+      if ((cur.minStock || 0) !== ex.minStock) diff.push({ field: '부족기준', from: cur.minStock || 0, to: ex.minStock });
+      
+      if (diff.length > 0) {
+        toUpdate.push({ current: cur, excel: ex, diff });
+      } else {
+        unchanged.push(ex);
+      }
+    }
+  });
+  
+  inventory.forEach(it => {
+    if (!excelKeys.has(makeKey(it))) {
+      toDelete.push(it);
+    }
+  });
+  
+  if (toAdd.length === 0 && toUpdate.length === 0 && toDelete.length === 0) {
+    showToast('변경사항이 없습니다 (' + unchanged.length + '개 모두 동일)', 'info');
+    return;
+  }
+  
+  // 미리보기 모달 표시
+  pendingExcelChanges = { toAdd, toUpdate, toDelete, unchanged };
+  showExcelPreviewModal();
+}
+
+function showExcelPreviewModal() {
+  const c = pendingExcelChanges;
+  if (!c) return;
+  
+  let html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeExcelPreview()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📋 변경사항 미리보기</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">아래 내용을 확인 후 [적용] 버튼을 누르면 반영됩니다</p>' +
+    '</div>' +
+    '<div class="px-5 py-4 overflow-y-auto flex-1 space-y-4 text-sm">';
+  
+  // 요약
+  html += '<div class="grid grid-cols-3 gap-2 text-center">' +
+    '<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">' +
+    '<p class="text-xs text-emerald-700 font-bold">✅ 새로 추가</p>' +
+    '<p class="text-2xl font-bold text-emerald-700">' + c.toAdd.length + '</p>' +
+    '</div>' +
+    '<div class="bg-blue-50 border border-blue-200 rounded-lg p-3">' +
+    '<p class="text-xs text-blue-700 font-bold">✏️ 수정</p>' +
+    '<p class="text-2xl font-bold text-blue-700">' + c.toUpdate.length + '</p>' +
+    '</div>' +
+    '<div class="bg-red-50 border border-red-200 rounded-lg p-3">' +
+    '<p class="text-xs text-red-700 font-bold">🗑️ 삭제</p>' +
+    '<p class="text-2xl font-bold text-red-700">' + c.toDelete.length + '</p>' +
+    '</div>' +
+    '</div>' +
+    '<p class="text-xs text-slate-500 text-center">변동 없음: ' + c.unchanged.length + '개</p>';
+  
+  // 추가 목록
+  if (c.toAdd.length > 0) {
+    html += '<div class="border-2 border-emerald-200 rounded-lg overflow-hidden">' +
+      '<div class="px-3 py-2 bg-emerald-50 text-xs font-bold text-emerald-700">✅ 새로 추가될 품목 (' + c.toAdd.length + '개)</div>' +
+      '<div class="max-h-48 overflow-y-auto divide-y divide-slate-100">';
+    c.toAdd.forEach(it => {
+      html += '<div class="px-3 py-2 text-xs">' +
+        '<span class="text-slate-500">' + escapeHtml(it.vendor) + '</span> · ' +
+        '<span class="font-medium">' + escapeHtml(it.name) + '</span>' +
+        ' <span class="text-slate-500">(' + escapeHtml(it.unit) + ', ' + it.price.toLocaleString() + '원, 재고 ' + it.stock + ')</span>' +
+        '</div>';
+    });
+    html += '</div></div>';
+  }
+  
+  // 수정 목록
+  if (c.toUpdate.length > 0) {
+    html += '<div class="border-2 border-blue-200 rounded-lg overflow-hidden">' +
+      '<div class="px-3 py-2 bg-blue-50 text-xs font-bold text-blue-700">✏️ 수정될 품목 (' + c.toUpdate.length + '개)</div>' +
+      '<div class="max-h-64 overflow-y-auto divide-y divide-slate-100">';
+    c.toUpdate.forEach(u => {
+      html += '<div class="px-3 py-2 text-xs">' +
+        '<p class="font-medium text-slate-900">' + escapeHtml(u.current.vendor) + ' / ' + escapeHtml(u.current.name) + '</p>' +
+        '<div class="ml-2 mt-1 space-y-0.5">';
+      u.diff.forEach(d => {
+        const fromStr = (d.field === '단가') ? d.from.toLocaleString() + '원' : d.from;
+        const toStr = (d.field === '단가') ? d.to.toLocaleString() + '원' : d.to;
+        html += '<p class="text-[11px] text-slate-600">· ' + d.field + ': <span class="text-slate-400 line-through">' + fromStr + '</span> → <span class="font-bold text-blue-700">' + toStr + '</span></p>';
+      });
+      html += '</div></div>';
+    });
+    html += '</div></div>';
+  }
+  
+  // 삭제 목록
+  if (c.toDelete.length > 0) {
+    html += '<div class="border-2 border-red-200 rounded-lg overflow-hidden">' +
+      '<div class="px-3 py-2 bg-red-50 text-xs font-bold text-red-700">🗑️ 삭제될 품목 (' + c.toDelete.length + '개)' +
+      ' <span class="font-normal text-slate-600">- Excel에 없는 품목들</span></div>' +
+      '<div class="px-3 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-800">⚠️ 기존 반출/입고 이력은 유지됩니다 (통계에는 그대로 보임)</div>' +
+      '<div class="max-h-48 overflow-y-auto divide-y divide-slate-100">';
+    c.toDelete.forEach(it => {
+      html += '<div class="px-3 py-2 text-xs">' +
+        '<span class="text-slate-500">' + escapeHtml(it.vendor) + '</span> · ' +
+        '<span class="font-medium">' + escapeHtml(it.name) + '</span>' +
+        '</div>';
+    });
+    html += '</div></div>';
+  }
+  
+  html += '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeExcelPreview()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="applyExcelChanges()" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700">✅ 적용</button>' +
+    '</div></div></div>';
+  
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+function closeExcelPreview() {
+  pendingExcelChanges = null;
+  closeModal();
+}
+
+function applyExcelChanges() {
+  const c = pendingExcelChanges;
+  if (!c) return;
+  
+  // 추가
+  c.toAdd.forEach(ex => {
+    inventory.push({
+      id: 'M' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      vendor: ex.vendor,
+      name: ex.name,
+      unit: ex.unit,
+      price: ex.price,
+      stock: ex.stock,
+      minStock: ex.minStock,
+      category: '치과재료'
+    });
+  });
+  
+  // 수정
+  c.toUpdate.forEach(u => {
+    const item = inventory.find(i => i.id === u.current.id);
+    if (item) {
+      item.unit = u.excel.unit;
+      item.price = u.excel.price;
+      item.stock = u.excel.stock;
+      item.minStock = u.excel.minStock;
+    }
+  });
+  
+  // 삭제
+  const deleteIds = new Set(c.toDelete.map(it => it.id));
+  inventory = inventory.filter(it => !deleteIds.has(it.id));
+  
+  saveAll();
+  updateHeaderStats();
+  pendingExcelChanges = null;
+  closeModal();
+  
+  const msg = '적용 완료! 추가 ' + c.toAdd.length + ' / 수정 ' + c.toUpdate.length + ' / 삭제 ' + c.toDelete.length;
+  showToast(msg, 'success');
+  renderSettings();
 }
