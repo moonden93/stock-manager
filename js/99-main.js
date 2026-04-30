@@ -14,9 +14,10 @@
 // 탭 전환
 // ============================================
 function switchTab(name) {
-  // 설정 탭은 비밀번호 입력 필요 (매번)
-  if (name === 'settings') {
-    const pw = prompt('🔒 설정 화면\n비밀번호를 입력하세요:');
+  // 설정·문서함 탭은 비밀번호 입력 필요 (매번)
+  if (name === 'settings' || name === 'documents') {
+    const label = name === 'settings' ? '설정 화면' : '문서함';
+    const pw = prompt('🔒 ' + label + '\n비밀번호를 입력하세요:');
     if (pw === null) return; // 취소 누름
     if (pw !== '2911') {
       showToast('비밀번호가 틀렸습니다', 'error');
