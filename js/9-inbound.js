@@ -35,12 +35,12 @@ function renderInbound() {
     html += '<button onclick="inboundSelectedVendor = \'' + escapeJs(v) + '\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
       (inboundSelectedVendor === v ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div><div class="max-h-[600px] overflow-y-auto divide-y divide-slate-100">';
-  
+  html += '</div></div><div class="divide-y divide-slate-100">';
+
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
   } else {
-    filtered.slice(0, 100).forEach(item => {
+    filtered.forEach(item => {
       html += '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
         '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
@@ -49,9 +49,6 @@ function renderInbound() {
         '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
         '</div></div>';
     });
-    if (filtered.length > 100) {
-      html += '<div class="py-3 text-center text-xs text-slate-400 bg-slate-50">상위 100개 (전체 ' + filtered.length + '개)</div>';
-    }
   }
   
   html += '</div></div></div>';

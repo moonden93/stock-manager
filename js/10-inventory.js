@@ -9,8 +9,6 @@
 let invSearchTerm = '';
 let invFilter = 'all';
 let invVendorFilter = '';
-let invPage = 1;
-const INV_PER_PAGE = 50;
 
 function renderInventory() {
   const out = inventory.filter(i => i.stock === 0).length;
@@ -27,48 +25,40 @@ function renderInventory() {
     filtered = filtered.filter(i => i.name.toLowerCase().includes(t) || i.vendor.toLowerCase().includes(t));
   }
   
-  const totalPages = Math.max(1, Math.ceil(filtered.length / INV_PER_PAGE));
-  if (invPage > totalPages) invPage = 1;
-  const pageStart = (invPage - 1) * INV_PER_PAGE;
-  const paged = filtered.slice(pageStart, pageStart + INV_PER_PAGE);
-  
   let html = '<div class="space-y-4">' +
     '<div class="grid grid-cols-3 gap-2">' +
-    '<button onclick="invFilter = \'all\'; invPage = 1; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' + 
+    '<button onclick="invFilter = \'all\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' + 
     (invFilter === 'all' ? 'border-slate-700' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">전체</p><p class="text-2xl font-bold text-slate-900">' + inventory.length + '</p></button>' +
-    '<button onclick="invFilter = \'low\'; invPage = 1; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
+    '<button onclick="invFilter = \'low\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'low' ? 'border-amber-500' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">🟡 부족</p><p class="text-2xl font-bold text-amber-600">' + low + '</p></button>' +
-    '<button onclick="invFilter = \'out\'; invPage = 1; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
+    '<button onclick="invFilter = \'out\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'out' ? 'border-red-500' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">🔴 품절</p><p class="text-2xl font-bold text-red-600">' + out + '</p></button>' +
     '</div>' +
     
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
-    '<input type="text" value="' + escapeHtml(invSearchTerm) + '" oninput="invSearchTerm = this.value; invPage = 1; renderInventory();" ' +
+    '<input type="text" value="' + escapeHtml(invSearchTerm) + '" oninput="invSearchTerm = this.value; renderInventory();" ' +
     'placeholder="🔍 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><div class="flex flex-wrap gap-1">' +
-    '<button onclick="invVendorFilter = \'\'; invPage = 1; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
+    '<button onclick="invVendorFilter = \'\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
     (!invVendorFilter ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체 업체</button>';
   vendors.forEach(v => {
-    html += '<button onclick="invVendorFilter = \'' + escapeJs(v) + '\'; invPage = 1; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
+    html += '<button onclick="invVendorFilter = \'' + escapeJs(v) + '\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
       (invVendorFilter === v ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
   html += '</div></div>' +
-    '<div class="px-4 py-2 bg-slate-50 text-xs text-slate-600 flex items-center justify-between">' +
-    '<span><strong>' + filtered.length + '</strong>개 · 클릭해서 수정</span>';
-  if (totalPages > 1) {
-    html += '<span class="text-slate-500">페이지 ' + invPage + ' / ' + totalPages + '</span>';
-  }
-  html += '</div>' +
+    '<div class="px-4 py-2 bg-slate-50 text-xs text-slate-600">' +
+    '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정' +
+    '</div>' +
     '<div class="divide-y divide-slate-100">';
-  
+
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">결과 없음</div>';
   } else {
-    paged.forEach(item => {
+    filtered.forEach(item => {
       const status = item.stock === 0 ? 'out' : item.stock <= item.minStock ? 'low' : 'normal';
       const colors = { out: 'bg-red-50', low: 'bg-amber-50/50', normal: '' };
       const icons = { out: '🔴', low: '🟡', normal: '🟢' };
@@ -89,25 +79,7 @@ function renderInventory() {
   }
   
   html += '</div>';
-  
-  // 페이지 네비게이션
-  if (totalPages > 1) {
-    html += '<div class="px-3 py-3 bg-slate-50 border-t flex items-center justify-center gap-1">';
-    html += '<button onclick="invPage = 1; renderInventory();" ' + (invPage === 1 ? 'disabled' : '') + ' class="w-8 h-8 text-sm bg-white border border-slate-200 rounded disabled:opacity-30">«</button>';
-    html += '<button onclick="invPage = Math.max(1, invPage - 1); renderInventory();" ' + (invPage === 1 ? 'disabled' : '') + ' class="w-8 h-8 text-sm bg-white border border-slate-200 rounded disabled:opacity-30">‹</button>';
-    
-    const startPage = Math.max(1, invPage - 2);
-    const endPage = Math.min(totalPages, startPage + 4);
-    for (let p = startPage; p <= endPage; p++) {
-      html += '<button onclick="invPage = ' + p + '; renderInventory();" class="min-w-[32px] h-8 px-2 text-sm rounded font-medium ' +
-        (p === invPage ? 'bg-orange-600 text-white' : 'bg-white border border-slate-200 text-slate-700') + '">' + p + '</button>';
-    }
-    
-    html += '<button onclick="invPage = Math.min(' + totalPages + ', invPage + 1); renderInventory();" ' + (invPage >= totalPages ? 'disabled' : '') + ' class="w-8 h-8 text-sm bg-white border border-slate-200 rounded disabled:opacity-30">›</button>';
-    html += '<button onclick="invPage = ' + totalPages + '; renderInventory();" ' + (invPage >= totalPages ? 'disabled' : '') + ' class="w-8 h-8 text-sm bg-white border border-slate-200 rounded disabled:opacity-30">»</button>';
-    html += '</div>';
-  }
-  
+
   html += '</div></div>';
   document.getElementById('page-content').innerHTML = html;
 }

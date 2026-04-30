@@ -128,7 +128,7 @@ function renderManage() {
   html += '</div></div>';
   
   // 요청 목록 (그룹별)
-  html += '<div class="max-h-[600px] overflow-y-auto divide-y-2 divide-slate-100">';
+  html += '<div class="divide-y-2 divide-slate-100">';
   
   if (groups.length === 0) {
     const emptyMsg = manageStatusFilter === 'pending' 
