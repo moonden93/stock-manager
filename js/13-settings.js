@@ -72,8 +72,8 @@ function renderTeamsSettings() {
 function renderItemsSettings() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   
-  let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
-    '<div class="px-4 py-3 bg-slate-50 border-b">' +
+  let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm">' +
+    '<div class="sticky top-0 z-10 bg-slate-50 border-b rounded-t-2xl px-4 py-3">' +
     '<div class="flex items-center justify-between mb-2">' +
     '<h3 class="text-sm font-bold text-slate-900">품목 관리 (' + inventory.length + '개, 업체 ' + vendors.length + '개)</h3>' +
     '</div>' +
