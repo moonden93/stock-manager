@@ -374,7 +374,7 @@ function completeRequest(requestId) {
 function dowKor(yyyymmdd) {
   const parts = yyyymmdd.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return '';
-  const days = ['일', '월', '화', '수', '목', '금', '토'];
+  const days = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
   return days[new Date(parts[0], parts[1] - 1, parts[2]).getDay()];
 }
 
