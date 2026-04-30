@@ -38,24 +38,28 @@ function renderTeamsSettings() {
     '<h3 class="text-sm font-bold text-slate-900">팀 관리 (' + teams.length + '개)</h3>' +
     '<button onclick="openAddTeamDialog()" class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700">+ 팀 추가</button>' +
     '</div>' +
+    '<p class="px-4 py-2 text-[11px] text-slate-500 bg-slate-50 border-b border-slate-100">💡 ▲▼ 버튼으로 팀 순서를 변경할 수 있어요</p>' +
     '<div class="divide-y divide-slate-100">';
   
   teams.forEach((team, idx) => {
     const members = teamMembers[team] || [];
-    html += '<div class="px-4 py-3 team-row" draggable="true" data-team-idx="' + idx + '" ' +
-      'ondragstart="handleTeamDragStart(event, ' + idx + ')" ' +
-      'ondragover="handleTeamDragOver(event)" ' +
-      'ondragleave="handleTeamDragLeave(event)" ' +
-      'ondrop="handleTeamDrop(event, ' + idx + ')" ' +
-      'ondragend="handleTeamDragEnd(event)">' +
+    const isFloor = team.includes('층') || team.startsWith('9F') || team.startsWith('10F') || team.startsWith('11F');
+    
+    html += '<div class="px-4 py-3">' +
       '<div class="flex items-center gap-2 mb-2">' +
-      '<span class="cursor-move text-slate-400 hover:text-slate-600 select-none px-1" title="드래그해서 순서 변경">⋮⋮</span>' +
-      '<div class="w-2 h-2 rounded-full ' + (team.includes('층') || team.startsWith('9F') || team.startsWith('10F') || team.startsWith('11F') ? 'bg-cyan-500' : 'bg-blue-500') + '"></div>' +
+      // 위/아래 이동 버튼
+      '<div class="flex flex-col gap-0.5">' +
+      '<button onclick="moveTeamUp(' + idx + ')" ' + (idx === 0 ? 'disabled' : '') + 
+      ' class="w-6 h-5 text-[10px] rounded ' + (idx === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-500 hover:bg-blue-100 hover:text-blue-600') + '" title="위로">▲</button>' +
+      '<button onclick="moveTeamDown(' + idx + ')" ' + (idx === teams.length - 1 ? 'disabled' : '') + 
+      ' class="w-6 h-5 text-[10px] rounded ' + (idx === teams.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-500 hover:bg-blue-100 hover:text-blue-600') + '" title="아래로">▼</button>' +
+      '</div>' +
+      '<div class="w-2 h-2 rounded-full ' + (isFloor ? 'bg-cyan-500' : 'bg-blue-500') + '"></div>' +
       '<span class="flex-1 text-sm font-bold text-slate-900">' + escapeHtml(team) + '</span>' +
       '<button onclick="openEditTeamNameDialog(' + idx + ')" class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">✏️</button>' +
       '<button onclick="removeTeam(' + idx + ')" class="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded">🗑️</button>' +
       '</div>' +
-      '<div class="ml-4 flex flex-wrap gap-1.5 items-center">';
+      '<div class="ml-12 flex flex-wrap gap-1.5 items-center">';
     
     if (members.length === 0) {
       html += '<span class="text-xs text-slate-400">담당자 없음</span>';
@@ -75,11 +79,32 @@ function renderTeamsSettings() {
   return html;
 }
 
+// ============================================
+// 팀 순서 변경 (위/아래 버튼)
+// ============================================
+function moveTeamUp(idx) {
+  if (idx <= 0 || idx >= teams.length) return;
+  const tmp = teams[idx];
+  teams[idx] = teams[idx - 1];
+  teams[idx - 1] = tmp;
+  saveAll();
+  renderSettings();
+}
+
+function moveTeamDown(idx) {
+  if (idx < 0 || idx >= teams.length - 1) return;
+  const tmp = teams[idx];
+  teams[idx] = teams[idx + 1];
+  teams[idx + 1] = tmp;
+  saveAll();
+  renderSettings();
+}
+
 function renderItemsSettings() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   
   let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm">' +
-    '<div class="sticky top-[200px] z-10 bg-slate-50 border-b rounded-t-2xl px-4 py-3">' +
+    '<div class="bg-slate-50 border-b rounded-t-2xl px-4 py-3">' +
     '<div class="flex items-center justify-between mb-2">' +
     '<h3 class="text-sm font-bold text-slate-900">품목 관리 (' + inventory.length + '개, 업체 ' + vendors.length + '개)</h3>' +
     '</div>' +
@@ -92,7 +117,7 @@ function renderItemsSettings() {
     '</div>' +
     '<p class="text-[11px] text-slate-500 mt-2">💡 Excel로 일괄 수정: 다운로드 → Excel에서 편집 → 업로드 → 변경사항 확인 후 적용</p>' +
     '</div>' +
-    '<div class="sticky top-[324px] z-10 bg-white px-4 py-3 border-b border-slate-100">' +
+    '<div class="bg-white px-4 py-3 border-b border-slate-100">' +
     '<input type="text" id="settings-search" placeholder="🔍 품목 검색..." oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div>' +
     '<div id="settings-items-list" class="divide-y divide-slate-100">';
@@ -747,57 +772,3 @@ function applyExcelChanges() {
   showToast(msg, 'success');
   renderSettings();
 }
-
-// ============================================
-// 팀 순서 드래그&드롭
-// ============================================
-let draggedTeamIdx = null;
-
-function handleTeamDragStart(event, idx) {
-  draggedTeamIdx = idx;
-  event.dataTransfer.effectAllowed = 'move';
-  // 드래그 중인 항목 강조
-  event.currentTarget.style.opacity = '0.3';
-  event.currentTarget.style.transform = 'scale(0.97)';
-  event.currentTarget.style.transition = 'all 0.15s';
-}
-
-function handleTeamDragOver(event) {
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  
-  const row = event.currentTarget;
-  const targetIdx = parseInt(row.getAttribute('data-team-idx'));
-  
-  // 자기 자신 위로는 표시 안함
-  if (targetIdx === draggedTeamIdx) return;
-  
-  // 모든 다른 행의 표시 제거
-  document.querySelectorAll('.team-row').forEach(r => {
-    r.style.borderTop = '';
-    r.style.borderBottom = '';
-    r.style.background = '';
-  });
-  
-  // 마우스 위치에 따라 위/아래 결정
-  const rect = row.getBoundingClientRect();
-  const midpoint = rect.top + rect.height / 2;
-  
-  if (event.clientY < midpoint) {
-    // 위쪽 절반: 이 행 위에 삽입
-    row.style.borderTop = '4px solid #3b82f6';
-    row.style.background = 'linear-gradient(to bottom, #dbeafe 0%, transparent 30%)';
-  } else {
-    // 아래쪽 절반: 이 행 아래에 삽입
-    row.style.borderBottom = '4px solid #3b82f6';
-    row.style.background = 'linear-gradient(to top, #dbeafe 0%, transparent 30%)';
-  }
-}
-
-function handleTeamDragLeave(event) {
-  // 마우스가 영역을 떠나면 표시 제거
-  const row = event.currentTarget;
-  // 자식 요소로 이동한 경우는 무시 (깜빡임 방지)
-  if (row.contains(event.relatedTarget)) return;
-  row.style.borderTop = '';
-  row.style.borderBottom = '';
