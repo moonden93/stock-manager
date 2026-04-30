@@ -407,7 +407,7 @@ function completeRequest(requestId) {
     updateHeaderStats();
     showToast('반출 완료! ' + selectedItems.length + '종 ' + selectedTotalQty + '개 재고 차감', 'success');
     renderManage();
-  }, '예, 완료 처리', 'emerald');
+  }, '예, 완료 처리', 'teal');
 }
 
 // ============================================
