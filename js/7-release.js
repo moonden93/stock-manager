@@ -135,7 +135,7 @@ function renderRelease() {
     '<span class="w-7 h-7 bg-slate-400 text-white rounded-full flex items-center justify-center font-bold">3</span>' +
     '<h3 class="font-bold text-slate-900">품목 선택</h3>' +
     '<span class="ml-auto text-xs text-slate-500">' + filtered.length + '개</span></div>' +
-    '<div class="px-3 pt-3">' +
+    '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(releaseSearchTerm) + '" oninput="releaseSearchTerm = this.value; renderRelease();" ' +
     'placeholder="🔍 품목명 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><p class="text-xs text-slate-500 mb-2">업체:</p>' +
