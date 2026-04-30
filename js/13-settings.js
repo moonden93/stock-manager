@@ -9,11 +9,76 @@
 let settingsTab = 'teams'; // teams / items
 let pendingExcelChanges = null; // Excel 업로드 미리보기 임시 저장
 
+// 설정 탭은 [저장] 버튼을 눌러야 localStorage에 반영됨.
+// 편집은 메모리(teams/teamMembers/inventory)만 바꾸고 dirty 플래그를 세움.
+let settingsDirty = false;
+let settingsSnapshot = null;
+
+function takeSettingsSnapshot() {
+  settingsSnapshot = {
+    teams: JSON.parse(JSON.stringify(teams)),
+    teamMembers: JSON.parse(JSON.stringify(teamMembers)),
+    inventory: JSON.parse(JSON.stringify(inventory))
+  };
+  settingsDirty = false;
+}
+
+function restoreSettingsSnapshot() {
+  if (!settingsSnapshot) return;
+  teams.length = 0;
+  settingsSnapshot.teams.forEach(t => teams.push(t));
+  Object.keys(teamMembers).forEach(k => delete teamMembers[k]);
+  const restoredMembers = JSON.parse(JSON.stringify(settingsSnapshot.teamMembers));
+  Object.keys(restoredMembers).forEach(k => { teamMembers[k] = restoredMembers[k]; });
+  inventory.length = 0;
+  settingsSnapshot.inventory.forEach(it => inventory.push(it));
+  settingsDirty = false;
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+}
+
+function markSettingsDirty() {
+  if (!settingsSnapshot) takeSettingsSnapshot();
+  settingsDirty = true;
+}
+
+function saveSettings() {
+  if (!settingsDirty) { showToast('변경사항이 없습니다', 'info'); return; }
+  saveAll();
+  takeSettingsSnapshot();
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+  showToast('저장되었습니다');
+  renderSettings();
+}
+
+function cancelSettings() {
+  if (!settingsDirty) { showToast('변경사항이 없습니다', 'info'); return; }
+  askConfirm('변경 되돌리기', '저장하지 않은 변경사항을 모두 되돌립니다.\n계속하시겠습니까?', function() {
+    restoreSettingsSnapshot();
+    showToast('되돌렸습니다');
+    renderSettings();
+  }, '되돌리기', 'red');
+}
+
 function renderSettings() {
-  let html = '<div class="space-y-4">' +
+  // 첫 진입 시 현재 상태를 스냅샷으로 저장 (되돌리기 기준점)
+  if (!settingsSnapshot) takeSettingsSnapshot();
+
+  let html = '<div class="space-y-4">';
+
+  // 미저장 변경사항이 있을 때만 저장/되돌리기 바 노출
+  if (settingsDirty) {
+    html += '<div class="sticky top-0 z-30 bg-amber-50 border-2 border-amber-300 rounded-2xl px-4 py-3 shadow-sm flex items-center gap-2">' +
+      '<span class="text-xl">⚠️</span>' +
+      '<span class="text-sm font-medium text-slate-800 flex-1">저장하지 않은 변경사항이 있습니다</span>' +
+      '<button onclick="cancelSettings()" class="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-50">되돌리기</button>' +
+      '<button onclick="saveSettings()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">💾 저장</button>' +
+      '</div>';
+  }
+
+  html +=
     '<div class="bg-slate-100 border border-slate-200 rounded-2xl p-4">' +
     '<h2 class="text-lg font-bold text-slate-900 mb-1">⚙️ 설정</h2>' +
-    '<p class="text-sm text-slate-600">팀, 담당자, 품목, 업체를 관리합니다</p></div>' +
+    '<p class="text-sm text-slate-600">팀, 담당자, 품목, 업체를 관리합니다 (변경 후 [저장] 버튼을 눌러야 반영됩니다)</p></div>' +
     
     '<div class="flex bg-slate-100 rounded-xl p-1">' +
     '<button onclick="settingsTab = \'teams\'; renderSettings();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
@@ -87,7 +152,7 @@ function moveTeamUp(idx) {
   const tmp = teams[idx];
   teams[idx] = teams[idx - 1];
   teams[idx - 1] = tmp;
-  saveAll();
+  markSettingsDirty();
   renderSettings();
 }
 
@@ -96,7 +161,7 @@ function moveTeamDown(idx) {
   const tmp = teams[idx];
   teams[idx] = teams[idx + 1];
   teams[idx + 1] = tmp;
-  saveAll();
+  markSettingsDirty();
   renderSettings();
 }
 
@@ -182,7 +247,7 @@ function addTeam() {
   if (!name) { showToast('팀 이름 입력 필요', 'error'); return; }
   if (teams.includes(name)) { showToast('이미 존재하는 팀', 'error'); return; }
   teams.push(name);
-  saveAll();
+  markSettingsDirty();
   closeModal();
   showToast('"' + name + '" 추가됨');
   renderSettings();
@@ -216,7 +281,7 @@ function saveTeamName(idx) {
     teamMembers[newName] = teamMembers[oldName];
     delete teamMembers[oldName];
   }
-  saveAll();
+  markSettingsDirty();
   closeModal();
   showToast('수정 완료');
   renderSettings();
@@ -227,7 +292,7 @@ function removeTeam(idx) {
   askConfirm('팀 삭제', '"' + name + '" 팀을 삭제하시겠습니까?\n\n※ 기존 반출 이력은 유지됩니다', function() {
     teams.splice(idx, 1);
     delete teamMembers[name];
-    saveAll();
+    markSettingsDirty();
     showToast('삭제됨');
     renderSettings();
   }, '삭제', 'red');
@@ -257,7 +322,7 @@ function addMember(team) {
   if (!teamMembers[team]) teamMembers[team] = [];
   if (teamMembers[team].includes(name)) { showToast('이미 등록됨', 'error'); return; }
   teamMembers[team].push(name);
-  saveAll();
+  markSettingsDirty();
   closeModal();
   showToast('"' + name + '" 추가됨');
   renderSettings();
@@ -269,7 +334,7 @@ function removeMember(team, member) {
       teamMembers[team] = teamMembers[team].filter(m => m !== member);
       if (teamMembers[team].length === 0) delete teamMembers[team];
     }
-    saveAll();
+    markSettingsDirty();
     showToast('제외됨');
     renderSettings();
   }, '제외', 'red');
@@ -332,7 +397,7 @@ function addItem() {
     vendor, name, unit, price, stock, minStock, category: '치과재료'
   };
   inventory.push(newItem);
-  saveAll();
+  markSettingsDirty();
   updateHeaderStats();
   closeModal();
   showToast('"' + name + '" 추가됨');
@@ -394,7 +459,7 @@ function saveItem(itemId) {
   item.price = price;
   item.stock = stock;
   item.minStock = minStock;
-  saveAll();
+  markSettingsDirty();
   updateHeaderStats();
   closeModal();
   showToast('수정 완료');
@@ -406,7 +471,7 @@ function removeItem(itemId) {
   if (!item) return;
   askConfirm('품목 삭제', '"' + item.name + '"을(를) 삭제하시겠습니까?\n\n※ 기존 반출 이력은 유지됩니다', function() {
     inventory = inventory.filter(i => i.id !== itemId);
-    saveAll();
+    markSettingsDirty();
     updateHeaderStats();
     showToast('삭제됨');
     renderSettings();
@@ -763,7 +828,7 @@ function applyExcelChanges() {
   const deleteIds = new Set(c.toDelete.map(it => it.id));
   inventory = inventory.filter(it => !deleteIds.has(it.id));
   
-  saveAll();
+  markSettingsDirty();
   updateHeaderStats();
   pendingExcelChanges = null;
   closeModal();
