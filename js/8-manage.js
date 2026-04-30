@@ -8,7 +8,8 @@ let manageStatusFilter = 'pending'; // pending/completed
 let manageFilter = 'all'; // all/today/week
 let manageTeamFilter = '';
 
-// 선택 상태: { requestId: { itemId(요청id): { checked: bool, qty: number } } }
+// 선택 상태: { groupId: { itemId(요청id): { checked: bool, qty: number } } }
+// groupId = team|requester|YYYY-MM-DD|status — 같은 팀/담당자가 같은 날 여러 번 신청해도 한 그룹.
 let manageSelection = {};
 
 // 기존 데이터 호환: status가 없으면 'completed'로 간주
@@ -16,14 +17,24 @@ function getReqStatus(r) {
   return r.status || 'completed';
 }
 
-// 선택 상태 초기화 (요청 그룹별로 모두 체크 + 원래 수량)
-function ensureSelection(requestId, items) {
-  if (!manageSelection[requestId]) {
-    manageSelection[requestId] = {};
+// 표시·조작 단위 그룹 식별자 생성 (팀+담당자+일자+상태)
+function makeGroupId(r) {
+  return r.team + '|' + r.requester + '|' + (r.date || '').slice(0, 10) + '|' + getReqStatus(r);
+}
+
+// groupId에 속하는 requests 항목들 반환
+function findGroupItems(groupId) {
+  return requests.filter(r => makeGroupId(r) === groupId);
+}
+
+// 선택 상태 초기화 (그룹별로 모두 체크 + 원래 수량)
+function ensureSelection(groupId, items) {
+  if (!manageSelection[groupId]) {
+    manageSelection[groupId] = {};
   }
   items.forEach(it => {
-    if (!manageSelection[requestId][it.id]) {
-      manageSelection[requestId][it.id] = { checked: true, qty: it.qty };
+    if (!manageSelection[groupId][it.id]) {
+      manageSelection[groupId][it.id] = { checked: true, qty: it.qty };
     }
   });
 }
@@ -58,14 +69,16 @@ function renderManage() {
   weekDate.setDate(weekDate.getDate() - 7);
   const weekCount = statusFiltered.filter(r => new Date(r.date) >= weekDate).length;
   
-  // 요청 ID별 그룹핑
+  // 그룹핑: 같은 팀+담당자+날짜+상태를 한 카드로 묶음
   const grouped = {};
   filtered.forEach(r => {
-    const key = r.requestId || r.id;
+    const key = makeGroupId(r);
     if (!grouped[key]) {
-      grouped[key] = { requestId: key, date: r.date, team: r.team, requester: r.requester, status: getReqStatus(r), items: [] };
+      grouped[key] = { groupId: key, date: r.date, team: r.team, requester: r.requester, status: getReqStatus(r), items: [] };
     }
     grouped[key].items.push(r);
+    // 가장 빠른(요청 시작) 시각으로 유지
+    if (new Date(r.date) < new Date(grouped[key].date)) grouped[key].date = r.date;
   });
   const groups = Object.values(grouped).sort((a, b) => new Date(b.date) - new Date(a.date));
   
@@ -126,22 +139,23 @@ function renderManage() {
       '<p class="text-sm">' + emptyMsg + '</p></div>';
   } else {
     groups.forEach(g => {
+      // 날짜만 표시 (시간 X) — 같은 날 여러 번 신청해도 한 카드라 시간 의미 없음
       const dt = new Date(g.date);
-      const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + 
-        String(dt.getHours()).padStart(2, '0') + ':' + String(dt.getMinutes()).padStart(2, '0');
+      const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
       const totalQty = g.items.reduce((s, i) => s + i.qty, 0);
       const isPending = g.status === 'pending';
-      
+      const gid = escapeJs(g.groupId);
+
       // 대기 상태일 때만 선택 상태 초기화
       if (isPending) {
-        ensureSelection(g.requestId, g.items);
+        ensureSelection(g.groupId, g.items);
       }
-      
+
       // 선택된 항목 통계
       let selectedCount = 0, selectedQty = 0;
       if (isPending) {
         g.items.forEach(it => {
-          const sel = manageSelection[g.requestId][it.id];
+          const sel = manageSelection[g.groupId][it.id];
           if (sel && sel.checked) {
             selectedCount++;
             selectedQty += sel.qty;
@@ -149,49 +163,49 @@ function renderManage() {
         });
       }
       const allSelected = isPending && selectedCount === g.items.length;
-      
+
       html += '<div class="px-4 py-3 hover:bg-slate-50 ' + (isPending ? 'bg-amber-50/30' : '') + '">' +
         '<div class="flex items-center justify-between mb-2">' +
         '<div class="flex items-center gap-2 flex-wrap">' +
         '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
         '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">' + escapeHtml(g.team) + '</span>' +
         '<span class="text-xs text-slate-700">' + escapeHtml(g.requester) + '님</span>' +
-        (isPending ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⏳ 대기</span>' 
+        (isPending ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⏳ 대기</span>'
                    : '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">✅ 완료</span>') +
         '</div>' +
         '<div class="flex items-center gap-2">' +
         '<span class="text-sm font-bold text-slate-900">' + g.items.length + '종 · ' + totalQty + '개</span>' +
-        '<button onclick="deleteRequestGroup(\'' + g.requestId + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>' +
+        '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>' +
         '</div></div>';
-      
+
       // 대기 상태: 전체선택 바 추가
       if (isPending) {
         html += '<div class="flex items-center justify-between px-2 py-2 mb-2 bg-white rounded-lg border border-slate-200">' +
           '<label class="flex items-center gap-2 cursor-pointer">' +
           '<input type="checkbox" ' + (allSelected ? 'checked' : '') + ' ' +
-          'onchange="toggleSelectAll(\'' + g.requestId + '\', this.checked)" ' +
+          'onchange="toggleSelectAll(\'' + gid + '\', this.checked)" ' +
           'class="w-5 h-5 accent-emerald-600 cursor-pointer" />' +
           '<span class="text-sm font-bold text-slate-700">전체선택</span>' +
           '</label>' +
           '<span class="text-xs text-slate-500">' + selectedCount + '/' + g.items.length + ' 선택 · ' + selectedQty + '개</span>' +
           '</div>';
       }
-      
+
       html += '<div class="space-y-1 ml-2">';
       g.items.forEach(it => {
         const item = inventory.find(i => i.id === it.itemId);
         const stock = item ? item.stock : 0;
-        
+
         if (isPending) {
           // 대기 상태: 체크박스 + 수량조절 UI
-          const sel = manageSelection[g.requestId][it.id];
+          const sel = manageSelection[g.groupId][it.id];
           const isChecked = sel.checked;
           const releaseQty = sel.qty;
           const isShort = isChecked && releaseQty > stock;
-          
+
           html += '<div class="flex items-center gap-2 py-2 px-2 ' + (isChecked ? 'bg-white' : 'bg-slate-100 opacity-60') + ' rounded-lg border border-slate-100">' +
             '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' ' +
-            'onchange="toggleItemCheck(\'' + g.requestId + '\', \'' + it.id + '\', this.checked)" ' +
+            'onchange="toggleItemCheck(\'' + gid + '\', \'' + it.id + '\', this.checked)" ' +
             'class="w-5 h-5 accent-emerald-600 cursor-pointer flex-shrink-0" />' +
             '<div class="flex-1 min-w-0">' +
             '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor) + '</p>' +
@@ -199,23 +213,23 @@ function renderManage() {
             '<p class="text-xs text-slate-500">요청 ' + it.qty + ' · 재고 ' + stock +
             (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '') + '</p>' +
             '</div>';
-          
+
           if (isChecked) {
             // 수량 조절 버튼
             html += '<div class="flex items-center gap-1 flex-shrink-0">' +
-              '<button onclick="changeReleaseQty(\'' + g.requestId + '\', \'' + it.id + '\', -1)" ' +
+              '<button onclick="changeReleaseQty(\'' + gid + '\', \'' + it.id + '\', -1)" ' +
               'class="w-8 h-8 bg-slate-200 hover:bg-slate-300 rounded text-base font-bold">−</button>' +
               '<input type="number" value="' + releaseQty + '" min="1" max="' + it.qty + '" ' +
-              'onchange="setReleaseQty(\'' + g.requestId + '\', \'' + it.id + '\', this.value, ' + it.qty + ')" ' +
+              'onchange="setReleaseQty(\'' + gid + '\', \'' + it.id + '\', this.value, ' + it.qty + ')" ' +
               'onfocus="this.select()" ' +
               'class="w-12 h-8 text-center font-bold bg-white border-2 ' + (isShort ? 'border-amber-400' : 'border-slate-200') + ' rounded text-sm" />' +
-              '<button onclick="changeReleaseQty(\'' + g.requestId + '\', \'' + it.id + '\', 1)" ' +
+              '<button onclick="changeReleaseQty(\'' + gid + '\', \'' + it.id + '\', 1)" ' +
               'class="w-8 h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-base font-bold">+</button>' +
               '</div>';
           } else {
             html += '<span class="text-xs text-slate-400 px-2">제외</span>';
           }
-          
+
           html += '</div>';
         } else {
           // 완료 상태: 기존 표시 방식
@@ -228,34 +242,34 @@ function renderManage() {
         }
       });
       html += '</div>';
-      
+
       // 대기 상태일 때만 "반출 완료" 버튼 표시
       if (isPending) {
         const canSubmit = selectedCount > 0;
-        const partialMsg = selectedCount < g.items.length 
-          ? '<p class="text-xs text-blue-600 font-medium">💡 선택 안 한 ' + (g.items.length - selectedCount) + '개 품목은 대기 상태로 유지됩니다</p>' 
+        const partialMsg = selectedCount < g.items.length
+          ? '<p class="text-xs text-blue-600 font-medium">💡 선택 안 한 ' + (g.items.length - selectedCount) + '개 품목은 대기 상태로 유지됩니다</p>'
           : '';
-        
+
         // 부분 수량 안내
         let hasPartialQty = false;
         g.items.forEach(it => {
-          const sel = manageSelection[g.requestId][it.id];
+          const sel = manageSelection[g.groupId][it.id];
           if (sel && sel.checked && sel.qty < it.qty) hasPartialQty = true;
         });
-        const partialQtyMsg = hasPartialQty 
-          ? '<p class="text-xs text-blue-600 font-medium">💡 일부 수량만 반출 시, 남은 수량은 대기 상태로 유지됩니다</p>' 
+        const partialQtyMsg = hasPartialQty
+          ? '<p class="text-xs text-blue-600 font-medium">💡 일부 수량만 반출 시, 남은 수량은 대기 상태로 유지됩니다</p>'
           : '';
-        
+
         html += '<div class="mt-3 space-y-2">' +
           partialMsg + partialQtyMsg +
           '<div class="flex justify-end">' +
-          '<button onclick="completeRequest(\'' + g.requestId + '\')" ' + (!canSubmit ? 'disabled' : '') + ' ' +
+          '<button onclick="completeRequest(\'' + gid + '\')" ' + (!canSubmit ? 'disabled' : '') + ' ' +
           'class="px-5 py-2.5 rounded-lg font-bold text-sm shadow-sm ' +
           (canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-200 text-slate-400 cursor-not-allowed') + '">' +
           '✅ 반출 완료 처리 (' + selectedQty + '개)</button>' +
           '</div></div>';
       }
-      
+
       html += '</div>';
     });
   }
@@ -267,50 +281,50 @@ function renderManage() {
 // ============================================
 // 선택 상태 관리 함수들
 // ============================================
-function toggleSelectAll(requestId, checked) {
-  if (!manageSelection[requestId]) return;
-  Object.keys(manageSelection[requestId]).forEach(itemId => {
-    manageSelection[requestId][itemId].checked = checked;
+function toggleSelectAll(groupId, checked) {
+  if (!manageSelection[groupId]) return;
+  Object.keys(manageSelection[groupId]).forEach(itemId => {
+    manageSelection[groupId][itemId].checked = checked;
   });
   renderManage();
 }
 
-function toggleItemCheck(requestId, itemId, checked) {
-  if (!manageSelection[requestId] || !manageSelection[requestId][itemId]) return;
-  manageSelection[requestId][itemId].checked = checked;
+function toggleItemCheck(groupId, itemId, checked) {
+  if (!manageSelection[groupId] || !manageSelection[groupId][itemId]) return;
+  manageSelection[groupId][itemId].checked = checked;
   renderManage();
 }
 
-function changeReleaseQty(requestId, itemId, delta) {
-  if (!manageSelection[requestId] || !manageSelection[requestId][itemId]) return;
+function changeReleaseQty(groupId, itemId, delta) {
+  if (!manageSelection[groupId] || !manageSelection[groupId][itemId]) return;
   // 원래 요청 수량 찾기
   const reqItem = requests.find(r => r.id === itemId);
   if (!reqItem) return;
-  const newQty = manageSelection[requestId][itemId].qty + delta;
+  const newQty = manageSelection[groupId][itemId].qty + delta;
   if (newQty < 1) return;
   if (newQty > reqItem.qty) return; // 요청 수량 초과 불가
-  manageSelection[requestId][itemId].qty = newQty;
+  manageSelection[groupId][itemId].qty = newQty;
   renderManage();
 }
 
-function setReleaseQty(requestId, itemId, value, maxQty) {
-  if (!manageSelection[requestId] || !manageSelection[requestId][itemId]) return;
+function setReleaseQty(groupId, itemId, value, maxQty) {
+  if (!manageSelection[groupId] || !manageSelection[groupId][itemId]) return;
   let qty = parseInt(value) || 1;
   if (qty < 1) qty = 1;
   if (qty > maxQty) qty = maxQty;
-  manageSelection[requestId][itemId].qty = qty;
+  manageSelection[groupId][itemId].qty = qty;
   renderManage();
 }
 
 // ============================================
 // 반출 완료 처리: 선택된 항목만 처리
 // ============================================
-function completeRequest(requestId) {
-  const allItems = requests.filter(r => (r.requestId === requestId) && getReqStatus(r) === 'pending');
+function completeRequest(groupId) {
+  const allItems = requests.filter(r => makeGroupId(r) === groupId && getReqStatus(r) === 'pending');
   if (allItems.length === 0) return;
-  
-  const sel = manageSelection[requestId] || {};
-  
+
+  const sel = manageSelection[groupId] || {};
+
   // 선택된 항목만 추출
   const selectedItems = allItems.filter(it => sel[it.id] && sel[it.id].checked);
   if (selectedItems.length === 0) {
@@ -363,7 +377,7 @@ function completeRequest(requestId) {
   
   // 기존 askConfirm 대신 [반출 담당자/일자] 입력 받는 커스텀 모달 노출.
   // 모달 확인 시 submitCompleteRequest -> executeCompleteRequest 흐름으로 실제 처리.
-  openCompleteRequestModal(requestId, message);
+  openCompleteRequestModal(groupId, message);
 }
 
 // ============================================
@@ -386,7 +400,7 @@ function updateReleaseDateDow() {
   span.textContent = dowKor(input.value);
 }
 
-function openCompleteRequestModal(requestId, summary) {
+function openCompleteRequestModal(groupId, summary) {
   // 오늘 날짜 (로컬 기준)
   const now = new Date();
   const todayStr = now.getFullYear() + '-' +
@@ -418,7 +432,7 @@ function openCompleteRequestModal(requestId, summary) {
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
-    '<button id="complete-confirm-btn" onclick="submitCompleteRequest(\'' + escapeJs(requestId) + '\')" disabled ' +
+    '<button id="complete-confirm-btn" onclick="submitCompleteRequest(\'' + escapeJs(groupId) + '\')" disabled ' +
     'class="flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold">반출 담당자 선택 필요</button>' +
     '</div></div></div>';
 
@@ -447,7 +461,7 @@ function selectReleaser(name) {
 }
 
 // 모달 확인 버튼 핸들러: 입력값 수집 -> 실제 처리 호출
-function submitCompleteRequest(requestId) {
+function submitCompleteRequest(groupId) {
   const releasedBy = window._pendingReleaser;
   if (!releasedBy) { showToast('반출 담당자 선택 필요', 'error'); return; }
   const dateInput = document.getElementById('release-date');
@@ -457,15 +471,17 @@ function submitCompleteRequest(requestId) {
   const releasedDate = new Date(dateStr + 'T00:00:00.000Z').toISOString();
   closeModal();
   window._pendingReleaser = null;
-  executeCompleteRequest(requestId, releasedBy, releasedDate);
+  executeCompleteRequest(groupId, releasedBy, releasedDate);
 }
 
 // 실제 데이터 변경: 재고 차감 + history/requests 기록
-function executeCompleteRequest(requestId, releasedBy, releasedDate) {
-  const allItems = requests.filter(r => (r.requestId === requestId) && getReqStatus(r) === 'pending');
+// groupId 안에 여러 원본 requestId가 섞일 수 있어 history/requests 레코드는
+// 각 항목의 원래 it.requestId를 그대로 보존한다.
+function executeCompleteRequest(groupId, releasedBy, releasedDate) {
+  const allItems = requests.filter(r => makeGroupId(r) === groupId && getReqStatus(r) === 'pending');
   if (allItems.length === 0) return;
 
-  const sel = manageSelection[requestId] || {};
+  const sel = manageSelection[groupId] || {};
   const selectedItems = allItems.filter(it => sel[it.id] && sel[it.id].checked);
   if (selectedItems.length === 0) { showToast('선택된 품목이 없습니다', 'error'); return; }
 
@@ -479,7 +495,7 @@ function executeCompleteRequest(requestId, releasedBy, releasedDate) {
     if (item) {
       // 재고 차감
       item.stock -= releaseQty;
-      // 이력 기록 (releasedBy/releasedDate 포함)
+      // 이력 기록 (releasedBy/releasedDate 포함, requestId는 항목의 원래 값 사용)
       history.push({
         id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
         type: 'out',
@@ -491,7 +507,7 @@ function executeCompleteRequest(requestId, releasedBy, releasedDate) {
         unit: it.unit,
         team: it.team,
         requester: it.requester,
-        requestId: requestId,
+        requestId: it.requestId,
         releasedBy: releasedBy,
         releasedDate: releasedDate
       });
@@ -508,7 +524,7 @@ function executeCompleteRequest(requestId, releasedBy, releasedDate) {
       it.qty = it.qty - releaseQty;
       requests.push({
         id: it.id + '_done_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-        requestId: requestId,
+        requestId: it.requestId,
         status: 'completed',
         date: it.date,
         completedDate: completeDate,
@@ -525,8 +541,8 @@ function executeCompleteRequest(requestId, releasedBy, releasedDate) {
     }
   });
 
-  // 처리한 요청의 선택 상태 초기화
-  delete manageSelection[requestId];
+  // 처리한 그룹의 선택 상태 초기화
+  delete manageSelection[groupId];
 
   saveAll();
   updateHeaderStats();
@@ -537,21 +553,14 @@ function executeCompleteRequest(requestId, releasedBy, releasedDate) {
 // ============================================
 // 요청 삭제 (대기/완료 모두 처리)
 // ============================================
-function deleteRequestGroup(requestId) {
-  const items = requests.filter(r => r.requestId === requestId);
-  if (items.length === 0) return;
-  
-  // 같은 requestId 안에 대기/완료 섞여 있을 수 있음 (부분 반출 결과)
-  const pendingItems = items.filter(r => getReqStatus(r) === 'pending');
-  const completedItems = items.filter(r => getReqStatus(r) === 'completed');
-  
-  // 현재 보고 있는 탭의 항목만 처리
-  const isPending = manageStatusFilter === 'pending';
-  const targetItems = isPending ? pendingItems : completedItems;
+function deleteRequestGroup(groupId) {
+  // 그룹에 속한 항목들 (현재 탭의 status로 묶인 것만)
+  const targetItems = requests.filter(r => makeGroupId(r) === groupId);
   if (targetItems.length === 0) return;
-  
+
+  const isPending = manageStatusFilter === 'pending';
   const totalQty = targetItems.reduce((s, i) => s + i.qty, 0);
-  
+
   let title, message, confirmText;
   if (isPending) {
     title = '대기 요청 삭제';
@@ -562,25 +571,28 @@ function deleteRequestGroup(requestId) {
     message = '이 반출 완료 내역을 취소하시겠습니까?\n\n취소된 수량은 재고로 복원됩니다.\n총 ' + targetItems.length + '종 ' + totalQty + '개';
     confirmText = '예, 취소';
   }
-  
+
   askConfirm(title, message, function() {
     const targetIds = new Set(targetItems.map(it => it.id));
-    
+    // 그룹에 속한 원본 requestId들 (history 정리용)
+    const groupRequestIds = new Set(targetItems.map(it => it.requestId).filter(Boolean));
+
     if (!isPending) {
       // 완료 상태였으면 재고 복원
       targetItems.forEach(it => {
         const item = inventory.find(i => i.id === it.itemId);
         if (item) item.stock += it.qty;
       });
-      // 이력에서 해당 requestId 전체 삭제 (구버전 호환)
-      history = history.filter(h => h.requestId !== requestId);
+      // 이력에서 해당 requestId들과 매칭되는 항목 삭제
+      // (history는 항목별 requestId로 보존되므로 그룹의 모든 requestId를 제거)
+      history = history.filter(h => !groupRequestIds.has(h.requestId));
     }
-    
+
     // 요청에서 해당 항목들만 삭제
     requests = requests.filter(r => !targetIds.has(r.id));
-    
+
     // 선택 상태 초기화
-    delete manageSelection[requestId];
+    delete manageSelection[groupId];
     
     saveAll();
     updateHeaderStats();
