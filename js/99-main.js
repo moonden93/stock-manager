@@ -14,14 +14,15 @@
 // 탭 전환
 // ============================================
 function switchTab(name) {
-  // 설정·문서함 탭은 비밀번호 입력 필요 (매번)
+  // 설정·문서함 탭은 비밀번호 입력 필요 (매번, 틀리면 재입력)
   if (name === 'settings' || name === 'documents') {
     const label = name === 'settings' ? '설정 화면' : '문서함';
-    const pw = prompt('🔒 ' + label + '\n비밀번호를 입력하세요:');
-    if (pw === null) return; // 취소 누름
-    if (pw !== '2911') {
-      showToast('비밀번호가 틀렸습니다', 'error');
-      return;
+    let msg = '🔒 ' + label + '\n비밀번호를 입력하세요:';
+    while (true) {
+      const pw = prompt(msg);
+      if (pw === null) return; // 취소(또는 ESC) → 원 탭 유지
+      if (pw === '2911') break; // 통과
+      msg = '❌ 비밀번호가 틀렸습니다. 다시 입력해주세요.\n\n🔒 ' + label + '\n비밀번호:';
     }
   }
   currentTab = name;
