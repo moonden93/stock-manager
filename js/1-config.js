@@ -20,6 +20,6 @@ const INITIAL_TEAMS = [
 
 // PREBUILT_TEAMS: 운영용 표준 팀 목록 (INITIAL_TEAMS와 동일하게 유지)
 // 5-storage.js의 마이그레이션 로직에서 사용됨
-// ※ 누적 history에 등장하는 옛 팀명("Dr. 이상민팀", "9F 공통" 등)은
-//    여기 포함하지 않습니다. 통계에는 history 자체로부터 표시되므로 문제없음.
+// ※ 누적 history에 등장하는 옛 팀명("9F 공통" 등)은 여기 포함하지 않습니다.
+//    통계에는 history 자체로부터 표시되므로 문제없음.
 const PREBUILT_TEAMS = JSON.parse('["9층 공통","Dr. 이승주팀","Dr. 권혜진팀","Dr. 이수연팀","10층 공통","Dr. 병원장팀","Dr. 이창률팀","11층 공통","Dr. 이영일팀","Dr. 정석형팀","Dr. 김세일팀","기공실"]');

@@ -80,6 +80,17 @@ function loadData() {
       saveAll();
       localStorage.removeItem('mc_teams_migrated_v2_just_ran');
     }
+
+    // [신규] 퇴사자 팀 정리: Dr. 이상민팀 — 팀 목록/이력/요청/멤버에서 모두 제거 (한 번만 실행)
+    if (!localStorage.getItem('mc_remove_isangmin_v1')) {
+      const removed = 'Dr. 이상민팀';
+      history = history.filter(h => h.team !== removed);
+      requests = requests.filter(r => r.team !== removed);
+      teams = teams.filter(t => t !== removed);
+      if (teamMembers[removed]) delete teamMembers[removed];
+      saveAll();
+      localStorage.setItem('mc_remove_isangmin_v1', '1');
+    }
   } catch (e) {
     console.error('로드 오류:', e);
     inventory = INITIAL_ITEMS.map((it, i) => ({ ...it, id: 'M' + String(i).padStart(4, '0') }));
