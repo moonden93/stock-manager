@@ -86,7 +86,7 @@ function renderItemsSettings() {
     '</div>' +
     '<p class="text-[11px] text-slate-500 mt-2">💡 Excel로 일괄 수정: 다운로드 → Excel에서 편집 → 업로드 → 변경사항 확인 후 적용</p>' +
     '</div>' +
-    '<div class="px-4 py-3 border-b border-slate-100">' +
+    '<div class="sticky top-[124px] z-10 bg-white px-4 py-3 border-b border-slate-100">' +
     '<input type="text" id="settings-search" placeholder="🔍 품목 검색..." oninput="filterSettingsItems()" class="w-full px-4 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div>' +
     '<div id="settings-items-list" class="divide-y divide-slate-100">';
