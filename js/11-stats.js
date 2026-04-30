@@ -8,7 +8,9 @@
 
 // ============================================================
 let statsTab = 'team'; // team / vendor / weekly
-let statsPeriod = 'all'; // all / month / week
+let statsPeriod = 'all'; // all / month / week / custom
+let statsCustomStart = ''; // YYYY-MM-DD
+let statsCustomEnd = '';   // YYYY-MM-DD
 
 function renderStats() {
   // 기간 필터링
@@ -23,6 +25,13 @@ function renderStats() {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
     baseHistory = baseHistory.filter(h => new Date(h.date) >= weekAgo);
+  } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
+    const start = new Date(statsCustomStart + 'T00:00:00');
+    const end = new Date(statsCustomEnd + 'T23:59:59');
+    baseHistory = baseHistory.filter(h => {
+      const d = new Date(h.date);
+      return d >= start && d <= end;
+    });
   }
   
   const totalQty = baseHistory.reduce((s, h) => s + h.qty, 0);
@@ -35,7 +44,12 @@ function renderStats() {
     periodLabel = m.getFullYear() + '년 ' + (m.getMonth() + 1) + '월';
   } else if (statsPeriod === 'week') {
     periodLabel = '최근 7일';
+  } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
+    periodLabel = statsCustomStart + ' ~ ' + statsCustomEnd;
   }
+  
+  // 오늘 날짜 (date input의 max 값으로 사용)
+  const today = new Date().toISOString().slice(0, 10);
   
   let html = '<div class="space-y-4">' +
     '<div class="bg-purple-50 border border-purple-200 rounded-2xl p-4">' +
@@ -46,16 +60,32 @@ function renderStats() {
     '<p class="text-sm text-slate-600">' + periodLabel + ' · 총 <strong>' + totalQty + '</strong>개 출고 (' + baseHistory.length + '건)</p>' +
     '<p class="text-base font-bold text-purple-700 mt-1">💰 총 ' + formatWon(totalCost) + '</p></div>' +
     
-    // 기간 선택
+    // 기간 선택 (프리셋)
     '<div class="bg-white rounded-2xl border-2 border-slate-200 p-3">' +
     '<p class="text-xs text-slate-500 mb-2">기간:</p>' +
-    '<div class="flex gap-1">' +
-    '<button onclick="statsPeriod = \'all\'; renderStats();" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+    '<div class="flex gap-1 mb-3">' +
+    '<button onclick="setStatsPeriod(\'all\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
     (statsPeriod === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">전체</button>' +
-    '<button onclick="statsPeriod = \'month\'; renderStats();" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+    '<button onclick="setStatsPeriod(\'month\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
     (statsPeriod === 'month' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">이번 달</button>' +
-    '<button onclick="statsPeriod = \'week\'; renderStats();" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
+    '<button onclick="setStatsPeriod(\'week\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
     (statsPeriod === 'week' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">최근 7일</button>' +
+    '</div>' +
+    
+    // 직접 날짜 선택
+    '<div class="border-t border-slate-100 pt-3">' +
+    '<p class="text-xs text-slate-500 mb-2">📅 기간 직접 선택:</p>' +
+    '<div class="flex flex-wrap items-center gap-2">' +
+    '<input type="date" id="stats-date-start" value="' + escapeHtml(statsCustomStart) + '" max="' + today + '" ' +
+    'class="flex-1 min-w-[130px] px-3 py-2 text-sm bg-slate-50 border-2 ' +
+    (statsPeriod === 'custom' ? 'border-purple-400' : 'border-slate-200') + ' rounded-lg focus:outline-none focus:border-purple-500" />' +
+    '<span class="text-slate-400 text-sm">~</span>' +
+    '<input type="date" id="stats-date-end" value="' + escapeHtml(statsCustomEnd) + '" max="' + today + '" ' +
+    'class="flex-1 min-w-[130px] px-3 py-2 text-sm bg-slate-50 border-2 ' +
+    (statsPeriod === 'custom' ? 'border-purple-400' : 'border-slate-200') + ' rounded-lg focus:outline-none focus:border-purple-500" />' +
+    '<button onclick="applyCustomDateRange()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-lg whitespace-nowrap">조회</button>' +
+    '</div>' +
+    (statsPeriod === 'custom' ? '<p class="text-[11px] text-purple-600 font-medium mt-2">✓ 사용자 지정 기간 적용 중</p>' : '') +
     '</div></div>' +
     
     // 보기 모드
@@ -82,6 +112,41 @@ function renderStats() {
   
   html += '</div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// 프리셋 버튼 클릭 시 (사용자 지정 날짜는 초기화)
+function setStatsPeriod(period) {
+  statsPeriod = period;
+  if (period !== 'custom') {
+    statsCustomStart = '';
+    statsCustomEnd = '';
+  }
+  renderStats();
+}
+
+// 사용자 지정 날짜 적용
+function applyCustomDateRange() {
+  const startEl = document.getElementById('stats-date-start');
+  const endEl = document.getElementById('stats-date-end');
+  if (!startEl || !endEl) return;
+  
+  const start = startEl.value;
+  const end = endEl.value;
+  
+  if (!start || !end) {
+    showToast('시작일과 종료일을 모두 선택해주세요', 'error');
+    return;
+  }
+  if (start > end) {
+    showToast('시작일이 종료일보다 늦을 수 없습니다', 'error');
+    return;
+  }
+  
+  statsCustomStart = start;
+  statsCustomEnd = end;
+  statsPeriod = 'custom';
+  renderStats();
+  showToast(start + ' ~ ' + end + ' 기간 조회', 'success');
 }
 
 function renderStatsByTeam(baseHistory) {
