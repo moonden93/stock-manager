@@ -141,9 +141,9 @@ function renderRelease() {
     '<span class="ml-auto text-xs text-slate-500">' + filtered.length + '개</span></div>' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(releaseSearchTerm) + '" ' +
-    'oninput="if (!this._ime) { releaseSearchTerm = this.value; renderRelease(); }" ' +
-    'oncompositionstart="this._ime = 1" ' +
-    'oncompositionend="this._ime = 0; releaseSearchTerm = this.value; renderRelease();" ' +
+    'oninput="releaseSearchTerm = this.value; if (!this._ime) scheduleSearchRender(renderRelease);" ' +
+    'oncompositionstart="this._ime = 1; cancelSearchRender();" ' +
+    'oncompositionend="this._ime = 0; releaseSearchTerm = this.value; scheduleSearchRender(renderRelease);" ' +
     'placeholder="🔍 품목명 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><p class="text-xs text-slate-500 mb-2">업체:</p>' +
     '<div class="flex flex-wrap gap-1">' +

@@ -55,9 +55,9 @@ function renderDocuments() {
     (docsViewMode === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600') + '">📋 전체 목록</button>' +
     '</div>' +
     '<input type="text" value="' + escapeHtml(docsSearchTerm) + '" ' +
-    'oninput="if (!this._ime) { docsSearchTerm = this.value; renderDocuments(); }" ' +
-    'oncompositionstart="this._ime = 1" ' +
-    'oncompositionend="this._ime = 0; docsSearchTerm = this.value; renderDocuments();" ' +
+    'oninput="docsSearchTerm = this.value; if (!this._ime) scheduleSearchRender(renderDocuments);" ' +
+    'oncompositionstart="this._ime = 1; cancelSearchRender();" ' +
+    'oncompositionend="this._ime = 0; docsSearchTerm = this.value; scheduleSearchRender(renderDocuments);" ' +
     'placeholder="🔍 문서명 검색 (초성도 가능)" class="flex-1 px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-purple-500" />' +
     '<select onchange="docsCategoryFilter = this.value; renderDocuments();" class="px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-purple-500">';
   categories.forEach(c => {
