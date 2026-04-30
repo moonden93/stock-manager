@@ -45,7 +45,7 @@ function renderInbound() {
         '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
         '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong>' + escapeHtml(item.unit) + '</p></div>' +
+        '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong></p></div>' +
         '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
         '</div></div>';
     });
@@ -72,14 +72,14 @@ function openInboundDialog(itemId) {
     '<div class="px-5 py-5 overflow-y-auto">' +
     '<p class="text-xs text-slate-500 mb-1">' + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-base font-bold text-slate-900 mb-1">' + escapeHtml(item.name) + '</p>' +
-    '<p class="text-sm text-slate-500 mb-5">현재 재고: <strong>' + item.stock + '</strong>' + escapeHtml(item.unit) + '</p>' +
+    '<p class="text-sm text-slate-500 mb-5">현재 재고: <strong>' + item.stock + '</strong></p>' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">입고 수량</label>' +
     '<div class="flex items-center gap-2 mb-4">' +
     '<button onclick="adjustQty(-1)" class="w-12 h-14 bg-slate-200 hover:bg-slate-300 rounded-xl text-2xl font-bold">−</button>' +
     '<input type="number" id="inbound-qty" value="1" min="1" class="flex-1 h-14 text-center text-2xl font-bold bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
     '<button onclick="adjustQty(1)" class="w-12 h-14 bg-slate-200 hover:bg-slate-300 rounded-xl text-2xl font-bold">+</button>' +
-    '<span class="text-base font-bold text-slate-700 px-2">' + escapeHtml(item.unit) + '</span></div>' +
-    '<p class="text-xs text-slate-500 mb-4">입고 후: <span id="after-stock" class="font-bold text-emerald-700">' + (item.stock + 1) + '</span>' + escapeHtml(item.unit) + '</p>' +
+    '</div>' +
+    '<p class="text-xs text-slate-500 mb-4">입고 후: <span id="after-stock" class="font-bold text-emerald-700">' + (item.stock + 1) + '</span></p>' +
     
     // 첨부 영역
     '<div class="border-t pt-4">' +
@@ -202,6 +202,6 @@ function confirmInbound(itemId) {
   updateHeaderStats();
   window._pendingAttachments = [];
   closeModal();
-  showToast('입고 완료! ' + item.name + ' +' + qty + item.unit + (atts.length > 0 ? ' (📎 ' + atts.length + '개)' : ''), 'success');
+  showToast('입고 완료! ' + item.name + ' +' + qty + (atts.length > 0 ? ' (📎 ' + atts.length + '개)' : ''), 'success');
   renderInbound();
 }

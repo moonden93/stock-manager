@@ -196,7 +196,7 @@ function renderManage() {
             '<div class="flex-1 min-w-0">' +
             '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor) + '</p>' +
             '<p class="text-sm text-slate-800 truncate">' + escapeHtml(it.name) + '</p>' +
-            '<p class="text-xs text-slate-500">요청 ' + it.qty + escapeHtml(it.unit) + ' · 재고 ' + stock + escapeHtml(it.unit) +
+            '<p class="text-xs text-slate-500">요청 ' + it.qty + ' · 재고 ' + stock +
             (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '') + '</p>' +
             '</div>';
           
@@ -211,7 +211,6 @@ function renderManage() {
               'class="w-12 h-8 text-center font-bold bg-white border-2 ' + (isShort ? 'border-amber-400' : 'border-slate-200') + ' rounded text-sm" />' +
               '<button onclick="changeReleaseQty(\'' + g.requestId + '\', \'' + it.id + '\', 1)" ' +
               'class="w-8 h-8 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-base font-bold">+</button>' +
-              '<span class="text-xs text-slate-500 ml-1">' + escapeHtml(it.unit) + '</span>' +
               '</div>';
           } else {
             html += '<span class="text-xs text-slate-400 px-2">제외</span>';
@@ -224,7 +223,7 @@ function renderManage() {
             '<span class="text-slate-400 mr-2">·</span>' +
             '<span class="text-slate-500 mr-2">' + escapeHtml(it.vendor) + '</span>' +
             '<span class="flex-1">' + escapeHtml(it.name) + '</span>' +
-            '<span class="font-bold text-blue-600 ml-2">' + it.qty + escapeHtml(it.unit) + '</span>' +
+            '<span class="font-bold text-blue-600 ml-2">' + it.qty + '</span>' +
             '</div>';
         }
       });
@@ -332,7 +331,7 @@ function completeRequest(requestId) {
     let warnMsg = '🚫 다음 품목이 재고보다 많이 요청되었습니다:\n\n';
     insufficient.forEach(it => {
       const item = inventory.find(i => i.id === it.itemId);
-      warnMsg += '· ' + it.name + '\n   요청 ' + sel[it.id].qty + it.unit + ' / 재고 ' + item.stock + it.unit + '\n';
+      warnMsg += '· ' + it.name + '\n   요청 ' + sel[it.id].qty + ' / 재고 ' + item.stock + '\n';
     });
     warnMsg += '\n수량을 재고 이내로 조정하거나, 부족한 품목은 체크 해제 후 다시 시도해주세요.';
     askConfirm('⚠️ 처리할 수 없음', warnMsg, function() {}, '확인', 'red');
@@ -349,7 +348,7 @@ function completeRequest(requestId) {
   message += selectedItems.map(function(it) { 
     const releaseQty = sel[it.id].qty;
     const partial = releaseQty < it.qty ? ' (요청 ' + it.qty + ' 중)' : '';
-    return '  · ' + it.name + ' ' + releaseQty + it.unit + partial;
+    return '  · ' + it.name + ' ' + releaseQty + partial;
   }).join('\n');
   
   if (excludedCount > 0 || partialQtyItems.length > 0) {

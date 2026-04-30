@@ -211,7 +211,7 @@ function renderSettingsItemRow(item) {
   return '<div class="px-4 py-3 hover:bg-slate-50">' +
     '<div class="flex items-center gap-2">' +
     '<div class="flex-1 min-w-0">' +
-    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + ' · ' + escapeHtml(item.unit) + 
+    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) +
     (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p></div>' +
     '<button onclick="openEditItemDialog(\'' + item.id + '\')" class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded">✏️</button>' +
@@ -751,7 +751,7 @@ function showExcelPreviewModal() {
       html += '<div class="px-3 py-2 text-xs">' +
         '<span class="text-slate-500">' + escapeHtml(it.vendor) + '</span> · ' +
         '<span class="font-medium">' + escapeHtml(it.name) + '</span>' +
-        ' <span class="text-slate-500">(' + escapeHtml(it.unit) + ', ' + it.price.toLocaleString() + '원, 재고 ' + it.stock + ')</span>' +
+        ' <span class="text-slate-500">(' + it.price.toLocaleString() + '원, 재고 ' + it.stock + ')</span>' +
         '</div>';
     });
     html += '</div></div>';
