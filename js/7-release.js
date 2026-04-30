@@ -164,7 +164,7 @@ function renderRelease() {
         '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
         '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-        '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' + escapeHtml(item.unit) +
+        '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
         (item.stock === 0 ? ' · 🔴 품절' : item.stock <= item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
         '<div class="flex items-center gap-2">';
       
@@ -243,7 +243,7 @@ function renderCartBar() {
   cart.forEach(c => {
     inner += '<div class="flex-shrink-0 px-3 py-1.5 bg-teal-50 border border-teal-200 rounded-full text-xs flex items-center gap-1.5">' +
       '<span class="font-medium">' + escapeHtml(c.name) + '</span>' +
-      '<span class="font-bold text-teal-700">' + c.qty + escapeHtml(c.unit) + '</span>' +
+      '<span class="font-bold text-teal-700">' + c.qty + '</span>' +
       '<button onclick="removeFromCart(\'' + c.itemId + '\')" class="text-slate-400 hover:text-red-500 ml-1">×</button>' +
       '</div>';
   });
@@ -267,7 +267,7 @@ function confirmRelease() {
   if (!releaseSelectedTeam || !releaseSelectedRequester || cart.length === 0) return;
   
   let message = '[' + releaseSelectedTeam + '] ' + releaseSelectedRequester + '님 반출 요청\n\n';
-  message += cart.map(function(c) { return '· ' + c.name + ' ' + c.qty + c.unit; }).join('\n');
+  message += cart.map(function(c) { return '· ' + c.name + ' ' + c.qty; }).join('\n');
   message += '\n\n총 ' + cart.reduce(function(s, c) { return s + c.qty; }, 0) + '개를 요청하시겠습니까?';
   message += '\n\n💡 실제 반출(재고 차감)은 [요청관리]에서 "반출 완료" 버튼을 눌러야 처리됩니다.';
   
