@@ -123,9 +123,38 @@ function updateHeaderStats() {
 // ============================================
 // 앱 시작
 // ============================================
-function initApp() {
+async function initApp() {
   loadData();
-  renderRelease();  // 첫 화면: 반출
+  switchTab('release');  // 첫 화면: 반출
+  updateHeaderStats();
+
+  // Firebase가 이미 준비됐으면 바로 동기화, 아니면 이벤트 대기
+  if (window.firebaseReady) {
+    await syncWithFirebase();
+  } else {
+    window.addEventListener('firebaseReady', async () => {
+      await syncWithFirebase();
+    });
+  }
+}
+
+// ============================================
+// Firebase 초기 동기화
+// ============================================
+// - 클라우드에 데이터가 있으면 그것을 가져옴 (다른 기기/브라우저에서 동기화)
+// - 클라우드가 비어있으면 현재 로컬 데이터를 클라우드로 업로드 (최초 마이그레이션)
+// - 이후 setupFirebaseSync로 실시간 변경 구독
+async function syncWithFirebase() {
+  const loaded = await loadFromFirebase();
+  if (loaded) {
+    updateHeaderStats();
+    const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
+    if (typeof renderFn === 'function') renderFn();
+  } else {
+    console.log('Firebase가 비어있음 - 현재 데이터를 클라우드에 업로드');
+    saveToFirebase();
+  }
+  setupFirebaseSync();
 }
 
 if (document.readyState === 'loading') {
