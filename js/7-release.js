@@ -153,11 +153,14 @@ function renderRelease() {
   });
   html += '</div></div>';
 
-  // ── 목록에 없는 품목 직접 요청 (아코디언, 검색·필터 바로 아래에 배치) ──
-  html += '<div class="px-3 py-2 bg-teal-50/60 border-b border-teal-200">' +
-    '<button onclick="toggleCustomForm()" class="w-full flex items-center justify-between text-left py-1">' +
-    '<span class="text-sm font-bold text-teal-700">📌 목록에 없는 품목? 직접 요청하기</span>' +
-    '<span class="text-teal-600">' + (releaseShowCustomForm ? '▲' : '▼') + '</span>' +
+  // ── 목록에 없는 품목 직접 요청 (버튼 + 펼침 폼) ──
+  html += '<div class="px-3 py-3 border-b border-slate-100">' +
+    '<button onclick="toggleCustomForm()" class="block mx-auto px-5 py-3 ' +
+    (releaseShowCustomForm
+      ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+      : 'bg-teal-600 hover:bg-teal-700 text-white shadow-sm') +
+    ' rounded-xl font-bold text-sm transition">' +
+    (releaseShowCustomForm ? '✕ 직접 요청 닫기' : '📌 목록에 없는 품목 직접 요청') +
     '</button>' +
     (releaseShowCustomForm ? renderCustomItemForm() : '') +
     '</div>';
