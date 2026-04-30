@@ -361,65 +361,157 @@ function completeRequest(requestId) {
     message += '\n\n⚠️ 주의: ' + insufficient.length + '개 품목이 재고보다 많아 마이너스가 됩니다.';
   }
   
-  askConfirm('반출 완료 처리', message, function() {
-    const completeDate = new Date().toISOString();
-    
-    selectedItems.forEach(it => {
-      const item = inventory.find(i => i.id === it.itemId);
-      const releaseQty = sel[it.id].qty;
-      
-      if (item) {
-        // 재고 차감
-        item.stock -= releaseQty;
-        // 이력 기록
-        history.push({
-          id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
-          type: 'out',
-          date: completeDate,
-          itemId: it.itemId,
-          vendor: it.vendor,
-          name: it.name,
-          qty: releaseQty,
-          unit: it.unit,
-          team: it.team,
-          requester: it.requester,
-          requestId: requestId
-        });
-      }
-      
-      if (releaseQty === it.qty) {
-        // 전량 반출: 요청 status 변경
-        it.status = 'completed';
-        it.completedDate = completeDate;
-      } else {
-        // 부분 반출: 원래 요청은 잔여 수량으로 유지, 완료된 만큼 새 completed 레코드 추가
-        it.qty = it.qty - releaseQty; // 대기 수량 감소
-        // 완료된 부분을 별도 레코드로 추가
-        requests.push({
-          id: it.id + '_done_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-          requestId: requestId,
-          status: 'completed',
-          date: it.date,
-          completedDate: completeDate,
-          itemId: it.itemId,
-          vendor: it.vendor,
-          name: it.name,
-          qty: releaseQty,
-          unit: it.unit,
-          team: it.team,
-          requester: it.requester
-        });
-      }
-    });
-    
-    // 처리한 요청의 선택 상태 초기화
-    delete manageSelection[requestId];
-    
-    saveAll();
-    updateHeaderStats();
-    showToast('반출 완료! ' + selectedItems.length + '종 ' + selectedTotalQty + '개 재고 차감', 'success');
-    renderManage();
-  }, '예, 완료 처리', 'teal');
+  // 기존 askConfirm 대신 [반출 담당자/일자] 입력 받는 커스텀 모달 노출.
+  // 모달 확인 시 submitCompleteRequest -> executeCompleteRequest 흐름으로 실제 처리.
+  openCompleteRequestModal(requestId, message);
+}
+
+// ============================================
+// 완료 처리 모달 (반출 담당자 / 반출 일자 입력)
+// ============================================
+function openCompleteRequestModal(requestId, summary) {
+  // 오늘 날짜 (로컬 기준)
+  const now = new Date();
+  const todayStr = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
+    '<h3 class="text-base font-bold text-slate-900">반출 완료 처리</h3></div>' +
+    '<div class="px-5 py-5 overflow-y-auto flex-1 space-y-4">' +
+    // 요약 텍스트 (기존 askConfirm 메시지와 동일)
+    '<p class="text-sm text-slate-700 whitespace-pre-line leading-relaxed">' + escapeHtml(summary) + '</p>' +
+    // 반출 담당자
+    '<div>' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 담당자 <span class="text-red-500">*</span></label>' +
+    '<div class="grid grid-cols-2 gap-2">' +
+    '<button id="releaser-btn-이충현" onclick="selectReleaser(\'이충현\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">이충현</button>' +
+    '<button id="releaser-btn-주경심" onclick="selectReleaser(\'주경심\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition">주경심</button>' +
+    '</div></div>' +
+    // 반출 일자
+    '<div>' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자</label>' +
+    '<input type="date" id="release-date" value="' + todayStr + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
+    '</div>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button id="complete-confirm-btn" onclick="submitCompleteRequest(\'' + escapeJs(requestId) + '\')" disabled ' +
+    'class="flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold">반출 담당자 선택 필요</button>' +
+    '</div></div></div>';
+
+  document.getElementById('modal-container').innerHTML = html;
+  window._pendingReleaser = null;
+}
+
+// 반출 담당자 버튼 클릭 핸들러
+function selectReleaser(name) {
+  window._pendingReleaser = name;
+  // 두 버튼 시각 토글
+  ['이충현', '주경심'].forEach(n => {
+    const b = document.getElementById('releaser-btn-' + n);
+    if (!b) return;
+    b.className = (n === name)
+      ? 'py-3 bg-teal-600 border-2 border-teal-600 rounded-xl font-bold text-white transition'
+      : 'py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-teal-400 transition';
+  });
+  // 확인 버튼 활성화
+  const confirmBtn = document.getElementById('complete-confirm-btn');
+  if (confirmBtn) {
+    confirmBtn.disabled = false;
+    confirmBtn.className = 'flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold';
+    confirmBtn.textContent = '예, 완료 처리';
+  }
+}
+
+// 모달 확인 버튼 핸들러: 입력값 수집 -> 실제 처리 호출
+function submitCompleteRequest(requestId) {
+  const releasedBy = window._pendingReleaser;
+  if (!releasedBy) { showToast('반출 담당자 선택 필요', 'error'); return; }
+  const dateInput = document.getElementById('release-date');
+  const dateStr = dateInput && dateInput.value;
+  if (!dateStr) { showToast('반출 일자 입력 필요', 'error'); return; }
+  // YYYY-MM-DD -> ISO (UTC midnight)
+  const releasedDate = new Date(dateStr + 'T00:00:00.000Z').toISOString();
+  closeModal();
+  window._pendingReleaser = null;
+  executeCompleteRequest(requestId, releasedBy, releasedDate);
+}
+
+// 실제 데이터 변경: 재고 차감 + history/requests 기록
+function executeCompleteRequest(requestId, releasedBy, releasedDate) {
+  const allItems = requests.filter(r => (r.requestId === requestId) && getReqStatus(r) === 'pending');
+  if (allItems.length === 0) return;
+
+  const sel = manageSelection[requestId] || {};
+  const selectedItems = allItems.filter(it => sel[it.id] && sel[it.id].checked);
+  if (selectedItems.length === 0) { showToast('선택된 품목이 없습니다', 'error'); return; }
+
+  const selectedTotalQty = selectedItems.reduce((s, it) => s + sel[it.id].qty, 0);
+  const completeDate = new Date().toISOString();
+
+  selectedItems.forEach(it => {
+    const item = inventory.find(i => i.id === it.itemId);
+    const releaseQty = sel[it.id].qty;
+
+    if (item) {
+      // 재고 차감
+      item.stock -= releaseQty;
+      // 이력 기록 (releasedBy/releasedDate 포함)
+      history.push({
+        id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
+        type: 'out',
+        date: completeDate,
+        itemId: it.itemId,
+        vendor: it.vendor,
+        name: it.name,
+        qty: releaseQty,
+        unit: it.unit,
+        team: it.team,
+        requester: it.requester,
+        requestId: requestId,
+        releasedBy: releasedBy,
+        releasedDate: releasedDate
+      });
+    }
+
+    if (releaseQty === it.qty) {
+      // 전량 반출: 요청 status 변경
+      it.status = 'completed';
+      it.completedDate = completeDate;
+      it.releasedBy = releasedBy;
+      it.releasedDate = releasedDate;
+    } else {
+      // 부분 반출: 원래 요청은 잔여 수량으로 유지, 완료된 부분을 별도 레코드로 추가
+      it.qty = it.qty - releaseQty;
+      requests.push({
+        id: it.id + '_done_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        requestId: requestId,
+        status: 'completed',
+        date: it.date,
+        completedDate: completeDate,
+        itemId: it.itemId,
+        vendor: it.vendor,
+        name: it.name,
+        qty: releaseQty,
+        unit: it.unit,
+        team: it.team,
+        requester: it.requester,
+        releasedBy: releasedBy,
+        releasedDate: releasedDate
+      });
+    }
+  });
+
+  // 처리한 요청의 선택 상태 초기화
+  delete manageSelection[requestId];
+
+  saveAll();
+  updateHeaderStats();
+  showToast('반출 완료! ' + selectedItems.length + '종 ' + selectedTotalQty + '개 재고 차감', 'success');
+  renderManage();
 }
 
 // ============================================
