@@ -89,16 +89,21 @@ function renderStats() {
     '</div></div>' +
     
     // 보기 모드
-    '<div class="flex bg-slate-100 rounded-xl p-1">' +
-    '<button onclick="statsTab = \'team\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
+    '<div class="flex bg-slate-100 rounded-xl p-1 gap-0.5">' +
+    '<button onclick="statsTab = \'team\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
     (statsTab === 'team' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">👥 팀별</button>' +
-    '<button onclick="statsTab = \'vendor\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
+    '<button onclick="statsTab = \'vendor\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
     (statsTab === 'vendor' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">🏢 업체별</button>' +
-    '<button onclick="statsTab = \'weekly\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
+    '<button onclick="statsTab = \'weekly\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
     (statsTab === 'weekly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">📅 주차별</button>' +
+    '<button onclick="statsTab = \'anomaly\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
+    (statsTab === 'anomaly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">📈 이상치</button>' +
     '</div>';
-  
-  if (totalQty === 0) {
+
+  if (statsTab === 'anomaly') {
+    // 이상치는 자체 기간 기준(이번 달 vs 지난 3개월) 사용 — statsPeriod 필터 무시
+    html += renderStatsByAnomaly();
+  } else if (totalQty === 0) {
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
       '<p class="text-4xl mb-2">📭</p>' +
       '<p class="text-sm text-slate-400">출고 내역이 없습니다</p></div>';
@@ -463,4 +468,128 @@ function openTeamStatsDetail(teamName) {
     '</div></div></div>';
 
   document.getElementById('modal-container').innerHTML = html;
+}
+
+// ============================================
+// 사용량 이상치 (이번 달 vs 지난 3개월 평균)
+// ============================================
+// 평소보다 +30%↑/-30%↓ 변동된 품목 + 신규 사용 + 사용 중단을 모두 보여줌.
+// 운영자가 "이번 달 갑자기 많이 쓰는 품목" 또는 "갑자기 안 쓰는 품목"을 빠르게 파악.
+function renderStatsByAnomaly() {
+  const now = new Date();
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const threeMonthsAgoStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+
+  const outHistory = history.filter(h => h.type === 'out');
+  const thisMonth = outHistory.filter(h => new Date(h.date) >= thisMonthStart);
+  const past3 = outHistory.filter(h => {
+    const d = new Date(h.date);
+    return d >= threeMonthsAgoStart && d < thisMonthStart;
+  });
+
+  // 품목별 합산 헬퍼
+  function aggregate(arr) {
+    const map = {};
+    arr.forEach(h => {
+      const k = h.vendor + '::' + h.name;
+      if (!map[k]) map[k] = { vendor: h.vendor, name: h.name, qty: 0, cost: 0 };
+      map[k].qty += h.qty;
+      map[k].cost += h.qty * (h.price || 0);
+    });
+    return map;
+  }
+
+  const thisMap = aggregate(thisMonth);
+  const past3Map = aggregate(past3);
+  const allKeys = new Set([...Object.keys(thisMap), ...Object.keys(past3Map)]);
+
+  const ups = [], downs = [], news = [], gones = [];
+  allKeys.forEach(k => {
+    const thisQty = thisMap[k] ? thisMap[k].qty : 0;
+    const pastQty = past3Map[k] ? past3Map[k].qty : 0;
+    const pastAvg = pastQty / 3; // 월 평균
+    const meta = thisMap[k] || past3Map[k];
+    const row = { ...meta, thisQty, pastAvg: Math.round(pastAvg * 10) / 10 };
+
+    if (pastAvg === 0 && thisQty > 0) {
+      news.push(row);
+    } else if (pastAvg > 0 && thisQty === 0) {
+      row.diffPct = -100;
+      gones.push(row);
+    } else if (pastAvg > 0) {
+      const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
+      row.diffPct = diffPct;
+      if (diffPct >= 30) ups.push(row);
+      else if (diffPct <= -30) downs.push(row);
+    }
+  });
+
+  ups.sort((a, b) => b.diffPct - a.diffPct);
+  downs.sort((a, b) => a.diffPct - b.diffPct);
+  news.sort((a, b) => b.thisQty - a.thisQty);
+  gones.sort((a, b) => b.pastAvg - a.pastAvg);
+
+  const monthLabel = thisMonthStart.getFullYear() + '년 ' + (thisMonthStart.getMonth() + 1) + '월';
+
+  let html = '<div class="space-y-3">' +
+    '<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">' +
+    '<p class="text-xs text-slate-700 leading-relaxed">' +
+    '<strong>📈 ' + monthLabel + '</strong> 사용량을 <strong>지난 3개월 월평균</strong>과 비교합니다.<br>' +
+    '평소 대비 ±30% 이상 변동된 품목, 신규/중단된 품목을 모아서 표시.' +
+    '</p>' +
+    '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 이상치 보기에 적용되지 않습니다 (자체 기준 사용)</p>' +
+    '</div>';
+
+  html += renderAnomalySection('🔺 급증', '평소보다 많이 사용 중', ups, 'up', 'red');
+  html += renderAnomalySection('🔻 급감', '평소보다 적게 사용 중', downs, 'down', 'blue');
+  html += renderAnomalySection('🆕 신규 사용', '지난 3개월에는 없었음', news, 'new', 'emerald');
+  html += renderAnomalySection('⏸ 사용 중단', '평소엔 사용했지만 이번 달 0건', gones, 'gone', 'slate');
+
+  if (ups.length === 0 && downs.length === 0 && news.length === 0 && gones.length === 0) {
+    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
+      '<p class="text-4xl mb-2">✅</p>' +
+      '<p class="text-sm text-slate-500">이상 사용량 없음</p>' +
+      '<p class="text-xs text-slate-400 mt-1">평소와 비슷한 사용 패턴입니다</p>' +
+      '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderAnomalySection(title, subtitle, items, kind, color) {
+  if (items.length === 0) return '';
+  const colors = {
+    red:     { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     val: 'text-red-600' },
+    blue:    { bg: 'bg-blue-50',    border: 'border-blue-200',    text: 'text-blue-700',    val: 'text-blue-600' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', val: 'text-emerald-600' },
+    slate:   { bg: 'bg-slate-50',   border: 'border-slate-200',   text: 'text-slate-700',   val: 'text-slate-500' }
+  };
+  const c = colors[color];
+  let html = '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
+    '<div class="px-4 py-3 ' + c.bg + ' border-b ' + c.border + '">' +
+    '<p class="font-bold text-sm ' + c.text + '">' + title + ' <span class="text-xs font-normal text-slate-500">(' + items.length + '종)</span></p>' +
+    '<p class="text-[11px] text-slate-500 mt-0.5">' + subtitle + '</p>' +
+    '</div>' +
+    '<div class="divide-y divide-slate-100">';
+  items.forEach(it => {
+    let diffHtml = '';
+    if (kind === 'up')        diffHtml = '<span class="font-bold ' + c.val + '">+' + Math.round(it.diffPct) + '%</span>';
+    else if (kind === 'down') diffHtml = '<span class="font-bold ' + c.val + '">' + Math.round(it.diffPct) + '%</span>';
+    else if (kind === 'new')  diffHtml = '<span class="font-bold ' + c.val + '">신규</span>';
+    else if (kind === 'gone') diffHtml = '<span class="font-bold ' + c.val + '">중단</span>';
+
+    html += '<div class="flex items-center text-xs py-2 px-4 gap-2">' +
+      '<div class="flex-1 min-w-0">' +
+      '<p class="text-[11px] text-slate-500 truncate">' + escapeHtml(it.vendor) + '</p>' +
+      '<p class="text-slate-800 truncate">' + escapeHtml(it.name) + '</p>' +
+      '</div>' +
+      '<div class="text-right shrink-0">' +
+      '<p class="text-[11px] text-slate-500">이번 ' + it.thisQty + ' / 평균 ' + it.pastAvg + '</p>' +
+      '<p>' + diffHtml + '</p>' +
+      '</div>' +
+      '</div>';
+  });
+  html += '</div></div>';
+  return html;
 }
