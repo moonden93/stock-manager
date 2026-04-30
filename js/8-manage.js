@@ -164,19 +164,43 @@ function renderManage() {
       }
       const allSelected = isPending && selectedCount === g.items.length;
 
+      // 완료 카드일 때 반출 담당자/일자 정보 (그룹 내 unique 값 모음 — 보통 1명·1일자)
+      let releasedInfoHtml = '';
+      if (!isPending) {
+        const byList = [...new Set(g.items.map(it => it.releasedBy).filter(Boolean))];
+        const dateList = [...new Set(g.items.map(it => (it.releasedDate || '').slice(0, 10)).filter(Boolean))];
+        if (byList.length > 0 || dateList.length > 0) {
+          const byHtml = byList.length > 0
+            ? '<span class="font-bold text-emerald-800">' + byList.map(escapeHtml).join(', ') + (byList.length === 1 ? '님이 반출' : '님이 반출') + '</span>'
+            : '<span class="text-slate-400 italic">담당자 미기록</span>';
+          const dateHtml = dateList.length > 0
+            ? '<span class="text-slate-600">· ' + dateList.map(d => {
+                const dt = new Date(d + 'T00:00:00');
+                return (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + dowKor(d);
+              }).join(', ') + '</span>'
+            : '';
+          releasedInfoHtml = '<div class="text-xs px-3 py-2 mb-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center gap-2 flex-wrap">' +
+            '<span>📦</span>' + byHtml + dateHtml + '</div>';
+        } else {
+          // 옛 데이터(반출 담당자/일자 정보 없음) — 명시적으로 안내해서 누락 인지하게
+          releasedInfoHtml = '<div class="text-xs px-3 py-2 mb-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 italic">📦 반출 담당자/일자 정보 없음 (옛 기록)</div>';
+        }
+      }
+
       html += '<div class="px-4 py-3 hover:bg-slate-50 ' + (isPending ? 'bg-amber-50/30' : '') + '">' +
         '<div class="flex items-center justify-between mb-2">' +
         '<div class="flex items-center gap-2 flex-wrap">' +
         '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
         '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">' + escapeHtml(g.team) + '</span>' +
-        '<span class="text-xs text-slate-700">' + escapeHtml(g.requester) + '님</span>' +
+        '<span class="text-xs text-slate-700">' + escapeHtml(g.requester) + '님 요청</span>' +
         (isPending ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⏳ 대기</span>'
                    : '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">✅ 완료</span>') +
         '</div>' +
         '<div class="flex items-center gap-2">' +
         '<span class="text-sm font-bold text-slate-900">' + g.items.length + '종 · ' + totalQty + '개</span>' +
         '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>' +
-        '</div></div>';
+        '</div></div>' +
+        releasedInfoHtml;
 
       // 대기 상태: 전체선택 바 추가
       if (isPending) {
