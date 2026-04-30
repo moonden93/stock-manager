@@ -21,8 +21,8 @@ function renderInventory() {
   if (invFilter === 'normal') filtered = filtered.filter(i => i.stock > i.minStock);
   if (invVendorFilter) filtered = filtered.filter(i => i.vendor === invVendorFilter);
   if (invSearchTerm) {
-    const t = invSearchTerm.toLowerCase();
-    filtered = filtered.filter(i => i.name.toLowerCase().includes(t) || i.vendor.toLowerCase().includes(t));
+    // 일반 검색 + 한글 초성 검색 (예: "ㄱㅈ" → "거즈")
+    filtered = filtered.filter(i => matchesSearch(i.name, invSearchTerm) || matchesSearch(i.vendor, invSearchTerm));
   }
   
   let html = '<div class="space-y-4">' +
@@ -41,7 +41,7 @@ function renderInventory() {
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(invSearchTerm) + '" oninput="invSearchTerm = this.value; renderInventory();" ' +
-    'placeholder="🔍 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
+    'placeholder="🔍 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><div class="flex flex-wrap gap-1">' +
     '<button onclick="invVendorFilter = \'\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
     (!invVendorFilter ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체 업체</button>';

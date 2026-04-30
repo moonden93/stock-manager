@@ -50,3 +50,37 @@ function formatWeekLabel(weekKey) {
   const yy = year.slice(-2);
   return yy + '년 ' + parseInt(month) + '월 ' + week + '주차';
 }
+
+// ============================================
+// 한글 초성 추출 (검색용)
+// ============================================
+// "거즈" → "ㄱㅈ", "Bone graft" → "bone graft" (영문은 그대로 소문자)
+// 검색창에 "ㄱㅈ" 입력 시 "거즈"가 매치되도록 함
+const _CHOSUNG = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+function getChosung(str) {
+  if (!str) return '';
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // 한글 음절 영역 (가-힣)
+    if (code >= 0xAC00 && code <= 0xD7A3) {
+      const choIdx = Math.floor((code - 0xAC00) / (21 * 28));
+      result += _CHOSUNG[choIdx];
+    } else {
+      result += str[i].toLowerCase();
+    }
+  }
+  return result;
+}
+
+// 검색 매칭 헬퍼:
+// - 일반 substring 매치 (대소문자 무시) OR
+// - target의 초성에 query가 substring으로 포함되면 매치
+//   (예: query="ㄱㅈ" → target="거즈" 매치)
+function matchesSearch(target, query) {
+  if (!query) return true;
+  const t = String(target || '').toLowerCase();
+  const q = String(query).toLowerCase();
+  if (t.includes(q)) return true;
+  return getChosung(target).includes(q);
+}

@@ -30,8 +30,8 @@ function renderDocuments() {
     if (docsCategoryFilter !== '전체' && d.category !== docsCategoryFilter) return false;
     if (docsViewMode === 'vendor' && docsSelectedVendor && d.vendor !== docsSelectedVendor) return false;
     if (docsSearchTerm) {
-      const t = docsSearchTerm.toLowerCase();
-      if (!d.name.toLowerCase().includes(t) && !(d.note || '').toLowerCase().includes(t)) return false;
+      // 일반 검색 + 한글 초성 검색
+      if (!matchesSearch(d.name, docsSearchTerm) && !matchesSearch(d.note || '', docsSearchTerm)) return false;
     }
     return true;
   }).sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));

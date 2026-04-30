@@ -13,8 +13,8 @@ function renderInbound() {
   const filtered = inventory.filter(i => {
     if (inboundSelectedVendor && i.vendor !== inboundSelectedVendor) return false;
     if (inboundSearchTerm) {
-      const t = inboundSearchTerm.toLowerCase();
-      if (!i.name.toLowerCase().includes(t) && !i.vendor.toLowerCase().includes(t)) return false;
+      // 일반 검색 + 한글 초성 검색 (예: "ㄱㅈ" → "거즈")
+      if (!matchesSearch(i.name, inboundSearchTerm) && !matchesSearch(i.vendor, inboundSearchTerm)) return false;
     }
     return true;
   });
@@ -26,7 +26,7 @@ function renderInbound() {
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(inboundSearchTerm) + '" oninput="inboundSearchTerm = this.value; renderInbound();" ' +
-    'placeholder="🔍 품목 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" /></div>' +
+    'placeholder="🔍 품목 검색 (초성도 가능: ㄱㅈ → 거즈)" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" /></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><p class="text-xs text-slate-500 mb-2">업체:</p>' +
     '<div class="flex flex-wrap gap-1">' +
     '<button onclick="inboundSelectedVendor = \'\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
