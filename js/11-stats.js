@@ -11,7 +11,6 @@ let statsTab = 'team'; // team / vendor / weekly / anomaly
 let statsPeriod = 'all'; // all / month / week / custom
 let statsCustomStart = ''; // YYYY-MM-DD
 let statsCustomEnd = '';   // YYYY-MM-DD
-let statsAnomalyTeamFilter = ''; // 이상치 보기의 팀 필터 ('' = 전체)
 
 function renderStats() {
   // 기간 필터링
@@ -565,23 +564,6 @@ function renderStatsByAnomaly() {
     '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 적용되지 않습니다 (자체 기준 사용)</p>' +
     '</div>';
 
-  // 팀 필터 (반출관리 스타일)
-  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-3">' +
-    '<p class="text-xs text-slate-500 mb-2">팀별 필터:</p>' +
-    '<div class="flex flex-wrap gap-1">' +
-    '<button onclick="statsAnomalyTeamFilter = \'\'; renderStats();" class="px-3 py-1.5 text-sm rounded-full ' +
-    (!statsAnomalyTeamFilter ? 'bg-amber-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체</button>';
-  // 이상치 있는 팀만 필터 후보로
-  sortedTeams.forEach(t => {
-    const a = teamAnomalies[t];
-    const cnt = a.ups.length + a.downs.length + a.news.length + a.gones.length;
-    if (cnt === 0) return;
-    html += '<button onclick="statsAnomalyTeamFilter = \'' + escapeJs(t) + '\'; renderStats();" class="px-3 py-1.5 text-sm rounded-full ' +
-      (statsAnomalyTeamFilter === t ? 'bg-amber-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' +
-      escapeHtml(t) + ' <span class="text-[10px] opacity-75">(' + cnt + ')</span></button>';
-  });
-  html += '</div></div>';
-
   // 이상치 있는 팀이 한 곳도 없으면 메시지
   const totalCount = Object.values(teamAnomalies).reduce((s, t) =>
     s + t.ups.length + t.downs.length + t.news.length + t.gones.length, 0);
@@ -596,21 +578,8 @@ function renderStatsByAnomaly() {
     return html;
   }
 
-  // 팀 필터 적용
-  const teamsToShow = statsAnomalyTeamFilter
-    ? sortedTeams.filter(t => t === statsAnomalyTeamFilter)
-    : sortedTeams;
-
-  if (statsAnomalyTeamFilter && teamsToShow.length === 0) {
-    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
-      '<p class="text-4xl mb-2">✅</p>' +
-      '<p class="text-sm text-slate-500">' + escapeHtml(statsAnomalyTeamFilter) + ' 팀은 이상치 없음</p>' +
-      '</div></div>';
-    return html;
-  }
-
   // 팀별 카드 (이상치 있는 팀만)
-  teamsToShow.forEach(team => {
+  sortedTeams.forEach(team => {
     const a = teamAnomalies[team];
     const total = a.ups.length + a.downs.length + a.news.length + a.gones.length;
     if (total === 0) return;
