@@ -1,0 +1,16 @@
+{
+  "name": "문치과병원 재고관리",
+  "short_name": "재고관리",
+  "description": "문치과병원 재고/반출/통계 관리 시스템",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0d9488",
+  "background_color": "#f8fafc",
+  "lang": "ko",
+  "icons": [
+    { "src": "images/logo.jpg", "sizes": "192x192", "type": "image/jpeg", "purpose": "any" },
+    { "src": "images/logo.jpg", "sizes": "512x512", "type": "image/jpeg", "purpose": "any" }
+  ]
+}

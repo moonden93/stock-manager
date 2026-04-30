@@ -4,10 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="재고관리">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0d9488">
 <title>문치과병원 재고관리</title>
 <link rel="icon" type="image/jpeg" href="images/logo.jpg">
 <link rel="apple-touch-icon" href="images/logo.jpg">
+<link rel="manifest" href="manifest.webmanifest">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
@@ -137,6 +141,17 @@
   window.firebaseReady = true;
 
   window.dispatchEvent(new Event('firebaseReady'));
+</script>
+
+<!-- 7. PWA Service Worker 등록 (오프라인 캐시) -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('service-worker.js').catch(function(err) {
+        console.warn('Service worker 등록 실패:', err);
+      });
+    });
+  }
 </script>
 
 </body>
