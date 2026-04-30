@@ -287,25 +287,71 @@ async function loadFromFirebase() {
 // ============================================
 // Firebase 실시간 동기화 리스너
 // ============================================
+// 사용자가 input/textarea 입력 중이면 sync는 보류 → IME 조합 깨짐 방지.
+// (보류된 데이터는 사용자가 input에서 빠져나가는 순간 자동 적용됨)
+let _pendingSync = null;
+let _pendingSyncFlushAttached = false;
+
+function _isUserTyping() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' && el.type !== 'checkbox' && el.type !== 'radio' && el.type !== 'button' && el.type !== 'submit') return true;
+  if (tag === 'TEXTAREA') return true;
+  if (el.isContentEditable) return true;
+  return false;
+}
+
+function _applySyncData(data) {
+  applyCloudData(data);
+  saveToLocalStorage();
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+  const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
+  if (typeof renderFn === 'function') renderFn();
+  console.log('🔄 동기화 완료');
+}
+
+// 입력 끝나면 보류된 sync 적용
+function _flushPendingSync() {
+  if (_pendingSync && !_isUserTyping()) {
+    const data = _pendingSync;
+    _pendingSync = null;
+    _applySyncData(data);
+  }
+}
+
 function setupFirebaseSync() {
   if (!window.firebaseReady) return;
+
+  // input blur 시 보류된 sync 자동 적용 (한 번만 등록)
+  if (!_pendingSyncFlushAttached) {
+    document.addEventListener('focusout', () => {
+      // focusout 직후 다른 input으로 포커스 이동할 수도 있어서 microtask 한 박자 늦춤
+      setTimeout(_flushPendingSync, 0);
+    }, true);
+    _pendingSyncFlushAttached = true;
+  }
+
   const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
   window.firebaseOnSnapshot(docRef, (snapshot) => {
     if (snapshot.exists() && snapshot.metadata.hasPendingWrites === false) {
       const data = snapshot.data();
 
-      // 보호: 다른 기기가 빈 상태로 동기화 데이터를 보냈다면 무시 (이번 사고의 원인)
+      // 보호: 다른 기기가 빈 상태로 동기화 데이터를 보냈다면 무시
       if (isDataSuspicious(data)) {
         console.warn('⚠️ Firebase 동기화 데이터가 비어있어 무시 (현재 데이터 유지)');
         return;
       }
 
-      applyCloudData(data);
-      saveToLocalStorage();
-      if (typeof updateHeaderStats === 'function') updateHeaderStats();
-      const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
-      if (typeof renderFn === 'function') renderFn();
-      console.log('🔄 동기화 완료');
+      // 보호: 사용자가 텍스트 입력 중이면 즉시 적용하지 않고 보류
+      // (IME 한글 조합 중 input element가 destroy되면 글자가 끊김)
+      if (_isUserTyping()) {
+        _pendingSync = data; // 마지막 변경만 보존 (옛 보류는 덮어씀)
+        console.log('⌨️ 입력 중 - 동기화 보류 (입력 끝나면 자동 적용)');
+        return;
+      }
+
+      _applySyncData(data);
     }
   });
 }
