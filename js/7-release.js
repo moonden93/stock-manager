@@ -130,7 +130,7 @@ function renderRelease() {
     '</div></div></div>';
   
   // Step 3: 품목
-  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
+  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="px-4 py-3 bg-slate-50 flex items-center gap-2">' +
     '<span class="w-7 h-7 bg-slate-400 text-white rounded-full flex items-center justify-center font-bold">3</span>' +
     '<h3 class="font-bold text-slate-900">품목 선택</h3>' +

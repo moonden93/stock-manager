@@ -23,7 +23,7 @@ function renderInbound() {
     '<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">' +
     '<h2 class="text-lg font-bold text-slate-900 mb-1">📥 입고 등록</h2>' +
     '<p class="text-sm text-slate-600">새로 들어온 재료의 입고 수량을 등록합니다</p></div>' +
-    '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
+    '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(inboundSearchTerm) + '" oninput="inboundSearchTerm = this.value; renderInbound();" ' +
     'placeholder="🔍 품목 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" /></div>' +

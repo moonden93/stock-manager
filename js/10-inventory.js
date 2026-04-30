@@ -45,7 +45,7 @@ function renderInventory() {
     '<p class="text-xs text-slate-500">🔴 품절</p><p class="text-2xl font-bold text-red-600">' + out + '</p></button>' +
     '</div>' +
     
-    '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
+    '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
     '<input type="text" value="' + escapeHtml(invSearchTerm) + '" oninput="invSearchTerm = this.value; invPage = 1; renderInventory();" ' +
     'placeholder="🔍 검색..." class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" /></div>' +
