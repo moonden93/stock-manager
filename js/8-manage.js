@@ -383,8 +383,7 @@ function updateReleaseDateDow() {
   const input = document.getElementById('release-date');
   const span = document.getElementById('release-date-dow');
   if (!input || !span) return;
-  const dow = dowKor(input.value);
-  span.textContent = dow ? '(' + dow + ')' : '';
+  span.textContent = dowKor(input.value);
 }
 
 function openCompleteRequestModal(requestId, summary) {
@@ -413,7 +412,7 @@ function openCompleteRequestModal(requestId, summary) {
     '<label class="text-sm font-bold text-slate-700 mb-2 block">반출 일자</label>' +
     '<div class="flex items-center gap-2">' +
     '<input type="date" id="release-date" value="' + todayStr + '" oninput="updateReleaseDateDow()" class="flex-1 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
-    '<span id="release-date-dow" class="text-base font-bold text-slate-700 px-1">(' + dowKor(todayStr) + ')</span>' +
+    '<span id="release-date-dow" class="text-base font-bold text-slate-700 px-1">' + dowKor(todayStr) + '</span>' +
     '</div>' +
     '</div>' +
     '</div>' +
