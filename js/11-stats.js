@@ -535,8 +535,20 @@ function renderStatsByAnomaly() {
     return d >= threeMonthsAgoStart && d < thisMonthStart;
   });
 
-  // 팀별 + 품목별로 합산
-  // → { 팀명: { 'vendor::name': { vendor, name, qty, cost } } }
+  // ─── 주차 단위 정규화 ───
+  // 핵심 아이디어: 월별 "총량" 비교는 진행 중인 달엔 불공평 (5월 1주차에 5월 총량 vs 4월 총량은 4배 차이).
+  // 대신 양쪽 모두 "주평균"으로 환산해서 비교하면 진행 중이든 완료든 공평하게 보임.
+  // 주 수: history에 실제 데이터가 있는 unique weekKey 개수로 셈.
+  const thisWeekSet = new Set();
+  const past3WeekSet = new Set();
+  thisMonth.forEach(h => { if (h.weekKey) thisWeekSet.add(h.weekKey); });
+  past3.forEach(h => { if (h.weekKey) past3WeekSet.add(h.weekKey); });
+  const thisWeeks = Math.max(thisWeekSet.size, 1);
+  const past3Weeks = Math.max(past3WeekSet.size, 1);
+  // 진행 중인 달 여부 (오늘이 선택월의 마지막 날 이전이면 incomplete)
+  const isIncomplete = thisMonthEnd > new Date();
+
+  // 팀별 + 품목별로 합산 (총량). 비교 시점에 주평균으로 변환.
   function aggregateByTeamItem(arr) {
     const map = {};
     arr.forEach(h => {
@@ -554,7 +566,19 @@ function renderStatsByAnomaly() {
   const past3ByTeam = aggregateByTeamItem(past3);
   const allTeams = new Set([...Object.keys(thisByTeam), ...Object.keys(past3ByTeam)]);
 
-  // 각 팀별로 4분류 이상치 계산
+  // 가격 조회 (inventory 우선, 없으면 history에서 마지막 본 단가)
+  function priceOfItem(vendor, name) {
+    const inv = inventory.find(i => i.vendor === vendor && i.name === name);
+    if (inv && inv.price) return inv.price;
+    // fallback: history에서 마지막 단가
+    for (let i = outHistory.length - 1; i >= 0; i--) {
+      const h = outHistory[i];
+      if (h.vendor === vendor && h.name === name && h.price) return h.price;
+    }
+    return 0;
+  }
+
+  // 각 팀별 분석: 4분류 + 비용 영향 + KPI
   const teamAnomalies = {};
   allTeams.forEach(team => {
     const thisItems = thisByTeam[team] || {};
@@ -562,23 +586,53 @@ function renderStatsByAnomaly() {
     const allKeys = new Set([...Object.keys(thisItems), ...Object.keys(past3Items)]);
 
     const ups = [], downs = [], news = [], gones = [];
-    allKeys.forEach(k => {
-      const thisQty = thisItems[k] ? thisItems[k].qty : 0;
-      const pastQty = past3Items[k] ? past3Items[k].qty : 0;
-      const pastAvg = pastQty / 3;
-      const meta = thisItems[k] || past3Items[k];
-      const row = { ...meta, thisQty, pastAvg: Math.round(pastAvg * 10) / 10 };
+    let thisCost = 0, pastTotalCost = 0;
+    const allItems = [];  // TOP 변동 후보
 
-      if (pastAvg === 0 && thisQty > 0) {
+    allKeys.forEach(k => {
+      const thisQtyTotal = thisItems[k] ? thisItems[k].qty : 0;
+      const pastQtyTotal = past3Items[k] ? past3Items[k].qty : 0;
+      const meta = thisItems[k] || past3Items[k];
+      const price = priceOfItem(meta.vendor, meta.name);
+
+      // 비교 기준 단위: 진행 중 달이면 주평균, 완료된 달이면 월평균
+      // (사용자 요구: 이번달 주평균 vs 직전 3개월 주평균 / 과거달 월총량 vs 직전 3개월 월평균)
+      let thisVal, pastVal;
+      if (isIncomplete) {
+        thisVal = thisQtyTotal / thisWeeks;
+        pastVal = pastQtyTotal / past3Weeks;
+      } else {
+        thisVal = thisQtyTotal;
+        pastVal = pastQtyTotal / 3;
+      }
+      const deltaQty = thisVal - pastVal;
+      const costImpact = deltaQty * price;
+
+      thisCost += thisQtyTotal * price;
+      pastTotalCost += pastQtyTotal * price;
+
+      const row = {
+        ...meta,
+        thisQty: thisQtyTotal,
+        thisVal: Math.round(thisVal * 10) / 10,
+        pastVal: Math.round(pastVal * 10) / 10,
+        pastAvg: Math.round((pastQtyTotal / 3) * 10) / 10,    // (구) 월평균 — 모달 호환
+        price, deltaQty, costImpact
+      };
+
+      if (pastVal === 0 && thisVal > 0) {
         news.push(row);
-      } else if (pastAvg > 0 && thisQty === 0) {
+        allItems.push({ ...row, kind: 'new', diffPct: null });
+      } else if (pastVal > 0 && thisVal === 0) {
         row.diffPct = -100;
         gones.push(row);
-      } else if (pastAvg > 0) {
-        const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
+        allItems.push({ ...row, kind: 'gone', diffPct: -100 });
+      } else if (pastVal > 0) {
+        const diffPct = ((thisVal - pastVal) / pastVal) * 100;
         row.diffPct = diffPct;
         if (diffPct >= 30) ups.push(row);
         else if (diffPct <= -30) downs.push(row);
+        allItems.push({ ...row, kind: diffPct >= 30 ? 'up' : (diffPct <= -30 ? 'down' : 'stable'), diffPct });
       }
     });
 
@@ -587,7 +641,36 @@ function renderStatsByAnomaly() {
     news.sort((a, b) => b.thisQty - a.thisQty);
     gones.sort((a, b) => b.pastAvg - a.pastAvg);
 
-    teamAnomalies[team] = { ups, downs, news, gones };
+    // 비용 영향 TOP — 임계치 무시, 절대값으로 정렬
+    const topByImpact = allItems
+      .filter(it => it.kind !== 'stable' && Math.abs(it.costImpact) > 0)
+      .sort((a, b) => Math.abs(b.costImpact) - Math.abs(a.costImpact))
+      .slice(0, 5);
+
+    // 비용 비교: 진행 중이면 주평균, 완료면 월평균
+    const thisCostComp = isIncomplete ? (thisCost / thisWeeks) : thisCost;
+    const pastCostComp = isIncomplete ? (pastTotalCost / past3Weeks) : (pastTotalCost / 3);
+    const costDelta = thisCostComp - pastCostComp;
+    const costDeltaPct = pastCostComp > 0 ? (costDelta / pastCostComp) * 100 : null;
+    const pastAvgCost = pastTotalCost / 3;  // 표시용 월평균
+
+    teamAnomalies[team] = {
+      ups, downs, news, gones, topByImpact,
+      thisCost, pastAvgCost,
+      thisCostComp, pastCostComp, costDelta, costDeltaPct,
+      thisWeeks, past3Weeks, isIncomplete,
+      itemCount: allItems.length
+    };
+  });
+
+  // 동료 팀 비교: 이번달 비용 기준 백분위
+  const allTeamCosts = Object.entries(teamAnomalies)
+    .map(([t, a]) => ({ team: t, cost: a.thisCost }))
+    .filter(t => t.cost > 0)
+    .sort((a, b) => b.cost - a.cost);
+  const teamRankMap = {};
+  allTeamCosts.forEach((t, i) => {
+    teamRankMap[t.team] = { rank: i + 1, total: allTeamCosts.length, cost: t.cost };
   });
 
   // 팀 정렬: 설정 teams 순서 → 그 외(옛 팀명, 미지정) 뒤에
@@ -617,7 +700,7 @@ function renderStatsByAnomaly() {
                        return last.getFullYear() + '.' + (last.getMonth() + 1);
                      })();
 
-  // 안내 박스 + 월 선택 드롭다운
+  // 안내 박스 + 월 선택 드롭다운 + 비교 방식 설명
   let html = '<div class="space-y-3">' +
     '<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">' +
     '<div class="flex items-center gap-2 flex-wrap mb-2">' +
@@ -626,121 +709,211 @@ function renderStatsByAnomaly() {
     optionsHtml +
     '</select>' +
     (anomalyMonth ? '<button onclick="changeAnomalyMonth(\'\')" class="text-[11px] px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-slate-600">↩ 이번 달로</button>' : '') +
+    (isIncomplete ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[10px] font-bold">진행 중 (' + thisWeeks + '주차까지)</span>' : '') +
     '</div>' +
     '<p class="text-xs text-slate-700 leading-relaxed">' +
     '<strong>📈 ' + monthLabel + (isCurrentMonth ? ' (이번 달)' : '') + '</strong>' +
-    ' 팀별 사용량을 <strong>직전 3개월(' + past3Label + ') 월평균</strong>과 비교합니다.<br>' +
-    '±30% 이상 변동, 신규/중단 품목이 있는 팀만 표시.' +
+    (isIncomplete
+      ? ' 진행 중인 달이라 <strong>주평균 사용량</strong>을 <strong>직전 3개월(' + past3Label + ') 주평균</strong>과 비교합니다.'
+      : ' <strong>월 총 사용량</strong>을 <strong>직전 3개월(' + past3Label + ') 월평균</strong>과 비교합니다.') +
     '</p>' +
     '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 적용되지 않습니다 (자체 기준 사용)</p>' +
     '</div>';
 
-  // 이상치 있는 팀이 한 곳도 없으면 메시지
-  const totalCount = Object.values(teamAnomalies).reduce((s, t) =>
-    s + t.ups.length + t.downs.length + t.news.length + t.gones.length, 0);
-
-  if (totalCount === 0) {
+  // 데이터 없으면 안내
+  if (allTeamCosts.length === 0) {
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
-      '<p class="text-4xl mb-2">✅</p>' +
-      '<p class="text-sm text-slate-500">이상 사용량 없음</p>' +
-      '<p class="text-xs text-slate-400 mt-1">모든 팀이 평소와 비슷한 사용 패턴입니다</p>' +
-      '</div>';
-    html += '</div>';
+      '<p class="text-4xl mb-2">📭</p>' +
+      '<p class="text-sm text-slate-500">' + monthLabel + ' 출고 기록 없음</p>' +
+      '</div></div>';
     return html;
   }
 
-  // 팀별 카드 (이상치 있는 팀만)
-  sortedTeams.forEach(team => {
-    const a = teamAnomalies[team];
-    const total = a.ups.length + a.downs.length + a.news.length + a.gones.length;
-    if (total === 0) return;
+  // 팀별 카드 — 활동 있는 모든 팀 표시 (비용 큰 순)
+  // 비활동 팀은 별도 처리
+  const activeTeams = sortedTeams.filter(t => teamAnomalies[t] && (teamAnomalies[t].thisCost > 0 || teamAnomalies[t].pastAvgCost > 0));
+  const sortedActive = activeTeams.slice().sort((a, b) => (teamAnomalies[b].thisCostComp || 0) - (teamAnomalies[a].thisCostComp || 0));
 
-    const comment = getTeamAnomalyComment(a);
+  sortedActive.forEach(team => {
+    const a = teamAnomalies[team];
+    const rank = teamRankMap[team];
+    const totalChange = a.ups.length + a.downs.length + a.news.length + a.gones.length;
+
+    // 변동률 색상
+    const pct = a.costDeltaPct;
+    let pctBadge = '';
+    if (pct === null) {
+      pctBadge = '<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[11px] font-bold">신규 활동</span>';
+    } else if (pct >= 30) {
+      pctBadge = '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[11px] font-bold">▲ +' + Math.round(pct) + '%</span>';
+    } else if (pct <= -30) {
+      pctBadge = '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-[11px] font-bold">▼ ' + Math.round(pct) + '%</span>';
+    } else if (Math.abs(pct) > 5) {
+      pctBadge = '<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[11px] font-bold">' + (pct >= 0 ? '+' : '') + Math.round(pct) + '%</span>';
+    } else {
+      pctBadge = '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[11px] font-bold">≈ 평소 수준</span>';
+    }
+
+    const comment = getTeamAnomalyComment(a, isIncomplete, thisWeeks);
+
+    // KPI 라벨/값: 진행 중이면 "주평균", 완료면 "월총량"
+    const thisLabel = isIncomplete ? '주평균 (이번)' : '이번 달 총액';
+    const pastLabel = isIncomplete ? '주평균 (지난 3개월)' : '월평균 (지난 3개월)';
+    const thisValFmt = formatWonShort(a.thisCostComp);
+    const pastValFmt = formatWonShort(a.pastCostComp);
+    const accumFmt = formatWonShort(a.thisCost);  // 누계 (진행 중일 때 의미 있음)
 
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 overflow-hidden">' +
-      '<div class="px-4 py-3 bg-slate-50">' +
+      // 헤더
+      '<div class="px-4 py-3 bg-slate-50 border-b border-slate-100">' +
       '<div class="flex items-center justify-between gap-2 flex-wrap">' +
       '<h3 class="font-bold text-slate-900">' + escapeHtml(team) + '</h3>' +
-      '<div class="flex items-center gap-2 flex-wrap">' +
-      '<div class="flex gap-1.5 text-[11px] font-bold">' +
-      (a.ups.length > 0   ? '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full">🔺 ' + a.ups.length + '</span>' : '') +
-      (a.downs.length > 0 ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">🔻 ' + a.downs.length + '</span>' : '') +
-      (a.news.length > 0  ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">🆕 ' + a.news.length + '</span>' : '') +
-      (a.gones.length > 0 ? '<span class="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">⏸ ' + a.gones.length + '</span>' : '') +
-      '</div>' +
+      '<div class="flex items-center gap-1.5 flex-wrap">' +
+      pctBadge +
+      (rank ? '<span class="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-full text-[11px] font-bold">팀 중 ' + rank.rank + '/' + rank.total + '위</span>' : '') +
       '<button onclick="openAnomalyDetail(\'' + escapeJs(team) + '\')" class="text-[11px] px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-700 rounded-full font-bold">📋 상세</button>' +
-      '</div></div>' +
-      // 코멘트 (절약/관리 권고) — 카드 본문은 코멘트까지만, 행 상세는 [📋 상세] 모달에서만
-      (comment ? '<div class="px-4 pb-4 pt-1 text-xs text-slate-700">' + comment + '</div>' : '') +
+      '</div>' +
+      '</div>' +
+      // KPI 미니 그리드 (진행 중이면 3열: 누계+주평균이번+주평균지난, 완료면 2열: 월총+월평균지난)
+      '<div class="grid ' + (isIncomplete ? 'grid-cols-3' : 'grid-cols-2') + ' gap-2 mt-2 text-[11px]">' +
+      (isIncomplete ?
+        '<div class="bg-white rounded-lg border border-slate-200 px-2 py-1.5">' +
+        '<p class="text-slate-500">진행 누계</p>' +
+        '<p class="font-bold text-slate-900 text-xs">' + accumFmt + '</p>' +
+        '</div>'
+        : '') +
+      '<div class="bg-white rounded-lg border border-slate-200 px-2 py-1.5">' +
+      '<p class="text-slate-500">' + thisLabel + '</p>' +
+      '<p class="font-bold text-slate-900 text-xs">' + thisValFmt + '</p>' +
+      '</div>' +
+      '<div class="bg-white rounded-lg border border-slate-200 px-2 py-1.5">' +
+      '<p class="text-slate-500">' + pastLabel + '</p>' +
+      '<p class="font-bold text-slate-700 text-xs">' + pastValFmt + '</p>' +
+      '</div>' +
+      '</div>' +
+      // 변동 카운트 (있을 때만)
+      (totalChange > 0 ?
+        '<div class="flex gap-1.5 text-[10px] font-bold mt-2">' +
+        (a.ups.length > 0   ? '<span class="px-2 py-0.5 bg-red-100 text-red-700 rounded-full">🔺 급증 ' + a.ups.length + '</span>' : '') +
+        (a.downs.length > 0 ? '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full">🔻 감소 ' + a.downs.length + '</span>' : '') +
+        (a.news.length > 0  ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">🆕 신규 ' + a.news.length + '</span>' : '') +
+        (a.gones.length > 0 ? '<span class="px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">⏸ 중단 ' + a.gones.length + '</span>' : '') +
+        '</div>'
+        : '') +
+      '</div>' +
+      // 본문 코멘트 + TOP 변동
+      '<div class="px-4 py-3 space-y-2">' +
+      (comment ? '<p class="text-xs text-slate-700 leading-relaxed">' + comment + '</p>' : '') +
+      renderTeamTopImpact(a) +
+      '</div>' +
       '</div>';
   });
 
   html += '</div>';
 
-  // 모달이 사용할 수 있게 마지막 분석 결과를 전역에 보관
-  window._anomalyData = { teamAnomalies, monthLabel };
+  // 모달용 데이터 보관
+  window._anomalyData = { teamAnomalies, monthLabel, isIncomplete, thisWeeks, past3Weeks };
 
   return html;
 }
 
-// 팀별 절약/관리 권고 코멘트 자동 생성
-// - 추가 지출 합계
-// - 영향이 큰 상위 2개 품목의 실제 수치(평소 → 이번 + 추가 비용)를 구체적으로 노출
-//   → 운영자가 어떤 품목을 얼마나 줄여야 하는지 즉시 판단 가능
-function getTeamAnomalyComment(a) {
-  if (a.ups.length === 0 && a.news.length === 0) {
-    if (a.downs.length > 0 || a.gones.length > 0) {
-      return '👍 사용량이 평소보다 적습니다 — 절약 흐름';
+// 팀별 비용 영향 TOP 3 — 카드 본문에 항상 표시 (임계치 무관)
+function renderTeamTopImpact(a) {
+  if (!a.topByImpact || a.topByImpact.length === 0) return '';
+  const unit = a.isIncomplete ? '/주' : '/월';
+  let html = '<div class="border border-slate-100 rounded-lg p-2 bg-slate-50">' +
+    '<p class="text-[10px] font-bold text-slate-500 mb-1">📊 비용 영향 TOP 3 (' + unit + ' 기준)</p>' +
+    '<div class="space-y-0.5 text-[11px]">';
+  a.topByImpact.slice(0, 3).forEach(it => {
+    let kindIcon, colorCls;
+    if (it.kind === 'up')        { kindIcon = '▲'; colorCls = 'text-red-700'; }
+    else if (it.kind === 'down') { kindIcon = '▼'; colorCls = 'text-blue-700'; }
+    else if (it.kind === 'new')  { kindIcon = '★'; colorCls = 'text-emerald-700'; }
+    else                          { kindIcon = '⏸'; colorCls = 'text-slate-600'; }
+    const before = it.kind === 'new' ? '0' : it.pastVal;
+    const after = it.kind === 'gone' ? '0' : it.thisVal;
+    const sign = it.costImpact >= 0 ? '+' : '';
+    const impactFmt = sign + formatWonShort(it.costImpact) + unit;
+    const impactColor = it.costImpact > 0 ? 'text-red-600' : 'text-emerald-600';
+    html += '<p>' +
+      '<span class="' + colorCls + ' font-bold">' + kindIcon + '</span> ' +
+      '<strong>' + escapeHtml(it.name) + '</strong>: ' +
+      before + ' → ' + after + (it.kind === 'new' || it.kind === 'gone' ? '' : ' (' + (it.diffPct >= 0 ? '+' : '') + Math.round(it.diffPct) + '%)') +
+      ' <span class="' + impactColor + ' font-bold">' + impactFmt + '</span>' +
+      '</p>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+// 팀별 분석 코멘트 — 패턴 기반 학술적/실무적 인사이트
+// - 사용량 변동 패턴 분석 (환자 수 시그널, 시술 변경 등)
+// - 비용 영향 정량화
+// - 실행 가능한 권고
+function getTeamAnomalyComment(a, isIncomplete, thisWeeks) {
+  // 비용 영향 합산 (주/월 단위 — isIncomplete에 따라 단위 다름)
+  const unit = isIncomplete ? '/주' : '/월';
+  const positiveImpact = a.topByImpact.filter(it => it.costImpact > 0)
+    .reduce((s, it) => s + it.costImpact, 0);
+  const negativeImpact = a.topByImpact.filter(it => it.costImpact < 0)
+    .reduce((s, it) => s + Math.abs(it.costImpact), 0);
+  const netImpact = positiveImpact - negativeImpact;
+
+  // 패턴 시그널 (학술적/실무적 인사이트)
+  const signals = [];
+  const upCount = a.ups.length;
+  const downCount = a.downs.length;
+  const newCount = a.news.length;
+  const goneCount = a.gones.length;
+
+  // 1) 환자 수/시술량 시그널 — 다수 품목이 같은 방향
+  if (upCount >= 3 && downCount === 0) {
+    signals.push('👥 다수 품목 사용량 증가 → <strong>환자 수/시술량 증가 시그널</strong>');
+  } else if (downCount >= 3 && upCount === 0) {
+    signals.push('📉 다수 품목 사용량 감소 → <strong>환자 수/시술량 감소</strong> 또는 <strong>대체재 도입</strong>');
+  } else if (upCount >= 2 && downCount >= 2) {
+    signals.push('🔄 일부 품목 ↑, 일부 ↓ → <strong>시술 구성 변화</strong> 또는 <strong>치료 프로토콜 변경</strong>');
+  }
+
+  // 2) 신규 사용 시그널
+  if (newCount >= 2) {
+    signals.push('✨ ' + newCount + '개 신규 품목 사용 → <strong>새 시술/재료 도입</strong> 가능성');
+  } else if (newCount === 1) {
+    const newItem = a.news[0];
+    signals.push('✨ <strong>' + escapeHtml(newItem.name) + '</strong> 신규 사용 시작');
+  }
+
+  // 3) 사용 중단 시그널
+  if (goneCount >= 2) {
+    signals.push('⏸ ' + goneCount + '개 품목 사용 중단 → <strong>재고 정리 검토</strong> 필요');
+  }
+
+  // 4) 비용 영향 정량화
+  let costMsg = '';
+  if (Math.abs(netImpact) > 1000) {
+    if (netImpact > 0) {
+      costMsg = '💰 평소 대비 <strong class="text-red-700">+' + formatWonShort(netImpact) + unit + '</strong> 추가 지출';
+    } else {
+      costMsg = '💰 평소 대비 <strong class="text-emerald-700">-' + formatWonShort(Math.abs(netImpact)) + unit + '</strong> 절약';
+    }
+  }
+
+  // 5) 안정/평소 수준
+  if (signals.length === 0 && Math.abs(netImpact) < 1000) {
+    if (a.thisCost === 0 && a.pastAvgCost > 0) {
+      return '⚠️ <strong>이번 ' + (isIncomplete ? '진행 기간' : '달') + ' 출고 없음</strong> — 운영 중단? 데이터 누락 확인 필요';
+    }
+    if (a.thisCost > 0) {
+      return '✅ 평소와 비슷한 사용 패턴 — 안정적 운영';
     }
     return '';
   }
 
-  function priceOf(it) {
-    const m = inventory.find(i => i.vendor === it.vendor && i.name === it.name);
-    return m && m.price ? m.price : 0;
-  }
-
-  // 영향 품목 모음 (급증 + 신규)
-  const contribs = [];
-  let extraCost = 0;
-  a.ups.forEach(it => {
-    const extraQty = it.thisQty - it.pastAvg;
-    const extra = extraQty * priceOf(it);
-    extraCost += extra;
-    contribs.push({ ...it, extraQty, extra, kind: 'up' });
-  });
-  a.news.forEach(it => {
-    const extra = it.thisQty * priceOf(it);
-    extraCost += extra;
-    contribs.push({ ...it, extraQty: it.thisQty, extra, kind: 'new' });
-  });
-
-  // 상위 영향 품목 형식화 (가격 있으면 비용 기준, 없으면 수량 기준)
-  function formatTop(items) {
-    return items.map(it => {
-      if (it.kind === 'new') {
-        const costPart = it.extra > 0 ? ' <span class="text-slate-500">(+' + formatWonShort(it.extra) + ')</span>' : '';
-        return '<strong>' + escapeHtml(it.name) + '</strong> 신규 ' + it.thisQty + '개' + costPart;
-      }
-      const before = Math.round(it.pastAvg * 10) / 10;
-      const costPart = it.extra > 0 ? ' <span class="text-slate-500">(+' + formatWonShort(it.extra) + ')</span>' : '';
-      return '<strong>' + escapeHtml(it.name) + '</strong> ' + before + '→' + it.thisQty + '개' + costPart;
-    }).join(', ');
-  }
-
-  if (extraCost > 0) {
-    contribs.sort((x, y) => y.extra - x.extra);
-    const top = contribs.slice(0, 2).filter(x => x.extra > 0);
-    let msg = '💡 평소 대비 약 <strong>' + formatWonShort(extraCost) + '</strong> 추가 지출';
-    if (top.length > 0) msg += ' · ' + formatTop(top);
-    return msg;
-  }
-
-  // 가격 정보 없으면 수량 기준 상위 2개
-  contribs.sort((x, y) => y.extraQty - x.extraQty);
-  const top = contribs.slice(0, 2).filter(x => x.extraQty > 0);
-  if (top.length === 0) return '';
-  return '💡 평소보다 많이 사용 중 · ' + formatTop(top);
+  // 종합 메시지
+  let msg = '';
+  if (costMsg) msg += costMsg + '<br>';
+  msg += signals.join('<br>');
+  return msg;
 }
 
 // ============================================
