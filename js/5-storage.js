@@ -237,6 +237,16 @@ async function saveToFirebase() {
     return;
   }
 
+  // 보호: teams는 있는데 teamMembers가 비어있는 건 의심스러운 상태.
+  // 폰/다른 기기가 Firebase 로드 실패 후 빈 teamMembers를 그대로 저장하는 사고를 막음.
+  // (모든 담당자를 의도적으로 한 번에 비우는 건 사실상 없는 시나리오)
+  const teamsExist = Array.isArray(teams) && teams.length > 0;
+  const membersEmpty = !teamMembers || Object.keys(teamMembers).length === 0;
+  if (teamsExist && membersEmpty) {
+    console.warn('⚠️ teamMembers가 비어있어 Firebase 저장을 거부했습니다 (담당자 데이터 보호)');
+    return;
+  }
+
   try {
     const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
     await window.firebaseSetDoc(docRef, {

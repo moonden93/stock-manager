@@ -160,19 +160,43 @@ function updateHeaderStats() {
 // ============================================
 // 앱 시작
 // ============================================
+// Firebase 로드 완료 전에 stale 로컬 데이터로 화면을 그리면,
+// 사용자가 빈 화면을 보거나(다른 기기에서 추가한 담당자가 안 보임)
+// 그 상태에서 액션을 트리거해 클라우드를 덮어쓰는 사고가 날 수 있음.
+// → 첫 렌더는 반드시 Firebase 로드 시도 이후로 미룸.
+//   단, 오프라인/Firebase 장애 대비 3초 타임아웃 후엔 로컬 데이터로 진행.
 async function initApp() {
   loadData();
-  switchTab('release');  // 첫 화면: 반출
-  updateHeaderStats();
+  showInitLoadingScreen();
 
-  // Firebase가 이미 준비됐으면 바로 동기화, 아니면 이벤트 대기
-  if (window.firebaseReady) {
-    await syncWithFirebase();
-  } else {
-    window.addEventListener('firebaseReady', async () => {
-      await syncWithFirebase();
-    });
-  }
+  await waitForFirebaseReady(3000);
+  await syncWithFirebase();
+
+  switchTab('release');  // 첫 화면: 반출 (로딩 스피너 위에 덮어 그림)
+  updateHeaderStats();
+}
+
+function waitForFirebaseReady(timeoutMs) {
+  return new Promise((resolve) => {
+    if (window.firebaseReady) { resolve(); return; }
+    const timer = setTimeout(() => {
+      console.warn('⚠️ Firebase 준비 타임아웃 - 로컬 데이터로 진행');
+      resolve();
+    }, timeoutMs);
+    window.addEventListener('firebaseReady', () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+}
+
+function showInitLoadingScreen() {
+  const el = document.getElementById('page-content');
+  if (!el) return;
+  el.innerHTML = '<div class="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">' +
+    '<div class="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin"></div>' +
+    '<p class="text-sm font-medium">데이터 동기화 중...</p>' +
+    '</div>';
 }
 
 // ============================================
