@@ -1,0 +1,11 @@
+{
+  "name": "stock-manager-backup",
+  "version": "1.0.0",
+  "description": "Daily backup script for moon-dental stock-manager (run via GitHub Actions)",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "nodemailer": "^6.9.0"
+  }
+}

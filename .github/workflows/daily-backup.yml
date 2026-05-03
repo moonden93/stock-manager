@@ -1,0 +1,29 @@
+name: Daily Backup
+
+on:
+  schedule:
+    # 매일 03:00 UTC = 12:00 한국시간 (KST = UTC+9)
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # 수동 실행 버튼 (테스트용)
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Run daily backup
+        working-directory: scripts
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BACKUP_RECIPIENT: ${{ secrets.BACKUP_RECIPIENT }}
+        run: node daily-backup.js

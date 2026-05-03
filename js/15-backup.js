@@ -132,22 +132,24 @@ function generateRecoveryExcel() {
   applyFormat(wsInv, [4, 5, 6]);
   XLSX.utils.book_append_sheet(wb, wsInv, '품목');
 
-  // ─ 입출고 이력 (전체) ─
-  const histRows = [['ID', '날짜', '주차', '구분', '팀', '담당자', '업체', '품명', '단위', '수량', '단가']];
+  // ─ 입출고 이력 (전체) — releasedBy(반출 처리한 사람) 포함 ─
+  const histRows = [['ID', '날짜', '주차', '구분', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가']];
   history.forEach(h => histRows.push([
     h.id || '', h.date || '', h.weekKey || '', h.type || '',
-    h.team || '', h.member || '', h.vendor || '', h.name || '',
+    h.team || '', h.requester || h.member || '', h.releasedBy || '',
+    h.vendor || '', h.name || '',
     h.unit || '', h.qty || 0, h.price || 0
   ]));
   const wsHist = XLSX.utils.aoa_to_sheet(histRows);
-  applyFormat(wsHist, [9, 10]);
+  applyFormat(wsHist, [10, 11]);
   XLSX.utils.book_append_sheet(wb, wsHist, '입출고이력');
 
-  // ─ 반출 요청 (전체) ─
-  const reqRows = [['ID', '날짜', '상태', '팀', '담당자', '품목수', '메모']];
+  // ─ 반출 요청 (전체) — releasedBy 포함 ─
+  const reqRows = [['ID', '요청일', '상태', '팀', '요청자', '반출자', '품목수', '메모']];
   requests.forEach(r => reqRows.push([
     r.id || '', r.date || '', r.status || '',
-    r.team || '', r.member || '',
+    r.team || '', r.requester || r.member || '',
+    r.releasedBy || '',
     Array.isArray(r.items) ? r.items.length : 0,
     r.memo || ''
   ]));
@@ -328,7 +330,7 @@ function generateReportExcel() {
   // ─── 시트 3: 입출고이력 + 반출요청 (한 시트) ───
   const combined = [];
   combined.push(['【 이번 주 출고 】 ' + thisOutHist.length + '건 · ' + thisOutCost.toLocaleString() + '원']);
-  combined.push(['날짜', '팀', '담당자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
+  combined.push(['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
   if (thisOutHist.length === 0) {
     combined.push(['(이번 주 출고 없음)']);
   } else {
@@ -336,7 +338,8 @@ function generateReportExcel() {
       .slice()
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .forEach(h => combined.push([
-        (h.date || '').slice(0, 10), h.team || '', h.member || '',
+        (h.date || '').slice(0, 10), h.team || '',
+        h.requester || h.member || '', h.releasedBy || '',
         h.vendor || '', h.name || '', h.unit || '',
         h.qty || 0, h.price || 0, (h.qty || 0) * (h.price || 0)
       ]));
