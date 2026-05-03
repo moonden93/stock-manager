@@ -824,4 +824,26 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem(LAST_BACKUP_TIME_KEY);
     console.log('🧹 백업 쿨다운/주차 기록 초기화');
   };
+
+  // 시트 데이터(PREBUILT_HISTORY)를 history로 강제 재import.
+  // js/3-data-history.js가 새 데이터로 갱신됐을 때 1회 실행.
+  // ⚠️ 기존 history를 통째로 교체하므로 신중히 사용.
+  window.mcReimportFromSheets = function() {
+    if (typeof PREBUILT_HISTORY === 'undefined') {
+      console.error('PREBUILT_HISTORY 로드 안 됨 — 페이지 새로고침 후 재시도');
+      return;
+    }
+    const oldCount = history.length;
+    const newCount = PREBUILT_HISTORY.length;
+    if (!confirm('history를 시트 데이터로 교체합니다.\n\n현재: ' + oldCount + '건\n신규: ' + newCount + '건\n\n계속하시겠습니까?')) {
+      console.log('취소됨');
+      return;
+    }
+    history.length = 0;
+    PREBUILT_HISTORY.forEach(h => history.push(h));
+    saveAll();
+    if (typeof updateHeaderStats === 'function') updateHeaderStats();
+    if (typeof switchTab === 'function') switchTab(currentTab);
+    console.log('✓ history 교체 완료: ' + oldCount + ' → ' + newCount + '건 (Firestore에도 반영)');
+  };
 }
