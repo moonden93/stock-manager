@@ -169,7 +169,7 @@ function generateMonthlyReportExcel(data, year, month) {
   applyFormat(wsItem, [4, 5]);
   XLSX.utils.book_append_sheet(wb, wsItem, 'TOP 품목');
 
-  // 5. 팀별 이상치 (보고월 vs 직전 3개월 평균)
+  // 5. 팀별 AI 분석 (보고월 vs 직전 3개월 평균)
   const prev3Start = new Date(year, month - 4, 1);
   const past3 = history.filter(h => {
     if (h.type !== 'out') return false;
@@ -192,7 +192,7 @@ function generateMonthlyReportExcel(data, year, month) {
   const allTeams = new Set([...Object.keys(thisByTeam), ...Object.keys(past3ByTeam)]);
 
   const anomRows = [
-    ['이상치 분석: ' + monthLabel + ' vs 직전 3개월 월평균'],
+    ['AI 분석: ' + monthLabel + ' vs 직전 3개월 월평균'],
     ['±30% 이상 변동 / 신규 / 중단 항목만 표시'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '직전 3개월 월평균', '변화율']
@@ -228,10 +228,10 @@ function generateMonthlyReportExcel(data, year, month) {
     tRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
     tRows.forEach(r => { anomRows.push(r); anomCount++; });
   });
-  if (anomCount === 0) anomRows.push(['(이상치 없음)']);
+  if (anomCount === 0) anomRows.push(['(특이 변동 없음)']);
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
   applyFormat(wsAnom, [4, 5], 3);
-  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 이상치');
+  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 AI 분석');
 
   // 6. 출고 원장 (반출자 포함)
   const ledgerRows = [['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];

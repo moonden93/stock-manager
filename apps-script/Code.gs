@@ -313,7 +313,7 @@ function createReportSheet(data, name, folder) {
   });
   writeRows(ss.insertSheet('입출고+요청'), combined);
 
-  // ─ 4. 팀별 이상치 (이번 달 vs 지난 3개월) ─
+  // ─ 4. 팀별 AI 분석 (이번 달 vs 지난 3개월) ─
   const now = new Date();
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
@@ -342,7 +342,7 @@ function createReportSheet(data, name, folder) {
   const monthLabel = tmStart.getFullYear() + '년 ' + (tmStart.getMonth() + 1) + '월';
 
   const anomRows = [
-    ['이상치 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
+    ['AI 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '지난 3개월 월평균', '변화율']
   ];
@@ -379,8 +379,8 @@ function createReportSheet(data, name, folder) {
     teamRows.sort(function(a, b) { return (order[a[1]] || 99) - (order[b[1]] || 99); });
     teamRows.forEach(function(r) { anomRows.push(r); anomCount++; });
   });
-  if (anomCount === 0) anomRows.push(['(이상치 없음)']);
-  writeRows(ss.insertSheet('팀별 이상치'), anomRows);
+  if (anomCount === 0) anomRows.push(['(특이 변동 없음)']);
+  writeRows(ss.insertSheet('팀별 AI 분석'), anomRows);
 }
 
 // ============================================

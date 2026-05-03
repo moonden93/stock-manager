@@ -201,7 +201,7 @@ function generateRecoveryExcel() {
 //   1. 요약 — 현재 재고 + 이번 주 활동 + 전주 대비 변화
 //   2. 품목 — 전주 대비 재고 변화 (★신규 / ▲증가 / ▼감소) 표시, 변화 있는 항목 위로
 //   3. 입출고+요청 — 이번 주 입출고 + 대기 요청을 한 시트에
-//   4. 팀별 이상치 — 이번 달 vs 지난 3개월 평균, ±30% 이상/신규/중단
+//   4. 팀별 AI 분석 — 이번 달 vs 지난 3개월 평균, ±30% 이상/신규/중단
 //
 // "전주 대비" 비교는 localStorage에 직전 보고 시점 inventory 스냅샷을 저장해서 비교.
 const REPORT_INVENTORY_SNAPSHOT_KEY = 'mc_report_inv_snapshot';
@@ -380,7 +380,7 @@ function generateReportExcel() {
   const wsCombined = XLSX.utils.aoa_to_sheet(combined);
   XLSX.utils.book_append_sheet(wb, wsCombined, '입출고+요청');
 
-  // ─── 시트 4: 팀별 이상치 (이번 달 vs 지난 3개월 평균) ───
+  // ─── 시트 4: 팀별 AI 분석 (이번 달 vs 지난 3개월 평균) ───
   // 11-stats.js의 이상치 로직 포팅: 팀별 + 품목별 집계, ±30%/신규/중단 분류
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
@@ -407,7 +407,7 @@ function generateReportExcel() {
   const monthLabel = tmStart.getFullYear() + '년 ' + (tmStart.getMonth() + 1) + '월';
 
   const anomRows = [
-    ['이상치 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
+    ['AI 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '지난 3개월 월평균', '변화율']
   ];
@@ -447,11 +447,11 @@ function generateReportExcel() {
     });
 
   if (anomCount === 0) {
-    anomRows.push(['(이상치 없음 — 모든 팀이 평소 사용량 범위 내)']);
+    anomRows.push(['(특이 변동 없음 — 모든 팀이 평소 사용 패턴)']);
   }
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
   applyFormat(wsAnom, [4, 5], 2);
-  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 이상치');
+  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 AI 분석');
 
   // 다음 주 비교를 위해 현재 inventory 스냅샷 저장
   saveInventorySnapshot();
@@ -702,7 +702,7 @@ function generateMonthlyReportExcel(year, month) {
   const allTeams = new Set([...Object.keys(thisByTeam), ...Object.keys(past3ByTeam)]);
 
   const anomRows = [
-    ['이상치 분석: ' + monthLabel + ' vs 직전 3개월(' +
+    ['AI 분석: ' + monthLabel + ' vs 직전 3개월(' +
      (year + '-' + String(month - 3).padStart(2, '0')) + ' ~ ' +
      (year + '-' + String(month - 1).padStart(2, '0')) + ') 월평균'],
     ['±30% 이상 변동 / 신규 / 중단 항목만 표시'],
@@ -740,10 +740,10 @@ function generateMonthlyReportExcel(year, month) {
     tRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
     tRows.forEach(r => { anomRows.push(r); anomCount++; });
   });
-  if (anomCount === 0) anomRows.push(['(이상치 없음 — 모든 팀이 평소 사용량 범위 내)']);
+  if (anomCount === 0) anomRows.push(['(특이 변동 없음 — 모든 팀이 평소 사용 패턴)']);
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
   applyFormat(wsAnom, [4, 5], 3);
-  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 이상치');
+  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 AI 분석');
 
   // ─── 시트 6: 출고 원장 (반출자 포함) ───
   const ledgerRows = [['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];

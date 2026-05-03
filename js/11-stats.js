@@ -99,7 +99,7 @@ function renderStats() {
     '<button onclick="statsTab = \'weekly\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
     (statsTab === 'weekly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">📅 주차별</button>' +
     '<button onclick="statsTab = \'anomaly\'; renderStats();" class="flex-1 py-2 rounded-lg font-bold text-xs sm:text-sm transition ' +
-    (statsTab === 'anomaly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">📈 이상치</button>' +
+    (statsTab === 'anomaly' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">🤖 AI 분석</button>' +
     '</div>';
 
   if (statsTab === 'anomaly') {
@@ -960,8 +960,8 @@ function openAnomalyDetail(teamName) {
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<div class="flex items-center justify-between gap-2">' +
     '<div>' +
-    '<h3 class="text-base font-bold text-slate-900">📈 ' + escapeHtml(teamName) + ' 이상 사용량</h3>' +
-    '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(monthLabel) + ' / 이상치 ' + total + '건</p>' +
+    '<h3 class="text-base font-bold text-slate-900">🤖 ' + escapeHtml(teamName) + ' AI 분석</h3>' +
+    '<p class="text-xs text-slate-500 mt-0.5">' + escapeHtml(monthLabel) + ' / 변동 ' + total + '건</p>' +
     '</div>' +
     '<button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 px-2 py-1">✕</button>' +
     '</div></div>' +

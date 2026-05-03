@@ -382,7 +382,7 @@ function generateReportExcel(data) {
   }
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(combined), '입출고+요청');
 
-  // 4. 팀별 이상치 (이번 달 vs 지난 3개월 평균)
+  // 4. 팀별 AI 분석 (이번 달 vs 지난 3개월 평균)
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
   const outHist = history.filter(h => h.type === 'out');
@@ -408,7 +408,7 @@ function generateReportExcel(data) {
   const monthLabel = tmStart.getFullYear() + '년 ' + (tmStart.getMonth() + 1) + '월';
 
   const anomRows = [
-    ['이상치 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
+    ['AI 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '지난 3개월 월평균', '변화율']
   ];
@@ -443,10 +443,10 @@ function generateReportExcel(data) {
     teamRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
     teamRows.forEach(r => { anomRows.push(r); anomCount++; });
   });
-  if (anomCount === 0) anomRows.push(['(이상치 없음 — 모든 팀이 평소 사용량 범위 내)']);
+  if (anomCount === 0) anomRows.push(['(특이 변동 없음 — 모든 팀이 평소 사용 패턴)']);
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
   applyFormat(wsAnom, [4, 5], 2);
-  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 이상치');
+  XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 AI 분석');
 
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }

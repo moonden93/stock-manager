@@ -98,7 +98,7 @@ async function sendEmail(data, year, month, yearMonth, reportBuf) {
     '',
     '【 첨부파일 】',
     '· 월별보고서_' + yearMonth + '.xlsx (6시트)',
-    '  요약 / 팀별 통계 / 업체별 통계 / TOP 품목 / 팀별 이상치 / 출고 원장',
+    '  요약 / 팀별 통계 / 업체별 통계 / TOP 품목 / 팀별 AI 분석 / 출고 원장',
     '',
     '※ 매달 첫째 주 토요일 weekly 백업 메일에 자동 첨부됩니다.',
     '※ 이 메일은 수동 트리거로 발송된 일회성 보고서입니다.'
