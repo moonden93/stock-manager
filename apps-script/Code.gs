@@ -1,36 +1,40 @@
 // ============================================
-// Apps Script: 매일 12시(KST) Google Drive에 백업 저장
+// Apps Script: 매주 토요일 12시(KST) Google Drive에 백업 저장
 // ============================================
 // 동작:
 //   1) Firestore에서 데이터 읽기
 //   2) Google Sheets 2개 생성 (보고용, 재난백업용)
 //   3) Drive의 "재고관리 백업" 폴더에 저장
+//   4) 첨부 문서(PDF/이미지)를 "재고관리 백업/문서" 폴더에 sync
+//      (이름·크기 같으면 건너뜀 → 매주 똑같은 파일 중복 안 됨)
 //
 // 실행 방법:
 //   - 이 코드를 https://script.google.com 에 새 프로젝트로 붙여넣기
-//   - 시간 트리거 등록: 매일 12시 (한국시간)
+//   - 시간 트리거 등록: 매주 토요일 12시 (한국시간)
 //   - 첫 실행 시 Drive/외부 URL 권한 승인
 //
 // 결과물:
-//   사용자의 Google Drive → "재고관리 백업" 폴더에 매일 파일이 쌓임
-//   - 보고용_2026-05-03 (Google Sheets)
-//   - 재난백업용_2026-05-03 (Google Sheets)
-//   각 파일은 Sheets로 열거나 Excel(.xlsx)로 다운로드 가능
+//   사용자의 Google Drive → "재고관리 백업" 폴더 안에:
+//   - 보고용_2026-05-09 (Google Sheets, 매주 신규)
+//   - 재난백업용_2026-05-09 (Google Sheets, 매주 신규)
+//   - 문서/ (서브폴더, Firestore의 첨부 파일들 sync)
 
 const FIRESTORE_PROJECT = 'moon-dental-stock';
 const FIRESTORE_PATH = 'appData/main';
 const DRIVE_FOLDER_NAME = '재고관리 백업';
+const DOCS_SUBFOLDER_NAME = '문서';
 
 // ============================================
-// 메인 — 트리거가 호출하는 함수
+// 메인 — 트리거가 호출하는 함수 (매주 토요일 12시)
 // ============================================
-function dailyBackup() {
-  Logger.log('🌙 Daily backup starting at ' + new Date());
+function weeklyBackup() {
+  Logger.log('📅 Weekly backup starting at ' + new Date());
 
   const data = fetchFirestore();
   Logger.log('Fetched: inv=' + (data.inventory || []).length +
              ', hist=' + (data.history || []).length +
-             ', req=' + (data.requests || []).length);
+             ', req=' + (data.requests || []).length +
+             ', docs=' + (data.documents || []).length);
 
   // 보호: 데이터 비어있으면 빈 백업 만들지 않음
   if (!Array.isArray(data.inventory) || data.inventory.length === 0) {
@@ -40,10 +44,83 @@ function dailyBackup() {
   const folder = getOrCreateFolder(DRIVE_FOLDER_NAME);
   const today = todayKst();
 
+  // 1. Sheets 2개 생성 (보고용, 재난백업용)
   createReportSheet(data, '보고용_' + today, folder);
   createRecoverySheet(data, '재난백업용_' + today, folder);
 
+  // 2. 첨부 문서 sync (변경된 것만)
+  syncDocuments(data, folder);
+
   Logger.log('✓ 백업 완료 — Drive 폴더: ' + DRIVE_FOLDER_NAME);
+}
+
+// 옛 트리거가 호출하는 이름 호환 (이미 dailyBackup 트리거 등록한 경우 대비)
+function dailyBackup() { weeklyBackup(); }
+
+// ============================================
+// 문서 sync — Firestore documents의 base64를 Drive 파일로 저장
+// ============================================
+// 매주 동일 파일을 중복 저장하지 않으려고, 이름+크기로 비교.
+// Firestore에서 사라진 파일은 Drive에서도 자동 삭제하지 않음 (보존).
+function syncDocuments(data, parentFolder) {
+  const documents = data.documents || [];
+  if (documents.length === 0) {
+    Logger.log('첨부 문서 없음 — sync 건너뜀');
+    return;
+  }
+
+  // "문서" 서브폴더 가져오기 또는 만들기
+  let docFolder;
+  const subs = parentFolder.getFoldersByName(DOCS_SUBFOLDER_NAME);
+  if (subs.hasNext()) {
+    docFolder = subs.next();
+  } else {
+    docFolder = parentFolder.createFolder(DOCS_SUBFOLDER_NAME);
+  }
+
+  // 현재 Drive에 있는 파일들 — 이름으로 매핑
+  const existing = {};
+  const fileIter = docFolder.getFiles();
+  while (fileIter.hasNext()) {
+    const f = fileIter.next();
+    existing[f.getName()] = f;
+  }
+
+  let added = 0, updated = 0, skipped = 0, failed = 0;
+
+  documents.forEach(function(d) {
+    if (!d.data) { skipped++; return; }  // base64 데이터 없음
+    const fileName = d.name || ('document_' + (d.id || Date.now()));
+
+    // 이미 같은 이름 + 같은 크기면 건너뜀
+    if (existing[fileName] && existing[fileName].getSize() === (d.size || 0)) {
+      skipped++;
+      return;
+    }
+
+    try {
+      // base64 디코드 — "data:image/png;base64,iVBORw..." 또는 raw base64 둘 다 처리
+      const idx = d.data.indexOf(',');
+      const base64 = (idx >= 0) ? d.data.substring(idx + 1) : d.data;
+      const bytes = Utilities.base64Decode(base64);
+      const blob = Utilities.newBlob(bytes, d.type || 'application/octet-stream', fileName);
+
+      if (existing[fileName]) {
+        // 같은 이름 다른 크기 → 이전 파일 휴지통으로
+        existing[fileName].setTrashed(true);
+        updated++;
+      } else {
+        added++;
+      }
+      docFolder.createFile(blob);
+    } catch (e) {
+      failed++;
+      Logger.log('문서 저장 실패: ' + fileName + ' - ' + e);
+    }
+  });
+
+  Logger.log('문서 sync 완료 — 추가:' + added + ', 갱신:' + updated +
+             ', 건너뜀:' + skipped + ', 실패:' + failed);
 }
 
 // ============================================

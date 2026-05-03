@@ -1,9 +1,12 @@
 // ============================================
-// daily-backup.js: 매일 12시(KST) GitHub Actions로 실행
+// weekly-backup.js: 매주 토요일 12시(KST) GitHub Actions로 실행
 // ============================================
 // 1) Firestore에서 appData/main 읽기 (REST, 익명 접근 가능 가정)
 // 2) 보고용 Excel + 재난백업용 Excel 생성
 // 3) Gmail SMTP로 첨부파일 메일 발송
+//
+// 참고: 문서 첨부파일(PDF/이미지 등)은 메일 용량 한도 때문에 미포함.
+//       Apps Script 백업의 Drive 폴더에서 별도 동기화됨.
 //
 // 환경변수 (GitHub Secrets):
 //   GMAIL_USER          — 보내는 Gmail 주소 (앱 비밀번호 발급한 계정)
@@ -262,7 +265,7 @@ function generateReportExcel(data) {
 
   // 1. 요약
   const summary = [
-    ['문치과병원 재고관리 - 일일 보고서'],
+    ['문치과병원 재고관리 - 주간 보고서'],
     [],
     ['보고일 (KST)', today],
     ['주차', weekKey],
@@ -437,7 +440,7 @@ async function sendEmail(data, today, attachments) {
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
 
   const message = [
-    '문치과병원 재고관리 - 일일 자동 백업',
+    '문치과병원 재고관리 - 주간 자동 백업',
     '═══════════════════════════════════════',
     '',
     '발송일 (KST): ' + today,
@@ -455,8 +458,8 @@ async function sendEmail(data, today, attachments) {
     '· 보고용_' + today + '.xlsx — 의사결정용 리포트 (4개 시트)',
     '· 재난백업용_' + today + '.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
     '',
-    '※ 본 메일은 GitHub Actions로 매일 12시 (한국시간) 자동 발송됩니다.',
-    '※ 동일 데이터는 Google Drive에도 자동 저장됩니다 (Apps Script).'
+    '※ 본 메일은 GitHub Actions로 매주 토요일 12시 (한국시간) 자동 발송됩니다.',
+    '※ 동일 데이터 + 첨부 문서는 Google Drive에도 자동 저장됩니다 (Apps Script).'
   ].join('\n');
 
   const transporter = nodemailer.createTransport({
@@ -470,7 +473,7 @@ async function sendEmail(data, today, attachments) {
   await transporter.sendMail({
     from: '"재고관리 자동백업" <' + process.env.GMAIL_USER + '>',
     to: process.env.BACKUP_RECIPIENT || process.env.GMAIL_USER,
-    subject: '[재고관리] 일일 백업 ' + today,
+    subject: '[재고관리] 주간 백업 ' + today,
     text: message,
     attachments: attachments
   });

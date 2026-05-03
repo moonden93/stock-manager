@@ -1,9 +1,10 @@
-name: Daily Backup
+name: Weekly Backup
 
 on:
   schedule:
-    # 매일 03:00 UTC = 12:00 한국시간 (KST = UTC+9)
-    - cron: '0 3 * * *'
+    # 매주 토요일 03:00 UTC = 매주 토요일 12:00 한국시간 (KST = UTC+9)
+    # cron 요일: 0=일, 1=월, ..., 6=토
+    - cron: '0 3 * * 6'
   workflow_dispatch:  # 수동 실행 버튼 (테스트용)
 
 jobs:
@@ -20,10 +21,10 @@ jobs:
         working-directory: scripts
         run: npm install
 
-      - name: Run daily backup
+      - name: Run weekly backup
         working-directory: scripts
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           BACKUP_RECIPIENT: ${{ secrets.BACKUP_RECIPIENT }}
-        run: node daily-backup.js
+        run: node weekly-backup.js
