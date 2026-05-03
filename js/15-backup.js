@@ -826,8 +826,6 @@ if (typeof window !== 'undefined') {
   };
 
   // 시트 데이터(PREBUILT_HISTORY)를 history로 강제 재import.
-  // js/3-data-history.js가 새 데이터로 갱신됐을 때 1회 실행.
-  // ⚠️ 기존 history를 통째로 교체하므로 신중히 사용.
   window.mcReimportFromSheets = function() {
     if (typeof PREBUILT_HISTORY === 'undefined') {
       console.error('PREBUILT_HISTORY 로드 안 됨 — 페이지 새로고침 후 재시도');
@@ -845,5 +843,38 @@ if (typeof window !== 'undefined') {
     if (typeof updateHeaderStats === 'function') updateHeaderStats();
     if (typeof switchTab === 'function') switchTab(currentTab);
     console.log('✓ history 교체 완료: ' + oldCount + ' → ' + newCount + '건 (Firestore에도 반영)');
+  };
+
+  // 종합 리셋: 시트 데이터로 사이트 전체 초기화.
+  // - inventory: 시트 최신 주차 568개로 교체
+  // - history: 시트 1481건으로 교체
+  // - requests: 비움 (테스트 요청 제거)
+  // - teamMembers: 비움 (테스트로 추가한 담당자 제거)
+  // ⚠️ teams는 유지 (사용자가 의도적으로 설정한 것)
+  window.mcResetToSheetData = function() {
+    if (typeof PREBUILT_HISTORY === 'undefined' || typeof INITIAL_ITEMS === 'undefined') {
+      console.error('데이터 로드 안 됨 — 페이지 새로고침 후 재시도');
+      return;
+    }
+    const summary = '【 시트 데이터로 사이트 초기화 】\n\n' +
+      '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n' +
+      '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
+      '요청:    ' + requests.length + '건 → 0건 (전부 삭제)\n' +
+      '담당자:  ' + Object.keys(teamMembers).length + '팀 → 0팀 (전부 삭제)\n\n' +
+      'teams 목록은 유지됩니다.\n\n계속하시겠습니까?';
+    if (!confirm(summary)) {
+      console.log('취소됨');
+      return;
+    }
+    inventory.length = 0;
+    INITIAL_ITEMS.forEach(it => inventory.push({ ...it }));
+    history.length = 0;
+    PREBUILT_HISTORY.forEach(h => history.push(h));
+    requests.length = 0;
+    Object.keys(teamMembers).forEach(k => delete teamMembers[k]);
+    saveAll();
+    if (typeof updateHeaderStats === 'function') updateHeaderStats();
+    if (typeof switchTab === 'function') switchTab(currentTab);
+    console.log('✓ 시트 데이터로 초기화 완료. 새로고침 권장.');
   };
 }

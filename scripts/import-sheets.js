@@ -186,6 +186,49 @@ async function processSheet(sheetMeta) {
   return records;
 }
 
+// 가장 최신 시트(=마지막)에서 inventory 추출
+// 한 행당 한 품목, "현 재고량" 컬럼이 있어 현재 재고 스냅샷 가능
+async function extractInventoryFromLatestSheet() {
+  const latest = SHEETS[SHEETS.length - 1];
+  console.log(`[inventory] ${latest.name}에서 추출 중...`);
+  const csv = await fetchSheet(latest.gid);
+  const rows = parseCSV(csv);
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map(normalizeTeamName);
+  const idx = {};
+  headers.forEach((h, i) => {
+    if (h === '업체명')   idx.vendor = i;
+    if (h === '종류')     idx.category = i;
+    if (h === '품명')     idx.name = i;
+    if (h === '규격')     idx.unit = i;
+    if (h === '단가')     idx.price = i;
+    if (h === '현 재고량') idx.stock = i;
+    if (h === '기준 재고량') idx.minStock = i;
+  });
+
+  const items = [];
+  let id = 1;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const vendor = (row[idx.vendor] || '').trim();
+    const name = (row[idx.name] || '').trim();
+    if (!vendor || !name) continue;
+    items.push({
+      id: 'M' + String(id).padStart(4, '0'),
+      vendor, name,
+      unit: idx.unit !== undefined ? (row[idx.unit] || '').trim() : '',
+      price: idx.price !== undefined ? parsePrice(row[idx.price]) : 0,
+      stock: idx.stock !== undefined ? parseInt(parseQty(row[idx.stock]), 10) || 0 : 0,
+      minStock: idx.minStock !== undefined ? parseInt(parseQty(row[idx.minStock]), 10) || 0 : 0,
+      category: idx.category !== undefined ? (row[idx.category] || '치과재료').trim() : '치과재료'
+    });
+    id++;
+  }
+  console.log(`  ✓ inventory ${items.length}개 추출`);
+  return items;
+}
+
 async function main() {
   console.log('Google Sheets → history 레코드 변환 시작');
   console.log('총 시트 수:', SHEETS.length);
@@ -232,6 +275,12 @@ async function main() {
   fs.writeFileSync(outPath, JSON.stringify(allRecords, null, 2), 'utf8');
   console.log('');
   console.log('✓ 저장:', outPath, '(' + allRecords.length + '건)');
+
+  // inventory도 추출
+  const inventory = await extractInventoryFromLatestSheet();
+  const invPath = path.join(__dirname, 'sheet-inventory.json');
+  fs.writeFileSync(invPath, JSON.stringify(inventory, null, 2), 'utf8');
+  console.log('✓ 저장:', invPath, '(' + inventory.length + '개)');
 }
 
 main().catch(err => {
