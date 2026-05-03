@@ -254,34 +254,40 @@ function saveToLocalStorage() {
 async function saveToFirebase() {
   if (!window.firebaseReady) return;
 
-  // 보호: 비정상적으로 비어있는 상태로 클라우드를 덮어쓰지 않음
-  // (앱 초기화 도중 또는 새 브라우저의 첫 로드 직후 saveAll이 호출돼도 클라우드 데이터 보존)
+  // 보호: inventory + teams 둘 다 비어있는 비정상 상태에선 저장 거부.
   if (isDataSuspicious({ inventory, teams })) {
     console.warn('⚠️ 로컬 데이터가 비어있어 Firebase 저장을 거부했습니다 (클라우드 보호 모드)');
     return;
   }
 
-  // 보호: teams는 있는데 teamMembers가 비어있는 건 의심스러운 상태.
-  // 폰/다른 기기가 Firebase 로드 실패 후 빈 teamMembers를 그대로 저장하는 사고를 막음.
-  // (모든 담당자를 의도적으로 한 번에 비우는 건 사실상 없는 시나리오)
-  const teamsExist = Array.isArray(teams) && teams.length > 0;
-  const membersEmpty = !teamMembers || Object.keys(teamMembers).length === 0;
-  if (teamsExist && membersEmpty) {
-    console.warn('⚠️ teamMembers가 비어있어 Firebase 저장을 거부했습니다 (담당자 데이터 보호)');
-    return;
-  }
-
   try {
-    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
-    await window.firebaseSetDoc(docRef, {
+    // setDoc + merge:true: payload에 포함된 필드만 갱신. 빈 teams/teamMembers를
+    // 아예 payload에서 빼면 클라우드의 기존 값이 보존됨.
+    // 이전 구현(setDoc 통째로)은 한 기기의 빈 teamMembers가 클라우드를 덮어쓰는 사고를 냈음.
+    const payload = {
       inventory: inventory,
       history: history,
       requests: requests,
-      teams: teams,
-      teamMembers: teamMembers,
       documents: documents,
       lastUpdated: window.firebaseServerTimestamp()
-    });
+    };
+
+    // teams는 비어있을 때만 제외 (PREBUILT가 있어서 정상 상태에선 절대 비지 않음)
+    if (Array.isArray(teams) && teams.length > 0) {
+      payload.teams = teams;
+    } else {
+      console.warn('⚠️ teams가 비어있어 payload에서 제외 (클라우드의 teams 보존)');
+    }
+
+    // teamMembers도 비어있을 때만 제외 (의도치 않은 wipe 방지)
+    if (teamMembers && Object.keys(teamMembers).length > 0) {
+      payload.teamMembers = teamMembers;
+    } else {
+      console.warn('⚠️ teamMembers가 비어있어 payload에서 제외 (클라우드의 teamMembers 보존)');
+    }
+
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    await window.firebaseSetDoc(docRef, payload, { merge: true });
     console.log('✅ Firebase 저장 성공');
     if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
   } catch (err) {
@@ -294,31 +300,37 @@ async function saveToFirebase() {
 // ============================================
 // Firebase Firestore에서 로드 (앱 시작 시 1회)
 // ============================================
+// loadFromFirebase 결과: { loaded: bool, cloudIncomplete: bool }
+// cloudIncomplete가 true면 자가 복원 트리거 (PC가 로컬의 teams/teamMembers를 클라우드에 다시 푸시)
 async function loadFromFirebase() {
-  if (!window.firebaseReady) return false;
+  if (!window.firebaseReady) return { loaded: false, cloudIncomplete: false };
   try {
     const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
     const snapshot = await window.firebaseGetDoc(docRef);
     if (snapshot.exists()) {
       const data = snapshot.data();
 
-      // 보호: 클라우드가 비정상이면 무시. 로컬이 메인 역할 → 다음 saveAll에서 정상화됨.
       if (isDataSuspicious(data)) {
         console.warn('⚠️ Firebase 데이터가 비어있어 무시 (로컬 데이터 유지)');
-        return false;
+        return { loaded: false, cloudIncomplete: true };
       }
+
+      // 클라우드가 부분적으로 비어있는지 감지 (teams 또는 teamMembers가 wipe된 상태)
+      const cloudTeamsEmpty = !Array.isArray(data.teams) || data.teams.length === 0;
+      const cloudMembersEmpty = !data.teamMembers || Object.keys(data.teamMembers).length === 0;
+      const cloudIncomplete = cloudTeamsEmpty || cloudMembersEmpty;
 
       applyCloudData(data);
       saveToLocalStorage();
-      console.log('✅ Firebase 로드 성공');
+      console.log('✅ Firebase 로드 성공' + (cloudIncomplete ? ' (클라우드 부분 비어있음 — 자가 복원 검토)' : ''));
       if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
-      return true;
+      return { loaded: true, cloudIncomplete };
     }
-    return false;
+    return { loaded: false, cloudIncomplete: false };
   } catch (err) {
     console.error('❌ Firebase 로드 실패:', err);
     if (typeof setFirebaseStatus === 'function') setFirebaseStatus('error', err && err.message);
-    return false;
+    return { loaded: false, cloudIncomplete: false };
   }
 }
 

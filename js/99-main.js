@@ -245,11 +245,23 @@ function showInitLoadingScreen() {
 // - 클라우드가 비어있으면 현재 로컬 데이터를 클라우드로 업로드 (최초 마이그레이션)
 // - 이후 setupFirebaseSync로 실시간 변경 구독
 async function syncWithFirebase() {
-  const loaded = await loadFromFirebase();
-  if (loaded) {
+  const result = await loadFromFirebase();
+  if (result.loaded) {
     updateHeaderStats();
     const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
     if (typeof renderFn === 'function') renderFn();
+
+    // 자가 복원: 클라우드의 teams 또는 teamMembers가 비어있는데 로컬에 있으면,
+    // 로컬 데이터를 클라우드에 다시 푸시해서 복구.
+    // (이전에 다른 기기가 빈 데이터로 클라우드를 wipe한 사고 자동 복구)
+    if (result.cloudIncomplete) {
+      const localHasTeams = Array.isArray(teams) && teams.length > 0;
+      const localHasMembers = teamMembers && Object.keys(teamMembers).length > 0;
+      if (localHasTeams || localHasMembers) {
+        console.log('🔄 자가 복원: 로컬 데이터를 클라우드에 다시 푸시');
+        saveToFirebase();
+      }
+    }
   } else {
     console.log('Firebase가 비어있음 - 현재 데이터를 클라우드에 업로드');
     saveToFirebase();
