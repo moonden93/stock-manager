@@ -1,0 +1,13 @@
+# Claude Code 로컬 설정 (커밋하지 않음)
+.claude/
+
+# Node modules (scripts/)
+node_modules/
+package-lock.json
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
