@@ -439,6 +439,8 @@ async function sendEmail(data, today, attachments) {
   const thisOutHist = history.filter(h => h.type === 'out' && h.weekKey === weekKey);
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
 
+  const docCount = (data.documents || []).length;
+
   const message = [
     '문치과병원 재고관리 - 주간 자동 백업',
     '═══════════════════════════════════════',
@@ -449,6 +451,7 @@ async function sendEmail(data, today, attachments) {
     '· 등록 품목: ' + inventory.length + '개 (품절 ' + outOfStock + ', 부족 ' + lowStock + ')',
     '· 재고 평가액: ' + totalCost.toLocaleString() + '원',
     '· 대기 중 요청: ' + pendingReq + '건',
+    '· 업로드 문서: ' + docCount + '개' + (docCount === 0 ? ' (없음)' : ' — Drive 폴더에서 확인'),
     '',
     '【 이번 주 출고 】',
     '· 건수: ' + thisOutHist.length + '건',
