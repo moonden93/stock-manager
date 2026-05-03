@@ -14,8 +14,10 @@
 // 첫 발송 시 FormSubmit에서 받은이 이메일로 "Activate Form" 메일이 옴.
 // 그 안의 활성화 링크를 한 번 클릭해야 이후 발송이 정상 도착함.
 
-const BACKUP_EMAIL = 'moonden93@gmail.com';
-const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + BACKUP_EMAIL;
+// FormSubmit 해시 토큰 — 받은이 이메일을 노출하지 않기 위한 익명 식별자.
+// FormSubmit 활성화 메일에서 발급받음. 이 토큰이 moonden93@gmail.com에 매핑됨.
+const FORMSUBMIT_TOKEN = '23c157956a65820f31b77fd1e87dd9c7';
+const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + FORMSUBMIT_TOKEN;
 const LAST_BACKUP_KEY = 'mc_last_backup_week';
 
 // ISO 8601 주차 계산 (월요일 시작) — "2026-W18" 형식
@@ -229,7 +231,9 @@ async function sendBackupEmail(weekKey, blob) {
   const formData = new FormData();
   formData.append('_subject', '[재고관리] 주간 백업 ' + weekKey);
   formData.append('name', '재고관리 자동백업');
-  formData.append('email', BACKUP_EMAIL);
+  // 'email' 필드는 FormSubmit이 "Reply-To"로 사용하는 보낸이 메일.
+  // 백업 자체발송이므로 같은 시스템 식별값 사용 (실제 노출 안 됨, 응답 받을 일도 없음).
+  formData.append('email', 'backup@moondental.system');
   formData.append('_captcha', 'false');
   formData.append('_template', 'box');
   formData.append('message', message);
