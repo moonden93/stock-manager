@@ -15,7 +15,7 @@
 
 const XLSX = require('xlsx');
 const nodemailer = require('nodemailer');
-const { generateMonthlyReportExcel, getPreviousMonth } = require('./lib-monthly');
+const { generateMonthlyReportExcel, getPreviousMonth, getMonthWeekLabelKr, getMonthLabelKr, generateTeamCommentText, priceLookup } = require('./lib-monthly');
 
 const PROJECT_ID = 'moon-dental-stock';
 const DOC_PATH = 'appData/main';
@@ -47,30 +47,30 @@ async function main() {
   }
 
   const today = todayKstStr();
+  const weekLabel = getMonthWeekLabelKr();  // "2026년 5월 1주차"
   const recoveryBuf = generateRecoveryExcel(data);
   const reportBuf = generateReportExcel(data);
   console.log('✓ Generated weekly Excel files');
 
   const attachments = [
-    { filename: '보고용_' + today + '.xlsx', content: reportBuf },
-    { filename: '재난백업용_' + today + '.xlsx', content: recoveryBuf }
+    { filename: '주차별보고_' + weekLabel + '.xlsx', content: reportBuf },
+    { filename: '재난백업용_' + weekLabel + '.xlsx', content: recoveryBuf }
   ];
 
   // 이번 주가 월의 첫째 주 토요일이면 → 직전 월 보고서도 함께 첨부
-  let monthlyAttached = null;
+  let monthlyLabel = null;
   if (isFirstSaturdayOfMonth()) {
     const { year, month } = getPreviousMonth();
-    console.log('📊 첫째 주 토요일 — ' + year + '-' + String(month).padStart(2, '0') + ' 월별보고서 추가');
+    monthlyLabel = getMonthLabelKr(year, month);  // "2026년 4월"
+    console.log('📊 첫째 주 토요일 — ' + monthlyLabel + ' 월별보고 추가');
     const monthlyBuf = generateMonthlyReportExcel(data, year, month);
-    const yearMonth = year + '-' + String(month).padStart(2, '0');
     attachments.push({
-      filename: '월별보고서_' + yearMonth + '.xlsx',
+      filename: '월별보고_' + monthlyLabel + '.xlsx',
       content: monthlyBuf
     });
-    monthlyAttached = yearMonth;
   }
 
-  await sendEmail(data, today, attachments, monthlyAttached);
+  await sendEmail(data, today, weekLabel, attachments, monthlyLabel);
   console.log('✓ Email sent');
 }
 
@@ -408,7 +408,7 @@ function generateReportExcel(data) {
   const monthLabel = tmStart.getFullYear() + '년 ' + (tmStart.getMonth() + 1) + '월';
 
   const anomRows = [
-    ['AI 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단)'],
+    ['AI 분석: ' + monthLabel + ' vs 지난 3개월 월평균 (±30% 이상 변동, 신규/중단 + 팀별 자동 코멘트)'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '지난 3개월 월평균', '변화율']
   ];
@@ -424,24 +424,38 @@ function generateReportExcel(data) {
     const past3Items = past3ByTeam[team] || {};
     const allKeys = new Set([...Object.keys(thisItems), ...Object.keys(past3Items)]);
     const teamRows = [];
+    const itemsForComment = [];
     allKeys.forEach(k => {
       const thisQty = thisItems[k] ? thisItems[k].qty : 0;
       const pastQty = past3Items[k] ? past3Items[k].qty : 0;
       const pastAvg = pastQty / 3;
       const meta = thisItems[k] || past3Items[k];
+      const price = priceLookup(inventory, history, meta.vendor, meta.name);
+      const costImpact = (thisQty - pastAvg) * price;
       if (pastAvg === 0 && thisQty > 0) {
         teamRows.push([team, '★ 신규', meta.vendor, meta.name, thisQty, 0, '신규']);
+        itemsForComment.push({ kind: 'new', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact });
       } else if (pastAvg > 0 && thisQty === 0) {
         teamRows.push([team, '⛔ 중단', meta.vendor, meta.name, 0, Math.round(pastAvg * 10) / 10, '-100%']);
+        itemsForComment.push({ kind: 'gone', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact });
       } else if (pastAvg > 0) {
         const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
-        if (diffPct >= 30) teamRows.push([team, '▲ 급증', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, '+' + Math.round(diffPct) + '%']);
-        else if (diffPct <= -30) teamRows.push([team, '▼ 감소', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, Math.round(diffPct) + '%']);
+        if (diffPct >= 30) {
+          teamRows.push([team, '▲ 급증', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, '+' + Math.round(diffPct) + '%']);
+          itemsForComment.push({ kind: 'up', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact, diffPct });
+        } else if (diffPct <= -30) {
+          teamRows.push([team, '▼ 감소', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, Math.round(diffPct) + '%']);
+          itemsForComment.push({ kind: 'down', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact, diffPct });
+        }
       }
     });
-    const order = { '★ 신규': 0, '▲ 급증': 1, '▼ 감소': 2, '⛔ 중단': 3 };
-    teamRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
-    teamRows.forEach(r => { anomRows.push(r); anomCount++; });
+    if (teamRows.length > 0) {
+      anomRows.push(['💬 ' + team + ' 자동 분석', generateTeamCommentText(itemsForComment)]);
+      const order = { '★ 신규': 0, '▲ 급증': 1, '▼ 감소': 2, '⛔ 중단': 3 };
+      teamRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
+      teamRows.forEach(r => { anomRows.push(r); anomCount++; });
+      anomRows.push([]);
+    }
   });
   if (anomCount === 0) anomRows.push(['(특이 변동 없음 — 모든 팀이 평소 사용 패턴)']);
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
@@ -454,7 +468,7 @@ function generateReportExcel(data) {
 // ============================================
 // 메일 발송
 // ============================================
-async function sendEmail(data, today, attachments, monthlyAttached) {
+async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
   const inventory = data.inventory || [];
   const history = data.history || [];
   const requests = data.requests || [];
@@ -486,12 +500,12 @@ async function sendEmail(data, today, attachments, monthlyAttached) {
     '· 금액: ' + thisOutCost.toLocaleString() + '원',
     '',
     '【 첨부파일 】',
-    '· 보고용_' + today + '.xlsx — 의사결정용 리포트 (4개 시트)',
-    '· 재난백업용_' + today + '.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
-    monthlyAttached ? '· 월별보고서_' + monthlyAttached + '.xlsx — ' + monthlyAttached + ' 월별 보고서 (6개 시트)' : '',
+    '· 주차별보고_' + weekLabel + '.xlsx — 의사결정용 리포트 (4개 시트, AI 코멘트 포함)',
+    '· 재난백업용_' + weekLabel + '.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
+    monthlyLabel ? '· 월별보고_' + monthlyLabel + '.xlsx — ' + monthlyLabel + ' 월별보고 (6개 시트)' : '',
     '',
     '※ 본 메일은 GitHub Actions로 매주 토요일 12시 (한국시간) 자동 발송됩니다.',
-    monthlyAttached ? '※ 매달 첫째 주 토요일에는 직전월 보고서가 함께 첨부됩니다.' : '',
+    monthlyLabel ? '※ 매달 첫째 주 토요일에는 직전월 보고서가 함께 첨부됩니다.' : '',
     '※ 동일 데이터 + 첨부 문서는 Google Drive에도 자동 저장됩니다 (Apps Script).'
   ].filter(line => line !== '').join('\n');
 
@@ -506,7 +520,7 @@ async function sendEmail(data, today, attachments, monthlyAttached) {
   await transporter.sendMail({
     from: '"재고관리 자동백업" <' + process.env.GMAIL_USER + '>',
     to: process.env.BACKUP_RECIPIENT || process.env.GMAIL_USER,
-    subject: '[재고관리] 주간 백업 ' + today + (monthlyAttached ? ' + 월별보고서' : ''),
+    subject: '[재고관리] ' + weekLabel + ' 주차별 보고' + (monthlyLabel ? ' + ' + monthlyLabel + ' 월별보고' : ''),
     text: message,
     attachments: attachments
   });

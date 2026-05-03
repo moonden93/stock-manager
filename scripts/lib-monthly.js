@@ -5,6 +5,68 @@
 
 const XLSX = require('xlsx');
 
+// 비용 단위 포맷 (1000원 단위, 한국식)
+function formatWonPlain(n) {
+  if (Math.abs(n) >= 10000) return (Math.round(n / 1000) / 10) + '만원';
+  if (Math.abs(n) >= 1000) return Math.round(n / 100) / 10 + '천원';
+  return Math.round(n) + '원';
+}
+
+// 팀별 자동 코멘트 (plain text — Excel용)
+// items: { kind, name, vendor, thisQty, pastAvg, price, costImpact, diffPct }[]
+function generateTeamCommentText(items) {
+  const ups = items.filter(i => i.kind === 'up');
+  const downs = items.filter(i => i.kind === 'down');
+  const news = items.filter(i => i.kind === 'new');
+  const gones = items.filter(i => i.kind === 'gone');
+
+  const positiveImpact = items.filter(i => (i.costImpact || 0) > 0)
+    .reduce((s, i) => s + i.costImpact, 0);
+  const negativeImpact = items.filter(i => (i.costImpact || 0) < 0)
+    .reduce((s, i) => s + Math.abs(i.costImpact), 0);
+  const netImpact = positiveImpact - negativeImpact;
+
+  const parts = [];
+
+  // 패턴 시그널
+  if (ups.length >= 3 && downs.length === 0) {
+    parts.push('👥 환자 수/시술량 증가 시그널');
+  } else if (downs.length >= 3 && ups.length === 0) {
+    parts.push('📉 환자 수/시술량 감소 또는 대체재 도입');
+  } else if (ups.length >= 2 && downs.length >= 2) {
+    parts.push('🔄 시술 구성 변화 또는 치료 프로토콜 변경');
+  }
+
+  if (news.length >= 2) {
+    parts.push('✨ ' + news.length + '개 신규 품목 → 새 시술/재료 도입 가능성');
+  } else if (news.length === 1) {
+    parts.push('✨ 신규 사용: ' + news[0].name);
+  }
+
+  if (gones.length >= 2) {
+    parts.push('⏸ ' + gones.length + '개 품목 사용 중단 → 재고 정리 검토');
+  }
+
+  if (Math.abs(netImpact) > 1000) {
+    if (netImpact > 0) parts.push('💰 평소 대비 +' + formatWonPlain(netImpact) + ' 추가 지출');
+    else parts.push('💰 평소 대비 -' + formatWonPlain(Math.abs(netImpact)) + ' 절약');
+  }
+
+  if (parts.length === 0) return '✅ 평소와 비슷한 사용 패턴 — 안정적 운영';
+  return parts.join(' / ');
+}
+
+// inventory에서 가격 조회
+function priceLookup(inventory, history, vendor, name) {
+  const inv = inventory.find(i => i.vendor === vendor && i.name === name);
+  if (inv && inv.price) return inv.price;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (h.vendor === vendor && h.name === name && h.price) return h.price;
+  }
+  return 0;
+}
+
 // 컬럼 너비 + 숫자 포맷
 function applyFormat(ws, numericCols, headerRowCount) {
   const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
@@ -193,7 +255,7 @@ function generateMonthlyReportExcel(data, year, month) {
 
   const anomRows = [
     ['AI 분석: ' + monthLabel + ' vs 직전 3개월 월평균'],
-    ['±30% 이상 변동 / 신규 / 중단 항목만 표시'],
+    ['±30% 이상 변동 / 신규 / 중단 항목 + 팀별 자동 코멘트'],
     [],
     ['팀명', '분류', '업체', '품명', monthLabel + ' 수량', '직전 3개월 월평균', '변화율']
   ];
@@ -209,24 +271,40 @@ function generateMonthlyReportExcel(data, year, month) {
     const past3Items = past3ByTeam[team] || {};
     const allKeys = new Set([...Object.keys(thisItems), ...Object.keys(past3Items)]);
     const tRows = [];
+    const itemsForComment = [];
     allKeys.forEach(k => {
       const thisQty = thisItems[k] ? thisItems[k].qty : 0;
       const pastQty = past3Items[k] ? past3Items[k].qty : 0;
       const pastAvg = pastQty / 3;
       const meta = thisItems[k] || past3Items[k];
+      const price = priceLookup(inventory, history, meta.vendor, meta.name);
+      const costImpact = (thisQty - pastAvg) * price;
       if (pastAvg === 0 && thisQty > 0) {
         tRows.push([team, '★ 신규', meta.vendor, meta.name, thisQty, 0, '신규']);
+        itemsForComment.push({ kind: 'new', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact });
       } else if (pastAvg > 0 && thisQty === 0) {
         tRows.push([team, '⛔ 중단', meta.vendor, meta.name, 0, Math.round(pastAvg * 10) / 10, '-100%']);
+        itemsForComment.push({ kind: 'gone', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact });
       } else if (pastAvg > 0) {
         const diffPct = ((thisQty - pastAvg) / pastAvg) * 100;
-        if (diffPct >= 30) tRows.push([team, '▲ 급증', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, '+' + Math.round(diffPct) + '%']);
-        else if (diffPct <= -30) tRows.push([team, '▼ 감소', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, Math.round(diffPct) + '%']);
+        if (diffPct >= 30) {
+          tRows.push([team, '▲ 급증', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, '+' + Math.round(diffPct) + '%']);
+          itemsForComment.push({ kind: 'up', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact, diffPct });
+        } else if (diffPct <= -30) {
+          tRows.push([team, '▼ 감소', meta.vendor, meta.name, thisQty, Math.round(pastAvg * 10) / 10, Math.round(diffPct) + '%']);
+          itemsForComment.push({ kind: 'down', name: meta.name, vendor: meta.vendor, thisQty, pastAvg, price, costImpact, diffPct });
+        }
       }
     });
-    const order = { '★ 신규': 0, '▲ 급증': 1, '▼ 감소': 2, '⛔ 중단': 3 };
-    tRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
-    tRows.forEach(r => { anomRows.push(r); anomCount++; });
+    if (tRows.length > 0) {
+      // 팀별 코멘트 행 먼저
+      const comment = generateTeamCommentText(itemsForComment);
+      anomRows.push(['💬 ' + team + ' 자동 분석', comment]);
+      const order = { '★ 신규': 0, '▲ 급증': 1, '▼ 감소': 2, '⛔ 중단': 3 };
+      tRows.sort((a, b) => (order[a[1]] || 99) - (order[b[1]] || 99));
+      tRows.forEach(r => { anomRows.push(r); anomCount++; });
+      anomRows.push([]);  // 팀 사이 구분
+    }
   });
   if (anomCount === 0) anomRows.push(['(특이 변동 없음)']);
   const wsAnom = XLSX.utils.aoa_to_sheet(anomRows);
@@ -260,4 +338,24 @@ function getPreviousMonth(date) {
   return { year: y, month: m - 1 };
 }
 
-module.exports = { generateMonthlyReportExcel, getPreviousMonth, applyFormat };
+// 한국식 월/주차 라벨 (KST 기준): "2026년 5월 1주차"
+function getMonthWeekLabelKr(date) {
+  const d = date || new Date();
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const year = kst.getUTCFullYear();
+  const month = kst.getUTCMonth() + 1;
+  const day = kst.getUTCDate();
+  const week = Math.ceil(day / 7);
+  return year + '년 ' + month + '월 ' + week + '주차';
+}
+
+// "2026년 4월"
+function getMonthLabelKr(year, month) {
+  return year + '년 ' + month + '월';
+}
+
+module.exports = {
+  generateMonthlyReportExcel, getPreviousMonth, applyFormat,
+  generateTeamCommentText, priceLookup, formatWonPlain,
+  getMonthWeekLabelKr, getMonthLabelKr
+};

@@ -779,23 +779,28 @@ function getPreviousMonth() {
 if (typeof window !== 'undefined') {
   window.mcGetThisWeek = function() { return getIsoWeek(new Date()); };
 
+  // 한국식 주차 라벨 ("2026년 5월 1주차")
+  function _monthWeekLabelKr(d) {
+    const dt = d || new Date();
+    const week = Math.ceil(dt.getDate() / 7);
+    return dt.getFullYear() + '년 ' + (dt.getMonth() + 1) + '월 ' + week + '주차';
+  }
+
   window.mcDownloadRecoveryNow = function() {
     const blob = generateRecoveryExcel();
-    const filename = '재난백업용_' + todayDateStr() + '.xlsx';
+    const filename = '재난백업용_' + _monthWeekLabelKr() + '.xlsx';
     downloadBlob(filename, blob);
     console.log('📥 재난백업용 다운로드: ' + filename);
   };
 
   window.mcDownloadReportNow = function() {
     const blob = generateReportExcel();
-    const filename = '보고용_' + todayDateStr() + '.xlsx';
+    const filename = '주차별보고_' + _monthWeekLabelKr() + '.xlsx';
     downloadBlob(filename, blob);
-    console.log('📥 보고용 다운로드: ' + filename);
+    console.log('📥 주차별보고 다운로드: ' + filename);
   };
 
   // 월별 보고서 다운로드. 인자 안 주면 직전 달.
-  // 사용 예: mcDownloadMonthlyReportNow() → 직전 달
-  //         mcDownloadMonthlyReportNow('2026-04') → 2026년 4월
   window.mcDownloadMonthlyReportNow = function(yearMonth) {
     let year, month;
     if (yearMonth) {
@@ -812,9 +817,9 @@ if (typeof window !== 'undefined') {
       month = prev.month;
     }
     const blob = generateMonthlyReportExcel(year, month);
-    const filename = '월별보고서_' + year + '-' + String(month).padStart(2, '0') + '.xlsx';
+    const filename = '월별보고_' + year + '년 ' + month + '월.xlsx';
     downloadBlob(filename, blob);
-    console.log('📥 월별 보고서 다운로드: ' + filename);
+    console.log('📥 월별보고 다운로드: ' + filename);
   };
 
   window.mcSendBackupNow = async function() { await tryWeeklyBackup(true); };

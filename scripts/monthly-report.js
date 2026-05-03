@@ -9,7 +9,7 @@
 //   REPORT_YEAR, REPORT_MONTH (비우면 직전월)
 
 const nodemailer = require('nodemailer');
-const { generateMonthlyReportExcel, getPreviousMonth } = require('./lib-monthly');
+const { generateMonthlyReportExcel, getPreviousMonth, getMonthLabelKr } = require('./lib-monthly');
 
 const PROJECT_ID = 'moon-dental-stock';
 const DOC_PATH = 'appData/main';
@@ -74,7 +74,7 @@ function parseFirestoreValue(v) {
 }
 
 async function sendEmail(data, year, month, yearMonth, reportBuf) {
-  const monthLabel = year + '년 ' + month + '월';
+  const monthLabel = getMonthLabelKr(year, month);  // "2026년 4월"
   const monthStart = new Date(year, month - 1, 1);
   const monthEnd = new Date(year, month, 1);
   const history = data.history || [];
@@ -97,7 +97,7 @@ async function sendEmail(data, year, month, yearMonth, reportBuf) {
     '· 금액: ' + totalOutCost.toLocaleString() + '원',
     '',
     '【 첨부파일 】',
-    '· 월별보고서_' + yearMonth + '.xlsx (6시트)',
+    '· 월별보고_' + monthLabel + '.xlsx (6시트, AI 코멘트 포함)',
     '  요약 / 팀별 통계 / 업체별 통계 / TOP 품목 / 팀별 AI 분석 / 출고 원장',
     '',
     '※ 매달 첫째 주 토요일 weekly 백업 메일에 자동 첨부됩니다.',
@@ -112,10 +112,10 @@ async function sendEmail(data, year, month, yearMonth, reportBuf) {
   await transporter.sendMail({
     from: '"재고관리 자동백업" <' + process.env.GMAIL_USER + '>',
     to: process.env.BACKUP_RECIPIENT || process.env.GMAIL_USER,
-    subject: '[재고관리] ' + monthLabel + ' 월별 보고서',
+    subject: '[재고관리] ' + monthLabel + ' 월별보고',
     text: message,
     attachments: [
-      { filename: '월별보고서_' + yearMonth + '.xlsx', content: reportBuf }
+      { filename: '월별보고_' + monthLabel + '.xlsx', content: reportBuf }
     ]
   });
 }
