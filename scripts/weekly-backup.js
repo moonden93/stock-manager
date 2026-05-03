@@ -15,9 +15,21 @@
 
 const XLSX = require('xlsx');
 const nodemailer = require('nodemailer');
+const { generateMonthlyReportExcel, getPreviousMonth } = require('./lib-monthly');
 
 const PROJECT_ID = 'moon-dental-stock';
 const DOC_PATH = 'appData/main';
+
+// 오늘이 이번 달의 "첫째 주 토요일"인지 (월의 1~7일 사이 토요일).
+// 매주 토요일 발송이라 7일 안의 토요일이면 자동으로 첫째 주 토요일임.
+function isFirstSaturdayOfMonth(date) {
+  const d = date || new Date();
+  // KST 기준 day-of-month
+  const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+  const dom = kst.getUTCDate();   // KST 기준 일 (1-31)
+  const dow = kst.getUTCDay();    // 0=Sun, 6=Sat
+  return dow === 6 && dom <= 7;
+}
 
 async function main() {
   console.log('🌙 Daily backup starting at', new Date().toISOString());
@@ -37,12 +49,28 @@ async function main() {
   const today = todayKstStr();
   const recoveryBuf = generateRecoveryExcel(data);
   const reportBuf = generateReportExcel(data);
-  console.log('✓ Generated Excel files');
+  console.log('✓ Generated weekly Excel files');
 
-  await sendEmail(data, today, [
+  const attachments = [
     { filename: '보고용_' + today + '.xlsx', content: reportBuf },
     { filename: '재난백업용_' + today + '.xlsx', content: recoveryBuf }
-  ]);
+  ];
+
+  // 이번 주가 월의 첫째 주 토요일이면 → 직전 월 보고서도 함께 첨부
+  let monthlyAttached = null;
+  if (isFirstSaturdayOfMonth()) {
+    const { year, month } = getPreviousMonth();
+    console.log('📊 첫째 주 토요일 — ' + year + '-' + String(month).padStart(2, '0') + ' 월별보고서 추가');
+    const monthlyBuf = generateMonthlyReportExcel(data, year, month);
+    const yearMonth = year + '-' + String(month).padStart(2, '0');
+    attachments.push({
+      filename: '월별보고서_' + yearMonth + '.xlsx',
+      content: monthlyBuf
+    });
+    monthlyAttached = yearMonth;
+  }
+
+  await sendEmail(data, today, attachments, monthlyAttached);
   console.log('✓ Email sent');
 }
 
@@ -426,7 +454,7 @@ function generateReportExcel(data) {
 // ============================================
 // 메일 발송
 // ============================================
-async function sendEmail(data, today, attachments) {
+async function sendEmail(data, today, attachments, monthlyAttached) {
   const inventory = data.inventory || [];
   const history = data.history || [];
   const requests = data.requests || [];
@@ -460,10 +488,12 @@ async function sendEmail(data, today, attachments) {
     '【 첨부파일 】',
     '· 보고용_' + today + '.xlsx — 의사결정용 리포트 (4개 시트)',
     '· 재난백업용_' + today + '.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
+    monthlyAttached ? '· 월별보고서_' + monthlyAttached + '.xlsx — ' + monthlyAttached + ' 월별 보고서 (6개 시트)' : '',
     '',
     '※ 본 메일은 GitHub Actions로 매주 토요일 12시 (한국시간) 자동 발송됩니다.',
+    monthlyAttached ? '※ 매달 첫째 주 토요일에는 직전월 보고서가 함께 첨부됩니다.' : '',
     '※ 동일 데이터 + 첨부 문서는 Google Drive에도 자동 저장됩니다 (Apps Script).'
-  ].join('\n');
+  ].filter(line => line !== '').join('\n');
 
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -476,7 +506,7 @@ async function sendEmail(data, today, attachments) {
   await transporter.sendMail({
     from: '"재고관리 자동백업" <' + process.env.GMAIL_USER + '>',
     to: process.env.BACKUP_RECIPIENT || process.env.GMAIL_USER,
-    subject: '[재고관리] 주간 백업 ' + today,
+    subject: '[재고관리] 주간 백업 ' + today + (monthlyAttached ? ' + 월별보고서' : ''),
     text: message,
     attachments: attachments
   });

@@ -1,0 +1,40 @@
+name: Monthly Report (one-off)
+
+# 자동 발송은 weekly-backup.yml이 매달 첫째 주 토요일에 같이 처리.
+# 이 워크플로우는 과거 월 보고서를 수동으로 받고 싶을 때만 사용 (예: 누락된 4월 보고서).
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: '대상 년도 (예: 2026)'
+        required: true
+        default: '2026'
+      month:
+        description: '대상 월 1-12'
+        required: true
+        default: '4'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Generate monthly report
+        working-directory: scripts
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BACKUP_RECIPIENT: ${{ secrets.BACKUP_RECIPIENT }}
+          REPORT_YEAR: ${{ inputs.year }}
+          REPORT_MONTH: ${{ inputs.month }}
+        run: node monthly-report.js
