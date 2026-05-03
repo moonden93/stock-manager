@@ -205,6 +205,12 @@ async function initApp() {
 
   switchTab('release');  // 첫 화면: 반출 (로딩 스피너 위에 덮어 그림)
   updateHeaderStats();
+
+  // 주간 자동 백업 시도 (백그라운드, 실패해도 앱 동작 영향 없음)
+  // 같은 주에 이미 발송했으면 자동으로 건너뜀
+  if (typeof tryWeeklyBackup === 'function') {
+    setTimeout(tryWeeklyBackup, 2000);  // 첫 렌더 안정화 후 시도
+  }
 }
 
 // Firebase 준비 대기. 타임아웃 시 false 리턴.
