@@ -61,7 +61,10 @@ function _releaseItemRowHtml(item) {
 
   if (cartQty > 0) {
     html += '<button onclick="changeCartQty(\'' + item.id + '\', -1)" class="w-10 h-10 bg-slate-200 hover:bg-slate-300 rounded-lg text-xl font-bold">−</button>' +
-      '<span class="text-xl font-bold text-teal-700 min-w-[32px] text-center">' + cartQty + '</span>' +
+      '<input type="number" inputmode="numeric" min="1" value="' + cartQty + '" ' +
+      'onchange="setCartQty(\'' + item.id + '\', this.value)" ' +
+      'onfocus="this.select()" ' +
+      'class="w-14 h-10 text-center text-lg font-bold text-teal-700 bg-white border-2 border-teal-200 rounded-lg focus:outline-none focus:border-teal-500" />' +
       '<button onclick="changeCartQty(\'' + item.id + '\', 1)" class="w-10 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xl font-bold">+</button>';
   } else {
     html += '<button onclick="addToCart(\'' + item.id + '\')" class="px-4 h-10 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-base font-bold">+ 담기</button>';
@@ -410,6 +413,16 @@ function changeCartQty(itemId, delta) {
   if (idx === -1) return;
   cart[idx].qty += delta;
   if (cart[idx].qty <= 0) cart.splice(idx, 1);
+  renderRelease();
+}
+
+// 직접 입력으로 수량 설정 (input type=number의 onchange 핸들러)
+function setCartQty(itemId, value) {
+  const idx = cart.findIndex(c => c.itemId === itemId);
+  if (idx === -1) return;
+  let qty = parseInt(value, 10);
+  if (isNaN(qty) || qty < 1) qty = 1;  // 0 이하 입력 → 1로 보정 (제거하려면 - 버튼)
+  cart[idx].qty = qty;
   renderRelease();
 }
 
