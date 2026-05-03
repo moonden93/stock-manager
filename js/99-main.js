@@ -158,6 +158,30 @@ function updateHeaderStats() {
 }
 
 // ============================================
+// Firebase 연결 상태 배지
+// ============================================
+// 사용자가 헤더에서 항상 클라우드 연결 상태를 볼 수 있게 함.
+// 폰에서 동기화 안 될 때 어디가 문제인지 즉시 파악 가능.
+function setFirebaseStatus(state, detail) {
+  const el = document.getElementById('firebase-status');
+  if (!el) return;
+  const map = {
+    checking: '<span class="text-slate-400">⚪ 연결 확인 중...</span>',
+    connected: '<span class="text-emerald-600">🟢 클라우드 연결됨</span>',
+    syncing:   '<span class="text-blue-600">🔵 동기화 중...</span>',
+    offline:   '<span class="text-amber-600">🟡 오프라인 (로컬만 저장)</span>',
+    error:     '<span class="text-red-600 font-medium">🔴 클라우드 연결 실패</span>' +
+               (detail ? '<br><span class="text-[9px] text-red-500">' + escapeHtml(detail).slice(0, 80) + '</span>' : '')
+  };
+  el.innerHTML = map[state] || map.checking;
+}
+
+// Firebase 모듈 로드 자체가 실패하면 firebaseError 이벤트가 옴
+window.addEventListener('firebaseError', () => {
+  setFirebaseStatus('error', window.firebaseInitError);
+});
+
+// ============================================
 // 앱 시작
 // ============================================
 // Firebase 로드 완료 전에 stale 로컬 데이터로 화면을 그리면,
@@ -168,24 +192,39 @@ function updateHeaderStats() {
 async function initApp() {
   loadData();
   showInitLoadingScreen();
+  setFirebaseStatus('checking');
 
-  await waitForFirebaseReady(3000);
-  await syncWithFirebase();
+  const firebaseUp = await waitForFirebaseReady(5000);
+  if (!firebaseUp) {
+    setFirebaseStatus('offline');
+  } else {
+    setFirebaseStatus('syncing');
+    await syncWithFirebase();
+    // syncWithFirebase 안에서 성공 시 'connected'로 갱신됨
+  }
 
   switchTab('release');  // 첫 화면: 반출 (로딩 스피너 위에 덮어 그림)
   updateHeaderStats();
 }
 
+// Firebase 준비 대기. 타임아웃 시 false 리턴.
 function waitForFirebaseReady(timeoutMs) {
   return new Promise((resolve) => {
-    if (window.firebaseReady) { resolve(); return; }
+    if (window.firebaseReady) { resolve(true); return; }
+    if (window.firebaseInitError) { resolve(false); return; }
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok); } };
     const timer = setTimeout(() => {
       console.warn('⚠️ Firebase 준비 타임아웃 - 로컬 데이터로 진행');
-      resolve();
+      finish(false);
     }, timeoutMs);
     window.addEventListener('firebaseReady', () => {
       clearTimeout(timer);
-      resolve();
+      finish(true);
+    }, { once: true });
+    window.addEventListener('firebaseError', () => {
+      clearTimeout(timer);
+      finish(false);
     }, { once: true });
   });
 }

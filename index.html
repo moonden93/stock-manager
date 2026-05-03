@@ -47,6 +47,9 @@
         <div>
           <h1 class="text-lg font-bold text-slate-900">문치과병원 재고관리</h1>
           <p class="text-xs text-slate-500" id="header-stats">로딩 중...</p>
+          <p class="text-[10px] mt-0.5" id="firebase-status">
+            <span class="text-slate-400">⚪ 연결 확인 중...</span>
+          </p>
         </div>
       </div>
       <button onclick="showHelp()" class="px-3 py-1.5 text-sm bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700">❓ 도움말</button>
@@ -116,31 +119,42 @@
 <script src="js/99-main.js"></script>
 
 <!-- 6. Firebase SDK (모든 JS 로드 후) -->
+<!-- 동적 import + try/catch: 모듈 import 실패(네트워크/CSP/구형 브라우저) 시
+     화면에 에러를 표시해서 "왜 동기화 안 되는지" 사용자가 즉시 알 수 있게 함.
+     기존엔 실패 시 firebaseReady가 영영 true가 안 돼서 단서 없이 오프라인처럼 동작했음. -->
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-  import { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js";
+  (async () => {
+    try {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js");
+      const { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js");
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyCTbS9JLCiGIjqviYrW5_KMIZOSA95oYSU",
-    authDomain: "moon-dental-stock.firebaseapp.com",
-    projectId: "moon-dental-stock",
-    storageBucket: "moon-dental-stock.firebasestorage.app",
-    messagingSenderId: "630268704768",
-    appId: "1:630268704768:web:06c0da645ed160ce1c40e5"
-  };
+      const firebaseConfig = {
+        apiKey: "AIzaSyCTbS9JLCiGIjqviYrW5_KMIZOSA95oYSU",
+        authDomain: "moon-dental-stock.firebaseapp.com",
+        projectId: "moon-dental-stock",
+        storageBucket: "moon-dental-stock.firebasestorage.app",
+        messagingSenderId: "630268704768",
+        appId: "1:630268704768:web:06c0da645ed160ce1c40e5"
+      };
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
 
-  window.firebaseDB = db;
-  window.firebaseDoc = doc;
-  window.firebaseGetDoc = getDoc;
-  window.firebaseSetDoc = setDoc;
-  window.firebaseOnSnapshot = onSnapshot;
-  window.firebaseServerTimestamp = serverTimestamp;
-  window.firebaseReady = true;
+      window.firebaseDB = db;
+      window.firebaseDoc = doc;
+      window.firebaseGetDoc = getDoc;
+      window.firebaseSetDoc = setDoc;
+      window.firebaseOnSnapshot = onSnapshot;
+      window.firebaseServerTimestamp = serverTimestamp;
+      window.firebaseReady = true;
 
-  window.dispatchEvent(new Event('firebaseReady'));
+      window.dispatchEvent(new Event('firebaseReady'));
+    } catch (err) {
+      console.error('❌ Firebase 초기화 실패:', err);
+      window.firebaseInitError = (err && err.message) ? err.message : String(err);
+      window.dispatchEvent(new Event('firebaseError'));
+    }
+  })();
 </script>
 
 <!-- 7. PWA Service Worker 등록 (오프라인 캐시) -->

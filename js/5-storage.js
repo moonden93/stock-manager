@@ -161,6 +161,20 @@ function migrateTeamsV2(currentTeams) {
 }
 
 // ============================================
+// ID 기반 머지: 클라우드 우선 + 로컬에만 있는 항목 보존
+// ============================================
+// 기기 A가 항목을 만들고 Firebase 쓰기 실패 → 새로고침 시 클라우드 sync로
+// 그 항목이 사라지던 사고를 막기 위함. 클라우드의 같은 ID 항목이 있으면
+// 클라우드 버전 사용(다른 기기의 상태 변경 반영), 없으면 로컬 항목 보존.
+function mergeByIdPreserveLocal(localArr, cloudArr) {
+  if (!Array.isArray(localArr)) return cloudArr.slice();
+  const cloudIds = new Set();
+  cloudArr.forEach(it => { if (it && it.id) cloudIds.add(it.id); });
+  const localOnly = localArr.filter(it => it && it.id && !cloudIds.has(it.id));
+  return [...cloudArr, ...localOnly];
+}
+
+// ============================================
 // 데이터 sanity check
 // ============================================
 // 핵심 데이터(inventory + teams)가 둘 다 비어있으면 "비정상 상태"로 간주.
@@ -180,8 +194,18 @@ function isDataSuspicious(d) {
 // - history/requests/documents: 빈 배열도 정상 변경으로 간주 (의도적 삭제 가능)
 function applyCloudData(data) {
   if (Array.isArray(data.inventory) && data.inventory.length > 0) inventory = data.inventory;
-  if (Array.isArray(data.history)) history = data.history;
-  if (Array.isArray(data.requests)) requests = data.requests;
+
+  // requests, history는 ID 기반 머지.
+  // 클라우드 우선이지만, 로컬에만 있는 항목(아직 동기화 못 한 새 요청/이력)은 보존.
+  // 이전엔 wholesale replace였어서, 폰이 요청 만들고 클라우드 쓰기 실패 시
+  // 다음 sync에서 빈 클라우드 데이터로 덮어써져 요청이 사라지는 사고가 있었음.
+  if (Array.isArray(data.requests)) {
+    requests = mergeByIdPreserveLocal(requests, data.requests);
+  }
+  if (Array.isArray(data.history)) {
+    history = mergeByIdPreserveLocal(history, data.history);
+  }
+
   if (Array.isArray(data.teams) && data.teams.length > 0) teams = data.teams;
 
   const cloudMembers = data.teamMembers;
@@ -259,8 +283,10 @@ async function saveToFirebase() {
       lastUpdated: window.firebaseServerTimestamp()
     });
     console.log('✅ Firebase 저장 성공');
+    if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
   } catch (err) {
     console.error('❌ Firebase 저장 실패:', err);
+    if (typeof setFirebaseStatus === 'function') setFirebaseStatus('error', err && err.message);
     if (typeof showToast === 'function') showToast('클라우드 저장 실패 (로컬은 저장됨)', 'error');
   }
 }
@@ -285,11 +311,13 @@ async function loadFromFirebase() {
       applyCloudData(data);
       saveToLocalStorage();
       console.log('✅ Firebase 로드 성공');
+      if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
       return true;
     }
     return false;
   } catch (err) {
     console.error('❌ Firebase 로드 실패:', err);
+    if (typeof setFirebaseStatus === 'function') setFirebaseStatus('error', err && err.message);
     return false;
   }
 }
@@ -362,7 +390,11 @@ function setupFirebaseSync() {
       }
 
       _applySyncData(data);
+      if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
     }
+  }, (err) => {
+    console.error('❌ Firebase 실시간 리스너 오류:', err);
+    if (typeof setFirebaseStatus === 'function') setFirebaseStatus('error', err && err.message);
   });
 }
 
