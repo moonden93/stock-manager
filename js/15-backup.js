@@ -326,4 +326,23 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem(LAST_BACKUP_TIME_KEY);
     console.log('🧹 백업 쿨다운/주차 기록 초기화 — 다음 호출 즉시 발송 가능');
   };
+  // 백업 Excel을 이메일 안 거치고 바로 다운로드 (포맷 확인용)
+  window.mcDownloadBackupNow = function() {
+    if (typeof XLSX === 'undefined') {
+      console.error('XLSX 라이브러리 로드 안 됨');
+      return;
+    }
+    const weekKey = getIsoWeek(new Date());
+    const blob = generateBackupExcel(weekKey);
+    const filename = '재고관리_백업_' + weekKey + '.xlsx';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    console.log('📥 백업 다운로드: ' + filename);
+  };
 }
