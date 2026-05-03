@@ -11,6 +11,8 @@ let statsTab = 'team'; // team / vendor / weekly / anomaly
 let statsPeriod = 'all'; // all / month / week / custom
 let statsCustomStart = ''; // YYYY-MM-DD
 let statsCustomEnd = '';   // YYYY-MM-DD
+// 이상치 탭 비교 기준 월 (YYYY-MM 형식). 빈 문자열이면 "현재 달" 의미.
+let anomalyMonth = '';
 
 function renderStats() {
   // 기간 필터링
@@ -471,17 +473,63 @@ function openTeamStatsDetail(teamName) {
 }
 
 // ============================================
+// 이상치 탭 - 월 선택 드롭다운 헬퍼
+// ============================================
+// history에서 가장 옛 출고 월 ~ 현재 월까지 옵션 생성 (최신 월이 위)
+function buildAnomalyMonthOptions(selectedDate) {
+  const now = new Date();
+  let oldest = now;
+  history.forEach(h => {
+    if (h.type !== 'out') return;
+    const d = new Date(h.date);
+    if (d < oldest) oldest = d;
+  });
+
+  // history 비어있어도 최소 12개월 옵션 생성
+  const minStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+  if (oldest > minStart) oldest = minStart;
+
+  const opts = [];
+  // 최신 → 옛날 순
+  let cur = new Date(now.getFullYear(), now.getMonth(), 1);
+  const end = new Date(oldest.getFullYear(), oldest.getMonth(), 1);
+  while (cur >= end) {
+    const y = cur.getFullYear();
+    const m = cur.getMonth() + 1;
+    const value = y + '-' + String(m).padStart(2, '0');
+    const isCur = (y === now.getFullYear() && m === now.getMonth() + 1);
+    const isSel = (selectedDate.getFullYear() === y && selectedDate.getMonth() + 1 === m);
+    const label = y + '년 ' + m + '월' + (isCur ? ' (이번 달)' : '');
+    opts.push('<option value="' + value + '"' + (isSel ? ' selected' : '') + '>' + label + '</option>');
+    cur.setMonth(cur.getMonth() - 1);
+  }
+  return opts.join('');
+}
+
+function changeAnomalyMonth(value) {
+  anomalyMonth = value || '';  // 빈 문자열 = 현재 달
+  renderStats();
+}
+
+// ============================================
 // 사용량 이상치 (이번 달 vs 지난 3개월 평균)
 // ============================================
 // 평소보다 +30%↑/-30%↓ 변동된 품목 + 신규 사용 + 사용 중단을 모두 보여줌.
 // 운영자가 "이번 달 갑자기 많이 쓰는 품목" 또는 "갑자기 안 쓰는 품목"을 빠르게 파악.
 function renderStatsByAnomaly() {
-  const now = new Date();
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const threeMonthsAgoStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+  // 비교 기준 월 결정: anomalyMonth가 비어있으면 현재 달 사용
+  const targetYear = anomalyMonth ? parseInt(anomalyMonth.slice(0, 4), 10) : new Date().getFullYear();
+  const targetMonth = anomalyMonth ? parseInt(anomalyMonth.slice(5, 7), 10) - 1 : new Date().getMonth();
+  // 0-based month (Date 생성자 기준)
+  const thisMonthStart = new Date(targetYear, targetMonth, 1);
+  const thisMonthEnd = new Date(targetYear, targetMonth + 1, 1);  // 다음 달 1일 (exclusive)
+  const threeMonthsAgoStart = new Date(targetYear, targetMonth - 3, 1);
 
   const outHistory = history.filter(h => h.type === 'out');
-  const thisMonth = outHistory.filter(h => new Date(h.date) >= thisMonthStart);
+  const thisMonth = outHistory.filter(h => {
+    const d = new Date(h.date);
+    return d >= thisMonthStart && d < thisMonthEnd;
+  });
   const past3 = outHistory.filter(h => {
     const d = new Date(h.date);
     return d >= threeMonthsAgoStart && d < thisMonthStart;
@@ -553,12 +601,35 @@ function renderStatsByAnomaly() {
   });
 
   const monthLabel = thisMonthStart.getFullYear() + '년 ' + (thisMonthStart.getMonth() + 1) + '월';
+  const isCurrentMonth = (() => {
+    const n = new Date();
+    return thisMonthStart.getFullYear() === n.getFullYear() &&
+           thisMonthStart.getMonth() === n.getMonth();
+  })();
 
-  // 안내 박스 + 팀 필터 UI
+  // 월 선택 드롭다운 옵션 생성 (history에 있는 가장 옛날 달 ~ 현재 달)
+  const optionsHtml = buildAnomalyMonthOptions(thisMonthStart);
+
+  // 비교 기간 라벨
+  const past3Label = (threeMonthsAgoStart.getFullYear() + '.' + (threeMonthsAgoStart.getMonth() + 1)) +
+                     ' ~ ' + (() => {
+                       const last = new Date(thisMonthStart); last.setMonth(last.getMonth() - 1);
+                       return last.getFullYear() + '.' + (last.getMonth() + 1);
+                     })();
+
+  // 안내 박스 + 월 선택 드롭다운
   let html = '<div class="space-y-3">' +
     '<div class="bg-amber-50 border border-amber-200 rounded-2xl p-3">' +
+    '<div class="flex items-center gap-2 flex-wrap mb-2">' +
+    '<label class="text-xs font-bold text-slate-700">📅 비교 기준 월:</label>' +
+    '<select onchange="changeAnomalyMonth(this.value)" class="px-2 py-1 text-xs bg-white border border-amber-300 rounded-lg font-bold text-slate-900 focus:outline-none focus:border-amber-500">' +
+    optionsHtml +
+    '</select>' +
+    (anomalyMonth ? '<button onclick="changeAnomalyMonth(\'\')" class="text-[11px] px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg text-slate-600">↩ 이번 달로</button>' : '') +
+    '</div>' +
     '<p class="text-xs text-slate-700 leading-relaxed">' +
-    '<strong>📈 ' + monthLabel + '</strong> 팀별 사용량을 <strong>지난 3개월 월평균</strong>과 비교합니다.<br>' +
+    '<strong>📈 ' + monthLabel + (isCurrentMonth ? ' (이번 달)' : '') + '</strong>' +
+    ' 팀별 사용량을 <strong>직전 3개월(' + past3Label + ') 월평균</strong>과 비교합니다.<br>' +
     '±30% 이상 변동, 신규/중단 품목이 있는 팀만 표시.' +
     '</p>' +
     '<p class="text-[11px] text-amber-700 mt-1">※ 위쪽 [기간 필터]는 적용되지 않습니다 (자체 기준 사용)</p>' +
