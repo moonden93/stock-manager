@@ -1,9 +1,8 @@
 // ============================================
-// 15-backup.js: 주간 자동 이메일 백업 (Web3Forms 사용)
+// 15-backup.js: 주간 자동 이메일 백업 (FormSubmit 사용)
 // ============================================
 // 의존: 5-storage.js (모든 데이터 전역 변수)
 //       SheetJS(XLSX) (Excel 생성)
-//       4-utils.js (escapeHtml — 사용 안 함)
 // 호출자: 99-main.js initApp 후
 //
 // 동작:
@@ -11,8 +10,12 @@
 //   - localStorage에 마지막 발송 주차 기록 → 같은 주에 중복 발송 안 함
 //   - 실패 시 lastSent 안 갱신 → 다음 앱 열 때 자동 재시도
 //   - 콘솔에서 mcSendBackupNow() 호출하면 강제 발송 (테스트용)
+//
+// 첫 발송 시 FormSubmit에서 받은이 이메일로 "Activate Form" 메일이 옴.
+// 그 안의 활성화 링크를 한 번 클릭해야 이후 발송이 정상 도착함.
 
-const WEB3FORMS_KEY = '2777c4dc-043b-4ed4-b504-497e5f0225f1';
+const BACKUP_EMAIL = 'moonden93@gmail.com';
+const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + BACKUP_EMAIL;
 const LAST_BACKUP_KEY = 'mc_last_backup_week';
 
 // ISO 8601 주차 계산 (월요일 시작) — "2026-W18" 형식
@@ -219,25 +222,34 @@ async function sendBackupEmail(weekKey, blob) {
     '※ 첨부 파일은 절대 삭제하지 말고 보관하세요. 데이터 손실 시 복원에 사용됩니다.'
   ].join('\n');
 
+  // FormSubmit AJAX 엔드포인트는 multipart/form-data POST 받음.
+  // 필드명 규칙: _subject(제목), name(보낸이), email(보낸이 메일),
+  //              _captcha=false(캡차 비활성), _template=box(예쁜 템플릿),
+  //              나머지는 그대로 본문에 표시됨.
   const formData = new FormData();
-  formData.append('access_key', WEB3FORMS_KEY);
-  formData.append('subject', '[재고관리] 주간 백업 ' + weekKey);
-  formData.append('from_name', '재고관리 자동백업');
+  formData.append('_subject', '[재고관리] 주간 백업 ' + weekKey);
+  formData.append('name', '재고관리 자동백업');
+  formData.append('email', BACKUP_EMAIL);
+  formData.append('_captcha', 'false');
+  formData.append('_template', 'box');
   formData.append('message', message);
   formData.append('attachment', blob, filename);
 
-  const response = await fetch('https://api.web3forms.com/submit', {
+  const response = await fetch(FORMSUBMIT_ENDPOINT, {
     method: 'POST',
     body: formData
   });
 
   if (!response.ok) {
-    throw new Error('Web3Forms HTTP ' + response.status);
+    const text = await response.text().catch(() => '');
+    throw new Error('FormSubmit HTTP ' + response.status + (text ? ' — ' + text.slice(0, 200) : ''));
   }
 
   const result = await response.json();
-  if (!result.success) {
-    throw new Error('Web3Forms 응답 실패: ' + (result.message || JSON.stringify(result)));
+  // FormSubmit 성공 응답: { success: "true", message: "..." }  (success가 문자열일 수 있음)
+  const ok = result && (result.success === true || result.success === 'true');
+  if (!ok) {
+    throw new Error('FormSubmit 응답 실패: ' + (result.message || JSON.stringify(result)));
   }
 }
 
