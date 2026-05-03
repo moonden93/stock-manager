@@ -244,30 +244,70 @@ async function sendBackupEmail(weekKey, blob) {
     '※ 첨부 파일은 절대 삭제하지 말고 보관하세요. 데이터 손실 시 복원에 사용됩니다.'
   ].join('\n');
 
-  // FormSubmit AJAX 엔드포인트는 multipart/form-data POST 받음.
-  // 필드명 규칙: _subject(제목), name(보낸이), email(보낸이 메일),
-  //              _captcha=false(캡차 비활성), _template=box(예쁜 템플릿),
-  //              나머지는 그대로 본문에 표시됨.
-  const formData = new FormData();
-  formData.append('_subject', '[재고관리] 주간 백업 ' + weekKey);
-  formData.append('name', '재고관리 자동백업');
-  // 'email' 필드는 FormSubmit이 "Reply-To"로 사용하는 보낸이 메일.
-  // 백업 자체발송이므로 같은 시스템 식별값 사용 (실제 노출 안 됨, 응답 받을 일도 없음).
-  formData.append('email', 'backup@moondental.system');
-  formData.append('_captcha', 'false');
-  formData.append('_template', 'box');
-  formData.append('message', message);
-  formData.append('attachment', blob, filename);
+  // 숨겨진 iframe + form으로 진짜 HTML 폼 제출처럼 보내기.
+  // fetch + no-cors는 FormSubmit이 첨부를 처리하지 않는 문제가 있어서
+  // 브라우저 표준 form submit 흐름을 모방.
+  const fields = {
+    _subject: '[재고관리] 주간 백업 ' + weekKey,
+    _captcha: 'false',
+    _template: 'box',
+    name: '재고관리 자동백업',
+    email: 'backup@moondental.local',  // FormSubmit이 Reply-To로 쓰는 자리
+    message: message
+  };
+  await submitFormWithFile(FORMSUBMIT_ENDPOINT, fields, 'attachment', blob, filename);
+}
 
-  // 일반(non-AJAX) 엔드포인트 + no-cors 모드:
-  // - 첨부파일 지원
-  // - no-cors라서 응답 본문/상태 코드를 읽을 수 없지만(브라우저 보안 정책)
-  //   요청 자체는 서버에 정상 도달하고 메일 발송됨
-  // - 실패 판단을 못 하므로 호출 후 에러 안 나면 성공으로 간주
-  await fetch(FORMSUBMIT_ENDPOINT, {
-    method: 'POST',
-    body: formData,
-    mode: 'no-cors'
+// 숨겨진 iframe에 form을 만들어 제출 — 첨부파일 포함 진짜 폼 제출 흐름 재현.
+// 응답을 읽을 수는 없지만, 서버가 첨부를 정상 처리함.
+function submitFormWithFile(url, fields, fileFieldName, blob, filename) {
+  return new Promise((resolve) => {
+    const iframeName = 'mc-backup-iframe-' + Date.now();
+    const iframe = document.createElement('iframe');
+    iframe.name = iframeName;
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+
+    const form = document.createElement('form');
+    form.action = url;
+    form.method = 'POST';
+    form.enctype = 'multipart/form-data';
+    form.target = iframeName;
+    form.style.display = 'none';
+
+    // 텍스트 필드들
+    Object.keys(fields).forEach(name => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = fields[name];
+      form.appendChild(input);
+    });
+
+    // 파일 필드 — DataTransfer로 file input에 Blob 주입 (실제 사용자 업로드 흐름과 동일)
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.name = fileFieldName;
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], filename, { type: blob.type }));
+    fileInput.files = dt.files;
+    form.appendChild(fileInput);
+
+    document.body.appendChild(form);
+
+    // iframe load 또는 3초 후 정리하고 resolve (응답은 못 읽음)
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      try { document.body.removeChild(form); } catch (e) {}
+      try { document.body.removeChild(iframe); } catch (e) {}
+      resolve();
+    };
+    iframe.addEventListener('load', () => setTimeout(cleanup, 500));
+    setTimeout(cleanup, 5000);  // 안전망
+
+    form.submit();
   });
 }
 
