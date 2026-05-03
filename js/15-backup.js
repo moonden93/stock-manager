@@ -17,8 +17,13 @@
 // FormSubmit 해시 토큰 — 받은이 이메일을 노출하지 않기 위한 익명 식별자.
 // FormSubmit 활성화 메일에서 발급받음. 이 토큰이 moonden93@gmail.com에 매핑됨.
 const FORMSUBMIT_TOKEN = '23c157956a65820f31b77fd1e87dd9c7';
-const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/ajax/' + FORMSUBMIT_TOKEN;
+// 일반(non-AJAX) 엔드포인트만 파일 첨부 지원함. AJAX 엔드포인트는 텍스트만 가능.
+// no-cors 모드로 보내야 CORS 에러 안 남 — 응답은 읽을 수 없지만 요청은 정상 전송됨.
+const FORMSUBMIT_ENDPOINT = 'https://formsubmit.co/' + FORMSUBMIT_TOKEN;
 const LAST_BACKUP_KEY = 'mc_last_backup_week';
+// 같은 주 중복 발송 안전장치: 강제 발송이라도 5분 안엔 재발송 안 됨
+const LAST_BACKUP_TIME_KEY = 'mc_last_backup_time';
+const MIN_RESEND_MS = 5 * 60 * 1000;
 
 // ISO 8601 주차 계산 (월요일 시작) — "2026-W18" 형식
 function getIsoWeek(date) {
@@ -31,26 +36,41 @@ function getIsoWeek(date) {
   return d.getFullYear() + '-W' + String(weekNo).padStart(2, '0');
 }
 
-async function tryWeeklyBackup() {
+// force=true면 같은 주 체크는 우회. 단 5분 안 재발송은 항상 차단 (안전장치).
+async function tryWeeklyBackup(force) {
   // 보호: Firebase 동기화 안 된 상태에선 백업 보류 (불완전한 데이터로 백업하지 않음)
   if (!window.firebaseReady) return;
   if (!Array.isArray(inventory) || inventory.length === 0) return;
 
   const thisWeek = getIsoWeek(new Date());
   const lastSent = localStorage.getItem(LAST_BACKUP_KEY);
-  if (lastSent === thisWeek) {
+  if (!force && lastSent === thisWeek) {
     console.log('📧 이번 주(' + thisWeek + ') 백업 이미 발송됨 — 건너뜀');
+    return;
+  }
+
+  // 5분 쿨다운 (force여도 적용) — 실수로 여러 번 호출해도 메일 1개만 가도록
+  const lastTime = parseInt(localStorage.getItem(LAST_BACKUP_TIME_KEY) || '0', 10);
+  const elapsed = Date.now() - lastTime;
+  if (elapsed < MIN_RESEND_MS) {
+    const wait = Math.ceil((MIN_RESEND_MS - elapsed) / 1000);
+    console.log('⏱️ 너무 빨리 재발송 — ' + wait + '초 후 다시 시도하세요');
+    if (typeof showToast === 'function') {
+      showToast('백업 쿨다운: ' + wait + '초 후 가능', 'info');
+    }
     return;
   }
 
   try {
     console.log('📧 주간 백업 발송 시작 (' + thisWeek + ')');
+    // 발송 시도 직전 시간 기록 — 호출이 동시에 두 번 와도 한 번만 진행되게
+    localStorage.setItem(LAST_BACKUP_TIME_KEY, String(Date.now()));
     const blob = generateBackupExcel(thisWeek);
     await sendBackupEmail(thisWeek, blob);
     localStorage.setItem(LAST_BACKUP_KEY, thisWeek);
-    console.log('✅ 주간 백업 발송 성공');
+    console.log('✅ 주간 백업 발송 요청 완료');
     if (typeof showToast === 'function') {
-      showToast('주간 백업 메일 발송 완료 (' + thisWeek + ')', 'success');
+      showToast('주간 백업 메일 발송 (' + thisWeek + ')', 'success');
     }
   } catch (err) {
     console.error('❌ 주간 백업 실패:', err);
@@ -239,31 +259,31 @@ async function sendBackupEmail(weekKey, blob) {
   formData.append('message', message);
   formData.append('attachment', blob, filename);
 
-  const response = await fetch(FORMSUBMIT_ENDPOINT, {
+  // 일반(non-AJAX) 엔드포인트 + no-cors 모드:
+  // - 첨부파일 지원
+  // - no-cors라서 응답 본문/상태 코드를 읽을 수 없지만(브라우저 보안 정책)
+  //   요청 자체는 서버에 정상 도달하고 메일 발송됨
+  // - 실패 판단을 못 하므로 호출 후 에러 안 나면 성공으로 간주
+  await fetch(FORMSUBMIT_ENDPOINT, {
     method: 'POST',
-    body: formData
+    body: formData,
+    mode: 'no-cors'
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error('FormSubmit HTTP ' + response.status + (text ? ' — ' + text.slice(0, 200) : ''));
-  }
-
-  const result = await response.json();
-  // FormSubmit 성공 응답: { success: "true", message: "..." }  (success가 문자열일 수 있음)
-  const ok = result && (result.success === true || result.success === 'true');
-  if (!ok) {
-    throw new Error('FormSubmit 응답 실패: ' + (result.message || JSON.stringify(result)));
-  }
 }
 
-// 콘솔에서 즉시 발송 (테스트용)
+// 콘솔에서 즉시 발송 (테스트용) — force 옵션으로 같은 주 체크 우회.
+// 5분 쿨다운은 항상 적용되므로 메일이 우르르 가지 않음.
 if (typeof window !== 'undefined') {
   window.mcSendBackupNow = async function() {
-    localStorage.removeItem(LAST_BACKUP_KEY);
-    await tryWeeklyBackup();
+    await tryWeeklyBackup(true);
   };
   window.mcGetThisWeek = function() {
     return getIsoWeek(new Date());
+  };
+  // 쿨다운/주차 기록 초기화 (긴급 강제 재발송용)
+  window.mcResetBackupCooldown = function() {
+    localStorage.removeItem(LAST_BACKUP_KEY);
+    localStorage.removeItem(LAST_BACKUP_TIME_KEY);
+    console.log('🧹 백업 쿨다운/주차 기록 초기화 — 다음 호출 즉시 발송 가능');
   };
 }
