@@ -215,9 +215,25 @@ function appendToMasterSheet(data) {
   });
   if (hasUnassigned) teamCols.push('(미지정)');
 
-  // 헤더 + 데이터 행 (숨김 컬럼 추가 — 숨김인데 출고 있으면 검토 필요)
-  const headers = ['숨김', '업체명', '종류', '품명', '규격', '단가', '현 재고량', '기준 재고량', '입고량'];
+  // 탭 먼저 처리해서 ss 확보 (이전 주차 탭에서 최저가 점검일 읽어와야 함)
+  const ss = SpreadsheetApp.openById(targetFile.getId());
+  let sheet = ss.getSheetByName(tabName);
+  if (sheet) {
+    sheet.clear();
+    Logger.log('🔄 탭 갱신: ' + tabName);
+  } else {
+    sheet = ss.insertSheet(tabName, 0);
+    Logger.log('➕ 새 탭 생성: ' + tabName);
+  }
+
+  // 이전 주차 탭에서 "최저가 점검일" 값 매핑 (수동 입력값 보존)
+  const lastCheckMap = readPriceCheckFromPrevTab_(ss, tabName);
+
+  // 헤더 — 원본 컬럼 구조 그대로 + 맨 앞에 숨김 컬럼만 추가
+  // 원본: 업체명|종류|품명|규격|단가|전 재고량|입고량|[팀들]|총분출량|현 재고량|기준 재고량|최저가 점검일
+  const headers = ['숨김', '업체명', '종류', '품명', '규격', '단가', '전 재고량', '입고량'];
   teamCols.forEach(function(t) { headers.push(t); });
+  headers.push('총분출량', '현 재고량', '기준 재고량', '최저가 점검일');
 
   // 숨김은 뒤로, 그 외는 업체+품명 정렬
   const sorted = inventory.slice().sort(function(a, b) {
@@ -228,6 +244,12 @@ function appendToMasterSheet(data) {
   const rows = [headers];
   sorted.forEach(function(it) {
     const k = (it.vendor || '') + '::' + (it.name || '');
+    const inQty = weekIn[k] || 0;
+    const teamQtys = teamCols.map(function(t) { return (weekOut[k] && weekOut[k][t]) || 0; });
+    const totalOut = teamQtys.reduce(function(s, q) { return s + q; }, 0);
+    const currentStock = it.stock || 0;
+    // 전 재고량: 이번 주 시작 시점 = 현재고 + 이번 주 출고 - 이번 주 입고
+    const prevStock = currentStock - inQty + totalOut;
     const row = [
       it.hidden ? '🙈' : '',
       it.vendor || '',
@@ -235,26 +257,13 @@ function appendToMasterSheet(data) {
       it.name || '',
       it.unit || '',
       it.price || 0,
-      it.stock || 0,
-      it.minStock || 0,
-      weekIn[k] || 0
+      prevStock,
+      inQty
     ];
-    teamCols.forEach(function(t) {
-      row.push((weekOut[k] && weekOut[k][t]) || 0);
-    });
+    teamQtys.forEach(function(q) { row.push(q); });
+    row.push(totalOut, currentStock, it.minStock || 0, lastCheckMap[k] || '');
     rows.push(row);
   });
-
-  // 탭 추가/갱신
-  const ss = SpreadsheetApp.openById(targetFile.getId());
-  let sheet = ss.getSheetByName(tabName);
-  if (sheet) {
-    sheet.clear();
-    Logger.log('🔄 탭 갱신: ' + tabName);
-  } else {
-    sheet = ss.insertSheet(tabName, 0);
-    Logger.log('➕ 새 탭 생성: ' + tabName);
-  }
 
   sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
@@ -271,6 +280,38 @@ function appendToMasterSheet(data) {
 // 누적 파일명: "2026년 5월 1주차_클로드연동 기존시트"
 function getCumulativeFileName() {
   return getMonthWeekLabelKr() + CUMULATIVE_NAME_SUFFIX;
+}
+
+// 이전 주차 탭에서 "최저가 점검일" 값들을 읽어 vendor::name → 점검일 매핑 반환
+// 수동으로 입력한 점검일 데이터가 사라지지 않도록 carry over
+function readPriceCheckFromPrevTab_(ss, currentTabName) {
+  const map = {};
+  const sheets = ss.getSheets();
+  // 현재 탭 제외하고 가장 최근 주차 탭 찾기
+  let best = null, bestKey = -1;
+  sheets.forEach(function(s) {
+    const name = s.getName();
+    if (name === currentTabName) return;
+    const k = parseTabKey_(name);
+    if (k > bestKey) { bestKey = k; best = s; }
+  });
+  if (!best) return map;
+  const data = best.getDataRange().getValues();
+  if (data.length < 2) return map;
+  const header = data[0].map(function(h) { return String(h || '').replace(/\s+/g, ' ').trim(); });
+  const vendorIdx = header.indexOf('업체명');
+  const nameIdx = header.indexOf('품명');
+  const checkIdx = header.indexOf('최저가 점검일');
+  if (vendorIdx === -1 || nameIdx === -1 || checkIdx === -1) return map;
+  for (let i = 1; i < data.length; i++) {
+    const v = String(data[i][vendorIdx] || '').trim();
+    const n = String(data[i][nameIdx] || '').trim();
+    if (!v || !n) continue;
+    const val = data[i][checkIdx];
+    if (val !== '' && val != null) map[v + '::' + n] = val;
+  }
+  Logger.log('  · 최저가 점검일: ' + best.getName() + ' 에서 ' + Object.keys(map).length + '건 carry over');
+  return map;
 }
 
 // 탭 이름: "26년5월1주차" (2026+) / "11월1주차" (2025) — 원본 탭 명명 규칙 유지
