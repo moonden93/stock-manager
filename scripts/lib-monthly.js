@@ -5,6 +5,18 @@
 
 const XLSX = require('xlsx');
 
+// 숨김 항목 lookup용 — 보고서에서 history/output에 숨김 마커
+function buildHiddenSet(inventory) {
+  const set = {};
+  inventory.forEach(it => {
+    if (it.hidden) set[(it.vendor || '') + '::' + (it.name || '')] = true;
+  });
+  return set;
+}
+function isHidden(hiddenSet, vendor, name) {
+  return !!hiddenSet[(vendor || '') + '::' + (name || '')];
+}
+
 // 비용 단위 포맷 (1000원 단위, 한국식)
 function formatWonPlain(n) {
   if (Math.abs(n) >= 10000) return (Math.round(n / 1000) / 10) + '만원';
@@ -311,10 +323,12 @@ function generateMonthlyReportExcel(data, year, month) {
   applyFormat(wsAnom, [4, 5], 3);
   XLSX.utils.book_append_sheet(wb, wsAnom, '팀별 AI 분석');
 
-  // 6. 출고 원장 (반출자 포함)
-  const ledgerRows = [['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];
+  // 6. 출고 원장 (반출자 + 숨김 마커 포함)
+  const hiddenSet = buildHiddenSet(inventory);
+  const ledgerRows = [['숨김', '날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];
   monthOut.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(h => {
     ledgerRows.push([
+      isHidden(hiddenSet, h.vendor, h.name) ? '🙈' : '',
       (h.date || '').slice(0, 10), h.team || '',
       h.requester || h.member || '', h.releasedBy || '',
       h.vendor || '', h.name || '', h.unit || '',
@@ -323,7 +337,7 @@ function generateMonthlyReportExcel(data, year, month) {
   });
   if (ledgerRows.length === 1) ledgerRows.push(['(' + monthLabel + ' 출고 없음)']);
   const wsLedger = XLSX.utils.aoa_to_sheet(ledgerRows);
-  applyFormat(wsLedger, [7, 8, 9]);
+  applyFormat(wsLedger, [8, 9, 10]);  // 숨김 컬럼 추가로 인덱스 +1
   XLSX.utils.book_append_sheet(wb, wsLedger, '출고 원장');
 
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });

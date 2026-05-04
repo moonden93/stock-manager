@@ -215,11 +215,13 @@ function appendToMasterSheet(data) {
   });
   if (hasUnassigned) teamCols.push('(미지정)');
 
-  // 헤더 + 데이터 행
-  const headers = ['업체명', '종류', '품명', '규격', '단가', '현 재고량', '기준 재고량', '입고량'];
+  // 헤더 + 데이터 행 (숨김 컬럼 추가 — 숨김인데 출고 있으면 검토 필요)
+  const headers = ['숨김', '업체명', '종류', '품명', '규격', '단가', '현 재고량', '기준 재고량', '입고량'];
   teamCols.forEach(function(t) { headers.push(t); });
 
+  // 숨김은 뒤로, 그 외는 업체+품명 정렬
   const sorted = inventory.slice().sort(function(a, b) {
+    if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;
     return (a.vendor || '').localeCompare(b.vendor || '') ||
            (a.name || '').localeCompare(b.name || '');
   });
@@ -227,6 +229,7 @@ function appendToMasterSheet(data) {
   sorted.forEach(function(it) {
     const k = (it.vendor || '') + '::' + (it.name || '');
     const row = [
+      it.hidden ? '🙈' : '',
       it.vendor || '',
       it.category || '',
       it.name || '',
@@ -472,6 +475,20 @@ function moveFileToFolder(fileId, folder) {
   DriveApp.getRootFolder().removeFile(file);
 }
 
+// 숨김 항목 lookup용 Set 생성 (vendor::name 키)
+// 보고서에서 history/output에 숨김 마커를 다는 데 사용
+function buildHiddenSet_(inventory) {
+  const set = {};  // 객체로 (Apps Script V8이지만 Set 호환성 안전)
+  inventory.forEach(function(it) {
+    if (it.hidden) set[(it.vendor || '') + '::' + (it.name || '')] = true;
+  });
+  return set;
+}
+
+function isHidden_(hiddenSet, vendor, name) {
+  return !!hiddenSet[(vendor || '') + '::' + (name || '')];
+}
+
 function writeRows(sheet, rows) {
   if (!rows || rows.length === 0) return;
   let numCols = 1;
@@ -687,11 +704,13 @@ function createMonthlyReportSheet(data, year, month, name, folder) {
   if (anomCount === 0) anomRows.push(['(특이 변동 없음)']);
   writeRows(ss.insertSheet('팀별 AI 분석'), anomRows);
 
-  // 6. 출고 원장 (반출자 포함)
-  const ledgerRows = [['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];
+  // 6. 출고 원장 (반출자 + 숨김 마커 포함)
+  const hiddenSet = buildHiddenSet_(inventory);
+  const ledgerRows = [['숨김', '날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']];
   monthOut.slice().sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); })
     .forEach(function(h) {
       ledgerRows.push([
+        isHidden_(hiddenSet, h.vendor, h.name) ? '🙈' : '',
         (h.date || '').slice(0, 10), h.team || '',
         h.requester || h.member || '', h.releasedBy || '',
         h.vendor || '', h.name || '', h.unit || '',
@@ -797,30 +816,36 @@ function createReportSheet(data, name, folder) {
     ['대기 요청', pendingReq]
   ]);
 
-  // ─ 2. 품목 (상태순) ─
+  const hiddenSet = buildHiddenSet_(inventory);
+
+  // ─ 2. 품목 (상태순, 숨김은 맨 뒤로) ─
   const invSorted = inventory.slice().sort(function(a, b) {
+    // 숨김은 항상 뒤로
+    if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;
     const sA = a.stock === 0 ? 0 : (a.stock <= a.minStock ? 1 : 2);
     const sB = b.stock === 0 ? 0 : (b.stock <= b.minStock ? 1 : 2);
     if (sA !== sB) return sA - sB;
     return (a.vendor || '').localeCompare(b.vendor || '') ||
            (a.name || '').localeCompare(b.name || '');
   });
-  const invRows = [['상태', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
+  const invRows = [['상태', '숨김', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
   invSorted.forEach(function(it) {
     const status = it.stock === 0 ? '품절' : (it.stock <= it.minStock ? '부족' : '정상');
-    invRows.push([status, it.vendor || '', it.name || '', it.unit || '',
+    invRows.push([status, it.hidden ? '🙈' : '', it.vendor || '', it.name || '', it.unit || '',
                   it.price || 0, it.stock || 0, it.minStock || 0]);
   });
   writeRows(ss.insertSheet('품목'), invRows);
 
-  // ─ 3. 입출고+요청 (반출자 포함) ─
+  // ─ 3. 입출고+요청 (반출자 + 숨김 마커 포함) ─
+  // 숨김인데 출고가 나간 품목 = "더 이상 안 쓴다"고 표시했지만 실제 사용 중 → 숨김 해제 검토
   const combined = [];
   combined.push(['【 이번 주 출고 】 ' + thisOutHist.length + '건 · ' + thisOutCost.toLocaleString() + '원']);
-  combined.push(['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
+  combined.push(['숨김', '날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
   if (thisOutHist.length === 0) combined.push(['(이번 주 출고 없음)']);
   else thisOutHist.slice().sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); })
     .forEach(function(h) {
       combined.push([
+        isHidden_(hiddenSet, h.vendor, h.name) ? '🙈' : '',
         (h.date || '').slice(0, 10), h.team || '',
         h.requester || h.member || '', h.releasedBy || '',
         h.vendor || '', h.name || '', h.unit || '',
@@ -829,11 +854,12 @@ function createReportSheet(data, name, folder) {
     });
   combined.push([]);
   combined.push(['【 이번 주 입고 】 ' + thisInHist.length + '건']);
-  combined.push(['날짜', '업체', '품명', '단위', '수량', '단가(원)']);
+  combined.push(['숨김', '날짜', '업체', '품명', '단위', '수량', '단가(원)']);
   if (thisInHist.length === 0) combined.push(['(이번 주 입고 없음)']);
   else thisInHist.slice().sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); })
     .forEach(function(h) {
       combined.push([
+        isHidden_(hiddenSet, h.vendor, h.name) ? '🙈' : '',
         (h.date || '').slice(0, 10), h.vendor || '', h.name || '',
         h.unit || '', h.qty || 0, h.price || 0
       ]);
@@ -974,21 +1000,26 @@ function createRecoverySheet(data, name, folder) {
     ['문서 수', documents.length]
   ]);
 
+  const hiddenSet = buildHiddenSet_(inventory);
+
   // 품목 (전체)
-  const invRows = [['ID', '업체', '품명', '단위', '단가', '재고', '부족기준', '카테고리']];
+  const invRows = [['ID', '숨김', '업체', '품명', '단위', '단가', '재고', '부족기준', '카테고리']];
   inventory.forEach(function(it) {
     invRows.push([
-      it.id || '', it.vendor || '', it.name || '', it.unit || '',
+      it.id || '', it.hidden ? '🙈' : '',
+      it.vendor || '', it.name || '', it.unit || '',
       it.price || 0, it.stock || 0, it.minStock || 0, it.category || ''
     ]);
   });
   writeRows(ss.insertSheet('품목'), invRows);
 
-  // 입출고이력 (반출자 포함)
-  const histRows = [['ID', '날짜', '주차', '구분', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가']];
+  // 입출고이력 (반출자 + 숨김 마커 포함)
+  const histRows = [['ID', '숨김', '날짜', '주차', '구분', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가']];
   history.forEach(function(h) {
     histRows.push([
-      h.id || '', h.date || '', h.weekKey || '', h.type || '',
+      h.id || '',
+      isHidden_(hiddenSet, h.vendor, h.name) ? '🙈' : '',
+      h.date || '', h.weekKey || '', h.type || '',
       h.team || '', h.requester || h.member || '', h.releasedBy || '',
       h.vendor || '', h.name || '',
       h.unit || '', h.qty || 0, h.price || 0

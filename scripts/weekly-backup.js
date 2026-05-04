@@ -22,6 +22,18 @@ const DOC_PATH = 'appData/main';
 
 // 오늘이 이번 달의 "첫째 주 토요일"인지 (월의 1~7일 사이 토요일).
 // 매주 토요일 발송이라 7일 안의 토요일이면 자동으로 첫째 주 토요일임.
+// 숨김 항목 lookup용 — 보고서에서 history/output에 숨김 마커
+function buildHiddenSet(inventory) {
+  const set = {};
+  inventory.forEach(it => {
+    if (it.hidden) set[(it.vendor || '') + '::' + (it.name || '')] = true;
+  });
+  return set;
+}
+function isHidden(hiddenSet, vendor, name) {
+  return !!hiddenSet[(vendor || '') + '::' + (name || '')];
+}
+
 function isFirstSaturdayOfMonth(date) {
   const d = date || new Date();
   // KST 기준 day-of-month
@@ -195,26 +207,31 @@ function generateRecoveryExcel(data) {
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), '메타');
 
-  // 품목
-  const invRows = [['ID', '업체', '품명', '단위', '단가', '재고', '부족기준', '카테고리']];
+  const hiddenSet = buildHiddenSet(inventory);
+
+  // 품목 (숨김 컬럼 추가)
+  const invRows = [['ID', '숨김', '업체', '품명', '단위', '단가', '재고', '부족기준', '카테고리']];
   inventory.forEach(it => invRows.push([
-    it.id || '', it.vendor || '', it.name || '', it.unit || '',
+    it.id || '', it.hidden ? '🙈' : '',
+    it.vendor || '', it.name || '', it.unit || '',
     it.price || 0, it.stock || 0, it.minStock || 0, it.category || ''
   ]));
   const wsInv = XLSX.utils.aoa_to_sheet(invRows);
-  applyFormat(wsInv, [4, 5, 6]);
+  applyFormat(wsInv, [5, 6, 7]);  // 숨김 컬럼 추가로 인덱스 +1
   XLSX.utils.book_append_sheet(wb, wsInv, '품목');
 
-  // 입출고이력 (releasedBy 포함)
-  const histRows = [['ID', '날짜', '주차', '구분', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가']];
+  // 입출고이력 (releasedBy + 숨김 마커 포함)
+  const histRows = [['ID', '숨김', '날짜', '주차', '구분', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가']];
   history.forEach(h => histRows.push([
-    h.id || '', h.date || '', h.weekKey || '', h.type || '',
+    h.id || '',
+    isHidden(hiddenSet, h.vendor, h.name) ? '🙈' : '',
+    h.date || '', h.weekKey || '', h.type || '',
     h.team || '', h.requester || h.member || '', h.releasedBy || '',
     h.vendor || '', h.name || '',
     h.unit || '', h.qty || 0, h.price || 0
   ]));
   const wsHist = XLSX.utils.aoa_to_sheet(histRows);
-  applyFormat(wsHist, [10, 11]);
+  applyFormat(wsHist, [11, 12]);  // 수량/단가 인덱스 +1
   XLSX.utils.book_append_sheet(wb, wsHist, '입출고이력');
 
   // 반출요청 (releasedBy 포함)
@@ -316,33 +333,38 @@ function generateReportExcel(data) {
   applyFormat(wsSum, [1], 0);
   XLSX.utils.book_append_sheet(wb, wsSum, '요약');
 
-  // 2. 품목 (상태순 정렬: 품절 → 부족 → 정상)
+  const hiddenSet = buildHiddenSet(inventory);
+
+  // 2. 품목 (상태순 정렬, 숨김은 맨 뒤)
   const invSorted = inventory.slice().sort((a, b) => {
+    if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;
     const sA = a.stock === 0 ? 0 : (a.stock <= a.minStock ? 1 : 2);
     const sB = b.stock === 0 ? 0 : (b.stock <= b.minStock ? 1 : 2);
     if (sA !== sB) return sA - sB;
     return (a.vendor || '').localeCompare(b.vendor || '') || (a.name || '').localeCompare(b.name || '');
   });
-  const invRows = [['상태', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
+  const invRows = [['상태', '숨김', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
   invSorted.forEach(it => {
     const status = it.stock === 0 ? '품절'
                  : (it.stock <= it.minStock ? '부족' : '정상');
-    invRows.push([status, it.vendor || '', it.name || '', it.unit || '',
+    invRows.push([status, it.hidden ? '🙈' : '', it.vendor || '', it.name || '', it.unit || '',
                   it.price || 0, it.stock || 0, it.minStock || 0]);
   });
   const wsInv2 = XLSX.utils.aoa_to_sheet(invRows);
-  applyFormat(wsInv2, [4, 5, 6]);
+  applyFormat(wsInv2, [5, 6, 7]);  // 숨김 컬럼 추가로 인덱스 +1
   XLSX.utils.book_append_sheet(wb, wsInv2, '품목');
 
-  // 3. 입출고+요청 (반출자 포함)
+  // 3. 입출고+요청 (반출자 + 숨김 마커 포함)
+  // 숨김인데 출고 있는 품목 = 실제 사용 중 → 숨김 해제 검토
   const combined = [];
   combined.push(['【 이번 주 출고 】 ' + thisOutHist.length + '건 · ' + thisOutCost.toLocaleString() + '원']);
-  combined.push(['날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
+  combined.push(['숨김', '날짜', '팀', '요청자', '반출자', '업체', '품명', '단위', '수량', '단가(원)', '금액(원)']);
   if (thisOutHist.length === 0) {
     combined.push(['(이번 주 출고 없음)']);
   } else {
     thisOutHist.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .forEach(h => combined.push([
+        isHidden(hiddenSet, h.vendor, h.name) ? '🙈' : '',
         (h.date || '').slice(0, 10), h.team || '',
         h.requester || h.member || '', h.releasedBy || '',
         h.vendor || '', h.name || '', h.unit || '',
@@ -351,12 +373,13 @@ function generateReportExcel(data) {
   }
   combined.push([]);
   combined.push(['【 이번 주 입고 】 ' + thisInHist.length + '건']);
-  combined.push(['날짜', '업체', '품명', '단위', '수량', '단가(원)']);
+  combined.push(['숨김', '날짜', '업체', '품명', '단위', '수량', '단가(원)']);
   if (thisInHist.length === 0) {
     combined.push(['(이번 주 입고 없음)']);
   } else {
     thisInHist.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .forEach(h => combined.push([
+        isHidden(hiddenSet, h.vendor, h.name) ? '🙈' : '',
         (h.date || '').slice(0, 10), h.vendor || '', h.name || '',
         h.unit || '', h.qty || 0, h.price || 0
       ]));
