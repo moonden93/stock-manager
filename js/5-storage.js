@@ -166,6 +166,27 @@ function migrateTeamsV2(currentTeams) {
   return result;
 }
 
+// 표준 팀이 누락되어 있으면 정확한 위치에 삽입 (Firebase에서 옛 데이터 받았을 때 self-healing)
+// 사용자가 추가한 비표준 팀(기타)은 보존
+// 모든 표준 팀이 이미 있으면 순서를 건드리지 않음
+function ensureStandardTeams_(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return arr;
+  const standardOrder = [
+    '9층 데스크', '9층 공통', 'Dr. 이승주팀', 'Dr. 권혜진팀', 'Dr. 이수연팀',
+    '10층 데스크', '10층 공통', 'Dr. 병원장팀', 'Dr. 이창률팀', '기공실',
+    '11층 데스크', '11층 공통', 'Dr. 이영일팀', 'Dr. 정석형팀', 'Dr. 김세일팀'
+  ];
+  const allPresent = standardOrder.every(t => arr.includes(t));
+  if (allPresent) return arr;  // 이미 다 있으면 순서 유지
+  // 누락된 표준 팀이 있으면 표준 순서로 재정렬, 비표준 팀은 뒤에 보존
+  const standardSet = new Set(standardOrder);
+  const result = standardOrder.slice();
+  arr.forEach(t => {
+    if (!standardSet.has(t) && !result.includes(t)) result.push(t);
+  });
+  return result;
+}
+
 // [V3] 9층 데스크, 10층 데스크, 11층 데스크 추가 + 표준 순서로 재정렬
 // 표준에 없는 사용자 추가 팀(기타)은 표준 팀들 뒤에 보존
 function migrateTeamsV3(currentTeams) {
@@ -237,7 +258,16 @@ function applyCloudData(data) {
     history = mergeByIdPreserveLocal(history, data.history);
   }
 
-  if (Array.isArray(data.teams) && data.teams.length > 0) teams = data.teams;
+  if (Array.isArray(data.teams) && data.teams.length > 0) {
+    // Firebase가 옛 teams 배열(데스크 팀 없는 버전)로 덮으면 안 되므로
+    // 표준 팀 누락되어 있으면 자동 보강 (self-healing)
+    const enhanced = ensureStandardTeams_(data.teams);
+    teams = enhanced;
+    if (enhanced.length !== data.teams.length) {
+      // 보강됐으면 클라우드에도 push (다음 사용자 액션이 아닌 자동)
+      setTimeout(function() { if (typeof saveAll === 'function') saveAll(); }, 300);
+    }
+  }
 
   const cloudMembers = data.teamMembers;
   const cloudHasMembers = cloudMembers && typeof cloudMembers === 'object' && Object.keys(cloudMembers).length > 0;
