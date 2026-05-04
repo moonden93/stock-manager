@@ -15,15 +15,15 @@ let releaseShowCustomForm = false;
 // window._pendingCustomItem / window._pendingCustomImages 는 toggleCustomForm 시점에 lazy init
 
 // ============================================
-// 팀 그리드 레이아웃 정의 (4행)
+// 팀 그리드 레이아웃 정의 (3행 × 5열)
 // ============================================
-// 각 행은 한 줄에 표시되는 팀들의 배열
+// 각 행은 한 줄에 표시되는 팀들의 배열 (데스크 → 공통 → 의사팀 순서)
 // 표준 팀이 없는 경우(사용자가 삭제) 그 자리는 빈 칸으로 둠
 // 표준에 없는 사용자 추가 팀은 마지막 "기타" 행에 자동 추가됨
 const RELEASE_TEAM_ROWS = [
-  ["9층 공통", "Dr. 이승주팀", "Dr. 권혜진팀", "Dr. 이수연팀"],
-  ["10층 공통", "Dr. 병원장팀", "Dr. 이창률팀", "기공실"],
-  ["11층 공통", "Dr. 이영일팀", "Dr. 정석형팀", "Dr. 김세일팀"]
+  ["9층 데스크", "9층 공통", "Dr. 이승주팀", "Dr. 권혜진팀", "Dr. 이수연팀"],
+  ["10층 데스크", "10층 공통", "Dr. 병원장팀", "Dr. 이창률팀", "기공실"],
+  ["11층 데스크", "11층 공통", "Dr. 이영일팀", "Dr. 정석형팀", "Dr. 김세일팀"]
 ];
 
 // 표준 팀 평탄화 (사용자 추가 팀 판단용)
@@ -109,9 +109,9 @@ function renderRelease() {
     '</div>' +
     '<div class="p-3 space-y-2">';
   
-  // 4행 그리드 렌더링
+  // 3행 × 5열 그리드 렌더링
   RELEASE_TEAM_ROWS.forEach(row => {
-    html += '<div class="grid grid-cols-4 gap-2">';
+    html += '<div class="grid grid-cols-5 gap-2">';
     row.forEach(team => {
       // teams 배열(localStorage 기반)에 있는 팀만 활성화, 없으면 흐리게
       const exists = teams.includes(team);
@@ -121,12 +121,12 @@ function renderRelease() {
         return;
       }
       const isSelected = releaseSelectedTeam === team;
-      html += '<button onclick="selectReleaseTeam(\'' + escapeJs(team) + '\')" class="py-3 px-2 rounded-lg font-bold text-sm transition ' + 
-        (isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200') + '">' + 
+      html += '<button onclick="selectReleaseTeam(\'' + escapeJs(team) + '\')" class="py-3 px-1 rounded-lg font-bold text-xs sm:text-sm transition ' +
+        (isSelected ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200') + '">' +
         escapeHtml(team) + '</button>';
     });
-    // 행에 빈 자리 채우기 (4칸 미만이면 빈 div로 채워서 정렬 유지)
-    for (let i = row.length; i < 4; i++) {
+    // 행에 빈 자리 채우기 (5칸 미만이면 빈 div로 채워서 정렬 유지)
+    for (let i = row.length; i < 5; i++) {
       html += '<div></div>';
     }
     html += '</div>';

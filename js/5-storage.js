@@ -63,6 +63,12 @@ function loadData() {
       localStorage.setItem('mc_teams_migrated_v2', '1');
     }
 
+    // [V3] 9/10/11층 데스크 팀 추가 + 표준 순서로 재정렬 (한 번만 실행)
+    if (!localStorage.getItem('mc_teams_migrated_v3')) {
+      teams = migrateTeamsV3(teams);
+      localStorage.setItem('mc_teams_migrated_v3', '1');
+    }
+
     // [변경] PREBUILT_TEAMS의 자동 추가 로직 제거
     // 이전에는 매번 자동 추가되어, 사용자가 삭제한 팀이 다시 살아났음.
     // 이제 PREBUILT_TEAMS는 마이그레이션 시에만 사용되고, 평상시에는 사용자 설정 우선.
@@ -155,6 +161,31 @@ function migrateTeamsV2(currentTeams) {
   });
 
   // 마이그레이션이 실제로 발생했는지 표시 (loadData가 saveAll 호출하도록)
+  localStorage.setItem('mc_teams_migrated_v2_just_ran', '1');
+
+  return result;
+}
+
+// [V3] 9층 데스크, 10층 데스크, 11층 데스크 추가 + 표준 순서로 재정렬
+// 표준에 없는 사용자 추가 팀(기타)은 표준 팀들 뒤에 보존
+function migrateTeamsV3(currentTeams) {
+  // V3 표준 순서 (요청 탭 그리드 순서와 동일, INITIAL_TEAMS와 일치)
+  const standardOrder = [
+    '9층 데스크', '9층 공통', 'Dr. 이승주팀', 'Dr. 권혜진팀', 'Dr. 이수연팀',
+    '10층 데스크', '10층 공통', 'Dr. 병원장팀', 'Dr. 이창률팀', '기공실',
+    '11층 데스크', '11층 공통', 'Dr. 이영일팀', 'Dr. 정석형팀', 'Dr. 김세일팀'
+  ];
+  const standardSet = new Set(standardOrder);
+
+  // 1. 표준 팀을 표준 순서대로 (없는 표준 팀은 자동 추가됨)
+  const result = [];
+  standardOrder.forEach(t => result.push(t));
+  // 2. 사용자가 추가한 비표준 팀(기타)은 뒤에 보존
+  currentTeams.forEach(t => {
+    if (!standardSet.has(t) && !result.includes(t)) result.push(t);
+  });
+
+  // 마이그레이션 발생 표시 (loadData가 saveAll 호출)
   localStorage.setItem('mc_teams_migrated_v2_just_ran', '1');
 
   return result;
