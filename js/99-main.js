@@ -145,9 +145,11 @@ function showAlert(title, message, btnColor) {
 // 헤더 통계 표시
 // ============================================
 function updateHeaderStats() {
-  const total = inventory.length;
-  const out = inventory.filter(i => i.stock === 0).length;
-  const low = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+  // 숨김 항목은 헤더 알림에서 제외 — 사용자가 행동해야 할 진짜 부족/품절만
+  const visibleInv = inventory.filter(i => !i.hidden);
+  const total = visibleInv.length;
+  const out = visibleInv.filter(i => i.stock === 0).length;
+  const low = visibleInv.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
   const pending = requests.filter(r => r.status === 'pending').length;
   let html = '품목 <strong>' + total + '</strong>개';
   if (out > 0) html += ' · <span class="text-red-600 font-medium">품절 ' + out + '</span>';
