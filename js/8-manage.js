@@ -8,6 +8,16 @@ let manageStatusFilter = 'pending'; // pending/completed
 let manageFilter = 'all'; // all/today/week
 let manageTeamFilter = '';
 
+// 분류 뱃지 — 반출관리에서 치과재료/구강위생용품 구분 (반출 장소 다름)
+function categoryBadgeHtml_(category) {
+  if (!category) return '';
+  let cls = 'bg-slate-100 text-slate-600';  // 기타/미정
+  if (category === '치과재료') cls = 'bg-orange-100 text-orange-700';
+  else if (category === '구강위생용품') cls = 'bg-sky-100 text-sky-700';
+  return '<span class="inline-block px-1.5 py-0.5 ' + cls +
+    ' rounded text-[10px] font-bold mr-1.5 align-middle">' + escapeHtml(category) + '</span>';
+}
+
 // 선택 상태: { groupId: { itemId(요청id): { checked: bool, qty: number } } }
 // groupId = team|requester|YYYY-MM-DD|status — 같은 팀/담당자가 같은 날 여러 번 신청해도 한 그룹.
 let manageSelection = {};
@@ -226,13 +236,15 @@ function renderManage() {
           const isChecked = sel.checked;
           const releaseQty = sel.qty;
           const isShort = isChecked && releaseQty > stock;
+          const category = item ? item.category : '';
+          const catBadge = categoryBadgeHtml_(category);
 
           html += '<div class="flex items-center gap-2 py-2 px-2 ' + (isChecked ? 'bg-white' : 'bg-slate-100 opacity-60') + ' rounded-lg border border-slate-100">' +
             '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' ' +
             'onchange="toggleItemCheck(\'' + gid + '\', \'' + it.id + '\', this.checked)" ' +
             'class="w-5 h-5 accent-emerald-600 cursor-pointer flex-shrink-0" />' +
             '<div class="flex-1 min-w-0">' +
-            '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</p>' +
+            '<p class="text-xs text-slate-500">' + catBadge + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</p>' +
             '<p class="text-sm text-slate-800 truncate">' +
             (it.isCustom ? '<span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1 align-middle">🆕 직접 요청</span>' : '') +
             escapeHtml(it.name) + '</p>' +
@@ -262,9 +274,11 @@ function renderManage() {
           html += '</div>';
         } else {
           // 완료 상태: 기존 표시 방식 (직접 요청은 🆕 배지 + 상세보기)
+          const category = item ? item.category : '';
+          const catBadge = categoryBadgeHtml_(category);
           html += '<div class="flex items-center text-xs text-slate-600 py-1">' +
             '<span class="text-slate-400 mr-2">·</span>' +
-            '<span class="text-slate-500 mr-2">' + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</span>' +
+            '<span class="text-slate-500 mr-2">' + catBadge + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</span>' +
             '<span class="flex-1 truncate">' +
             (it.isCustom ? '<span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1 align-middle">🆕</span>' : '') +
             escapeHtml(it.name) + '</span>' +
