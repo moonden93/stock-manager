@@ -53,8 +53,8 @@ async function main() {
   console.log('✓ Generated weekly Excel files');
 
   const attachments = [
-    { filename: '주차별보고_' + weekLabel + '.xlsx', content: reportBuf },
-    { filename: '재난백업용_' + weekLabel + '.xlsx', content: recoveryBuf }
+    { filename: weekLabel + '_재고관리_주차별보고.xlsx', content: reportBuf },
+    { filename: weekLabel + '_재고관리_재난백업용.xlsx', content: recoveryBuf }
   ];
 
   // 이번 주가 월의 첫째 주 토요일이면 → 직전 월 보고서도 함께 첨부
@@ -500,8 +500,8 @@ async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
     '· 금액: ' + thisOutCost.toLocaleString() + '원',
     '',
     '【 첨부파일 】',
-    '· 주차별보고_' + weekLabel + '.xlsx — 의사결정용 리포트 (4개 시트, AI 코멘트 포함)',
-    '· 재난백업용_' + weekLabel + '.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
+    '· ' + weekLabel + '_재고관리_주차별보고.xlsx — 의사결정용 리포트 (4개 시트, AI 코멘트 포함)',
+    '· ' + weekLabel + '_재고관리_재난백업용.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
     monthlyLabel ? '· 월별보고_' + monthlyLabel + '.xlsx — ' + monthlyLabel + ' 월별보고 (6개 시트)' : '',
     '',
     '※ 본 메일은 GitHub Actions로 매주 토요일 12시 (한국시간) 자동 발송됩니다.',

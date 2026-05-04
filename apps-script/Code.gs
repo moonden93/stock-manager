@@ -1,17 +1,18 @@
 // ============================================
-// Apps Script: 매주 토요일 12시(KST) Google Drive에 백업 저장
+// Apps Script: 매일 12시(KST) Google Drive에 백업 저장
 // ============================================
 // 동작:
 //   1) Firestore에서 데이터 읽기
 //   2) Google Sheets 3가지 생성 (주차별보고/재난백업용/누적 마스터)
 //   3) Drive의 "재고관리 백업" 폴더에 저장
 //   4) 첨부 문서(PDF/이미지)를 "재고관리 백업/문서" 폴더에 sync
-//      (이름·크기 같으면 건너뜀 → 매주 똑같은 파일 중복 안 됨)
+//      (이름·크기 같으면 건너뜀 → 매일 똑같은 파일 중복 안 됨)
 //   * 같은 이름 파일이 이미 있으면 휴지통으로 옮긴 뒤 새 파일 생성 (중복 방지)
+//   * 파일명에 주차가 들어가므로, 같은 주 내에서 매일 돌면 → 그 주차 파일이 매일 갱신됨
 //
 // 실행 방법:
 //   - 이 코드를 https://script.google.com 에 새 프로젝트로 붙여넣기
-//   - 시간 트리거 등록: 매주 토요일 12시 (한국시간)
+//   - 시간 트리거 등록: setupDailyTrigger() 1회 실행 (매일 12시 자동 설정)
 //   - 첫 실행 시 Drive/외부 URL 권한 승인
 //
 // 결과물:
@@ -33,10 +34,11 @@ const DOCS_SUBFOLDER_NAME = '문서';
 const CUMULATIVE_NAME_SUFFIX = '_클로드연동 기존시트';
 
 // ============================================
-// 메인 — 트리거가 호출하는 함수 (매주 토요일 12시)
+// 메인 — 트리거가 호출하는 함수 (매일 12시)
+// 함수 이름은 호환성 위해 weeklyBackup 유지 (옛 트리거 깨지지 않도록)
 // ============================================
 function weeklyBackup() {
-  Logger.log('📅 Weekly backup starting at ' + new Date());
+  Logger.log('📅 Backup starting at ' + new Date());
 
   const data = fetchFirestore();
   Logger.log('Fetched: inv=' + (data.inventory || []).length +
@@ -124,6 +126,29 @@ function runMasterSheetNow() {
     throw new Error('Firestore inventory가 비어있음');
   }
   appendToMasterSheet(data);
+}
+
+// 트리거를 매일 12시(KST)로 재설정 — 1회 실행
+// 같은 이름 파일이 자동 휴지통 되므로 매일 돌아도 폴더가 깨끗하게 유지됨
+// 실행: Apps Script 편집기 → 함수 선택 → setupDailyTrigger → ▶ 실행
+function setupDailyTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  triggers.forEach(function(t) {
+    const fn = t.getHandlerFunction();
+    if (fn === 'weeklyBackup' || fn === 'dailyBackup') {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  ScriptApp.newTrigger('weeklyBackup')
+    .timeBased()
+    .everyDays(1)
+    .atHour(12)
+    .create();
+  Logger.log('✓ 트리거 재설정 완료');
+  Logger.log('   기존 ' + removed + '개 삭제 → 매일 12시 weeklyBackup');
+  Logger.log('   ※ 시간은 스크립트 기본 시간대 기준. Project Settings에서 Asia/Seoul 확인할 것');
 }
 
 // ============================================
