@@ -268,7 +268,8 @@ function appendToMasterSheet(data) {
   sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
   sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
   sheet.setFrozenRows(1);
-  if (createdNewFile) sheet.autoResizeColumns(1, headers.length);
+  // 컬럼 너비 — 픽셀 직접 계산 (한글 헤더 보이게)
+  setColumnWidthsByContent_(sheet, rows);
 
   // 탭 정렬: 모든 주차 탭을 newest first로
   sortTabsNewestFirst_(ss);
@@ -543,8 +544,44 @@ function writeRows(sheet, rows) {
   sheet.getRange(1, 1, padded.length, numCols).setValues(padded);
   // 첫 행 굵게
   sheet.getRange(1, 1, 1, numCols).setFontWeight('bold');
-  // 자동 너비
-  sheet.autoResizeColumns(1, numCols);
+  // 컬럼 너비 — autoResizeColumns가 한글 헤더에 부족해서 픽셀 직접 계산
+  setColumnWidthsByContent_(sheet, padded);
+}
+
+// 한글/CJK ~13px, ASCII ~7px로 컬럼 픽셀 너비 계산
+// min 60px, max 280px (cap), padding 24px
+function pixelWidth_(s) {
+  let p = 0;
+  s = String(s);
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if ((c >= 0xAC00 && c <= 0xD7A3) ||  // 한글 음절
+        (c >= 0x4E00 && c <= 0x9FFF) ||  // CJK 통합 한자
+        (c >= 0x3130 && c <= 0x318F) ||  // 한글 자모
+        (c >= 0x3000 && c <= 0x303F) ||  // CJK 기호
+        (c >= 0xFF00 && c <= 0xFFEF)) {  // 전각 문자
+      p += 13;
+    } else {
+      p += 7;
+    }
+  }
+  return p;
+}
+
+function setColumnWidthsByContent_(sheet, rows) {
+  if (!rows || rows.length === 0) return;
+  let numCols = 1;
+  rows.forEach(function(r) { if (r.length > numCols) numCols = r.length; });
+  for (let c = 0; c < numCols; c++) {
+    let max = 0;
+    for (let r = 0; r < rows.length; r++) {
+      const v = rows[r][c];
+      if (v == null || v === '') continue;
+      const w = pixelWidth_(v);
+      if (w > max) max = w;
+    }
+    sheet.setColumnWidth(c + 1, Math.max(60, Math.min(280, max + 24)));
+  }
 }
 
 // ============================================
