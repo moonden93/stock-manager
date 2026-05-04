@@ -13,7 +13,7 @@
 // ============================================
 // 탭 전환
 // ============================================
-function switchTab(name) {
+async function switchTab(name) {
   // 관리자 전용 탭은 비밀번호 입력 필요 (매번, 틀리면 재입력)
   // - 일반 직원: 요청, 통계만 접근 가능
   // - 관리자: 비밀번호 입력으로 반출관리/입고/재고/문서함/설정 진입
@@ -25,14 +25,8 @@ function switchTab(name) {
     settings: '설정 화면'
   };
   if (protectedLabels[name]) {
-    const label = protectedLabels[name];
-    let msg = '🔒 ' + label + '\n비밀번호를 입력하세요:';
-    while (true) {
-      const pw = prompt(msg);
-      if (pw === null) return; // 취소(또는 ESC) → 원 탭 유지
-      if (pw === '2911') break; // 통과
-      msg = '❌ 비밀번호가 틀렸습니다. 다시 입력해주세요.\n\n🔒 ' + label + '\n비밀번호:';
-    }
+    const ok = await askPasswordModal(protectedLabels[name], '2911');
+    if (!ok) return;  // 취소
   }
   currentTab = name;
   ['release', 'manage', 'inbound', 'inventory', 'stats', 'documents', 'settings'].forEach(t => {
@@ -144,6 +138,53 @@ function showAlert(title, message, btnColor) {
 // ============================================
 // 헤더 통계 표시
 // ============================================
+// 비밀번호 입력 모달 (모바일 숫자 키패드 뜨게 type=tel + inputmode=numeric)
+// 정답이면 resolve(true), 취소면 resolve(false). 틀리면 모달 유지하며 빨간 메시지.
+function askPasswordModal(label, expected) {
+  return new Promise(function(resolve) {
+    const submitId = 'pw-submit-' + Date.now();
+    const inputId = 'pw-input-' + Date.now();
+    const errorId = 'pw-error-' + Date.now();
+    const html =
+      '<div id="pw-overlay" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">' +
+      '<div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">' +
+      '<div class="px-5 py-4 bg-orange-50 border-b border-orange-200">' +
+      '<h3 class="text-base font-bold text-slate-900">🔒 ' + escapeHtml(label) + '</h3>' +
+      '<p class="text-xs text-slate-600 mt-1">비밀번호를 입력하세요</p></div>' +
+      '<form id="' + submitId + '" class="px-5 py-5">' +
+      '<input type="tel" id="' + inputId + '" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="10" ' +
+      'class="w-full px-4 py-3 text-2xl text-center bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500 tracking-widest" />' +
+      '<p id="' + errorId + '" class="text-xs text-red-600 mt-2 text-center" style="display:none;">❌ 비밀번호가 틀렸습니다</p>' +
+      '</form>' +
+      '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+      '<button type="button" id="pw-cancel" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+      '<button type="button" id="pw-ok" class="flex-1 py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700">확인</button>' +
+      '</div></div></div>';
+    document.getElementById('modal-container').innerHTML = html;
+
+    const input = document.getElementById(inputId);
+    const errorEl = document.getElementById(errorId);
+    const close = function(result) {
+      document.getElementById('modal-container').innerHTML = '';
+      resolve(result);
+    };
+    const tryPw = function() {
+      if (input.value === expected) {
+        close(true);
+      } else {
+        errorEl.style.display = '';
+        input.value = '';
+        input.focus();
+      }
+    };
+    document.getElementById('pw-ok').onclick = tryPw;
+    document.getElementById('pw-cancel').onclick = function() { close(false); };
+    document.getElementById(submitId).onsubmit = function(e) { e.preventDefault(); tryPw(); };
+
+    setTimeout(function() { input.focus(); }, 100);
+  });
+}
+
 function updateHeaderStats() {
   // 숨김 항목은 헤더 알림에서 제외 — 사용자가 행동해야 할 진짜 부족/품절만
   const visibleInv = inventory.filter(i => !i.hidden);
