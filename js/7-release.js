@@ -55,7 +55,7 @@ function _releaseItemRowHtml(item) {
   let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
     '<div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
-    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
     (item.stock === 0 ? ' · 🔴 품절' : item.stock <= item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +

@@ -21,7 +21,7 @@ function getInboundFilteredItems() {
 function _inboundItemRowHtml(item) {
   return '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
-    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong></p></div>' +
     '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
@@ -90,7 +90,7 @@ function openInboundDialog(itemId) {
     '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
     '<h3 class="text-base font-bold text-slate-900">📥 입고 수량 입력</h3></div>' +
     '<div class="px-5 py-5 overflow-y-auto">' +
-    '<p class="text-xs text-slate-500 mb-1">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-xs text-slate-500 mb-1">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-base font-bold text-slate-900 mb-1">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-sm text-slate-500 mb-5">현재 재고: <strong>' + item.stock + '</strong></p>' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">입고 수량</label>' +

@@ -8,14 +8,15 @@ let manageStatusFilter = 'pending'; // pending/completed
 let manageFilter = 'all'; // all/today/week
 let manageTeamFilter = '';
 
-// 분류 뱃지 — 반출관리에서 치과재료/구강위생용품 구분 (반출 장소 다름)
-function categoryBadgeHtml_(category) {
-  if (!category) return '';
-  let cls = 'bg-slate-100 text-slate-600';  // 기타/미정
-  if (category === '치과재료') cls = 'bg-orange-100 text-orange-700';
-  else if (category === '구강위생용품') cls = 'bg-sky-100 text-sky-700';
-  return '<span class="inline-block px-1.5 py-0.5 ' + cls +
-    ' rounded text-[10px] font-bold mr-1.5 align-middle">' + escapeHtml(category) + '</span>';
+// 요청 항목의 분류를 찾는다.
+// 1순위: itemId가 가리키는 inventory 항목의 category
+// 2순위(fallback): 같은 vendor+name + category 있는 다른 inventory 항목
+//   → 같은 제품이 inventory에 중복 등록되어 한쪽만 분류 채워진 경우 자동 보정
+function resolveCategory_(it, item) {
+  if (item && item.category) return item.category;
+  if (!it.name) return '';
+  const alt = inventory.find(i => i.vendor === it.vendor && i.name === it.name && i.category);
+  return alt ? alt.category : '';
 }
 
 // 선택 상태: { groupId: { itemId(요청id): { checked: bool, qty: number } } }
@@ -236,8 +237,7 @@ function renderManage() {
           const isChecked = sel.checked;
           const releaseQty = sel.qty;
           const isShort = isChecked && releaseQty > stock;
-          const category = item ? item.category : '';
-          const catBadge = categoryBadgeHtml_(category);
+          const catBadge = categoryBadgeHtml_(resolveCategory_(it, item));
 
           html += '<div class="flex items-center gap-2 py-2 px-2 ' + (isChecked ? 'bg-white' : 'bg-slate-100 opacity-60') + ' rounded-lg border border-slate-100">' +
             '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' ' +
@@ -274,8 +274,7 @@ function renderManage() {
           html += '</div>';
         } else {
           // 완료 상태: 기존 표시 방식 (직접 요청은 🆕 배지 + 상세보기)
-          const category = item ? item.category : '';
-          const catBadge = categoryBadgeHtml_(category);
+          const catBadge = categoryBadgeHtml_(resolveCategory_(it, item));
           html += '<div class="flex items-center text-xs text-slate-600 py-1">' +
             '<span class="text-slate-400 mr-2">·</span>' +
             '<span class="text-slate-500 mr-2">' + catBadge + escapeHtml(it.vendor || (it.isCustom ? '업체 미지정' : '')) + '</span>' +

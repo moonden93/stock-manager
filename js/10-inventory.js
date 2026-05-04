@@ -38,7 +38,7 @@ function _inventoryItemRowHtml(item) {
     '<div class="flex items-center gap-3">' +
     '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
     '<div class="flex-1 min-w-0">' +
-    '<p class="text-xs text-slate-500">' + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + hiddenBadge + '</p>' +
     '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock +
     (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +

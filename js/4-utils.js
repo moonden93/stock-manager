@@ -16,6 +16,17 @@ function escapeJs(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
 }
 
+// 분류 뱃지 (재고/요청/입고/반출관리 모든 탭에서 공용)
+// 치과재료(오렌지) / 구강위생용품(스카이) / 기타(회색). 빈 문자열이면 ''
+function categoryBadgeHtml_(category) {
+  if (!category) return '';
+  let cls = 'bg-slate-100 text-slate-600';
+  if (category === '치과재료') cls = 'bg-orange-100 text-orange-700';
+  else if (category === '구강위생용품') cls = 'bg-sky-100 text-sky-700';
+  return '<span class="inline-block px-1.5 py-0.5 ' + cls +
+    ' rounded text-[10px] font-bold mr-1.5 align-middle">' + escapeHtml(category) + '</span>';
+}
+
 // 금액 표시: 1234567 → "1,234,567원"
 function formatWon(n) {
   if (!n || n < 0) n = 0;
