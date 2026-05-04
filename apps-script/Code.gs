@@ -407,41 +407,81 @@ function syncDocuments(data, parentFolder) {
     docFolder = parentFolder.createFolder(DOCS_SUBFOLDER_NAME);
   }
 
-  // 현재 Drive에 있는 파일들 — 이름으로 매핑
-  const existing = {};
-  const fileIter = docFolder.getFiles();
-  while (fileIter.hasNext()) {
-    const f = fileIter.next();
-    existing[f.getName()] = f;
+  // 월별 서브폴더 캐시 (필요 시 생성)
+  const monthFolderCache = {};
+  function getOrCreateMonthFolder_(monthLabel) {
+    if (monthFolderCache[monthLabel]) return monthFolderCache[monthLabel];
+    const its = docFolder.getFoldersByName(monthLabel);
+    let f;
+    if (its.hasNext()) f = its.next();
+    else f = docFolder.createFolder(monthLabel);
+    monthFolderCache[monthLabel] = f;
+    return f;
+  }
+  // 월별 폴더 안 기존 파일들 (lazy load)
+  const existingByMonth = {};
+  function getExistingInMonth_(monthLabel) {
+    if (existingByMonth[monthLabel]) return existingByMonth[monthLabel];
+    const map = {};
+    const it = getOrCreateMonthFolder_(monthLabel).getFiles();
+    while (it.hasNext()) {
+      const f = it.next();
+      map[f.getName()] = f;
+    }
+    existingByMonth[monthLabel] = map;
+    return map;
   }
 
-  let added = 0, updated = 0, skipped = 0, failed = 0;
+  // 옛 위치(문서 루트) 파일들 — 마이그레이션용
+  const rootExisting = {};
+  const rootIter = docFolder.getFiles();
+  while (rootIter.hasNext()) {
+    const f = rootIter.next();
+    rootExisting[f.getName()] = f;
+  }
+
+  let added = 0, updated = 0, skipped = 0, failed = 0, migrated = 0;
 
   documents.forEach(function(d) {
     if (!d.data) { skipped++; return; }  // base64 데이터 없음
     const fileName = d.name || ('document_' + (d.id || Date.now()));
+    const monthLabel = monthLabelFromDate_(d.uploadedAt);  // "2026.04" or "날짜미상"
+    const monthFolder = getOrCreateMonthFolder_(monthLabel);
+    const existing = getExistingInMonth_(monthLabel);
 
-    // 이미 같은 이름 + 같은 크기면 건너뜀
+    // 이미 같은 월에 같은 이름 + 같은 크기 → 건너뜀
     if (existing[fileName] && existing[fileName].getSize() === (d.size || 0)) {
+      // 옛 위치(루트)에 같은 이름이 남아있으면 정리
+      if (rootExisting[fileName]) {
+        rootExisting[fileName].setTrashed(true);
+        migrated++;
+        delete rootExisting[fileName];
+      }
       skipped++;
       return;
     }
 
     try {
-      // base64 디코드 — "data:image/png;base64,iVBORw..." 또는 raw base64 둘 다 처리
       const idx = d.data.indexOf(',');
       const base64 = (idx >= 0) ? d.data.substring(idx + 1) : d.data;
       const bytes = Utilities.base64Decode(base64);
       const blob = Utilities.newBlob(bytes, d.type || 'application/octet-stream', fileName);
 
       if (existing[fileName]) {
-        // 같은 이름 다른 크기 → 이전 파일 휴지통으로
+        // 같은 이름 다른 크기 → 이전 파일 휴지통
         existing[fileName].setTrashed(true);
         updated++;
       } else {
         added++;
       }
-      docFolder.createFile(blob);
+      monthFolder.createFile(blob);
+
+      // 옛 위치(루트) 동명 파일 정리
+      if (rootExisting[fileName]) {
+        rootExisting[fileName].setTrashed(true);
+        migrated++;
+        delete rootExisting[fileName];
+      }
     } catch (e) {
       failed++;
       Logger.log('문서 저장 실패: ' + fileName + ' - ' + e);
@@ -449,7 +489,19 @@ function syncDocuments(data, parentFolder) {
   });
 
   Logger.log('문서 sync 완료 — 추가:' + added + ', 갱신:' + updated +
-             ', 건너뜀:' + skipped + ', 실패:' + failed);
+             ', 건너뜀:' + skipped + ', 마이그레이션:' + migrated + ', 실패:' + failed);
+}
+
+// uploadedAt → "yyyy.MM" (KST). null/invalid면 "날짜미상".
+function monthLabelFromDate_(d) {
+  if (!d) return '날짜미상';
+  let dt;
+  if (typeof d === 'string') dt = new Date(d);
+  else if (d instanceof Date) dt = d;
+  else if (typeof d === 'number') dt = new Date(d);
+  else return '날짜미상';
+  if (isNaN(dt.getTime())) return '날짜미상';
+  return Utilities.formatDate(dt, 'Asia/Seoul', 'yyyy.MM');
 }
 
 // ============================================
