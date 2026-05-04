@@ -205,7 +205,9 @@ function generateRecoveryExcel(data) {
     ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (Array.isArray(m) ? m.length : 0), 0)],
     ['문서 수', documents.length]
   ];
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), '메타');
+  const wsMeta = XLSX.utils.aoa_to_sheet(meta);
+  applyFormat(wsMeta, []);
+  XLSX.utils.book_append_sheet(wb, wsMeta, '메타');
 
   const hiddenSet = buildHiddenSet(inventory);
 
@@ -243,7 +245,9 @@ function generateRecoveryExcel(data) {
     Array.isArray(r.items) ? r.items.length : 0,
     r.memo || ''
   ]));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(reqRows), '반출요청');
+  const wsReq = XLSX.utils.aoa_to_sheet(reqRows);
+  applyFormat(wsReq, [6]);  // 품목수만 숫자
+  XLSX.utils.book_append_sheet(wb, wsReq, '반출요청');
 
   // 팀_담당자
   const teamRows = [['팀명', '담당자', '대표 여부']];
@@ -255,7 +259,9 @@ function generateRecoveryExcel(data) {
       members.forEach((m, i) => teamRows.push([t, m, i === 0 ? '대표' : '']));
     }
   });
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamRows), '팀_담당자');
+  const wsTeam = XLSX.utils.aoa_to_sheet(teamRows);
+  applyFormat(wsTeam, []);
+  XLSX.utils.book_append_sheet(wb, wsTeam, '팀_담당자');
 
   // 문서_메타
   const docRows = [['ID', '업체', '파일명', '타입', '크기(byte)', '업로드일']];
@@ -263,7 +269,9 @@ function generateRecoveryExcel(data) {
     d.id || '', d.vendor || '', d.name || '',
     d.type || '', d.size || 0, d.uploadedAt || ''
   ]));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(docRows), '문서_메타');
+  const wsDoc = XLSX.utils.aoa_to_sheet(docRows);
+  applyFormat(wsDoc, [4]);  // 크기만 숫자
+  XLSX.utils.book_append_sheet(wb, wsDoc, '문서_메타');
 
   // 원본_JSON (복원용 텍스트 덤프)
   const docsLite = documents.map(d => ({
@@ -279,7 +287,9 @@ function generateRecoveryExcel(data) {
   for (let i = 0; i < fullJson.length; i += CHUNK) {
     jsonRows.push([fullJson.slice(i, i + CHUNK)]);
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(jsonRows), '원본_JSON');
+  const wsJson = XLSX.utils.aoa_to_sheet(jsonRows);
+  applyFormat(wsJson, []);
+  XLSX.utils.book_append_sheet(wb, wsJson, '원본_JSON');
 
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
@@ -403,7 +413,9 @@ function generateReportExcel(data) {
       ]);
     });
   }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(combined), '입출고+요청');
+  const wsCombined = XLSX.utils.aoa_to_sheet(combined);
+  applyFormat(wsCombined, []);
+  XLSX.utils.book_append_sheet(wb, wsCombined, '입출고+요청');
 
   // 4. 팀별 AI 분석 (이번 달 vs 지난 3개월 평균)
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
