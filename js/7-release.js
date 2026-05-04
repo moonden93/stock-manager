@@ -136,8 +136,8 @@ function renderRelease() {
   const standard = getStandardTeams();
   const extraTeams = teams.filter(t => !standard.includes(t));
   if (extraTeams.length > 0) {
+    // 라벨 없이 구분선만 (사용자 추가 팀이 차별감 들지 않도록)
     html += '<div class="pt-2 border-t border-slate-100">' +
-      '<p class="text-[11px] text-slate-500 mb-2 px-1">기타 팀</p>' +
       '<div class="grid grid-cols-4 gap-2">';
     extraTeams.forEach(team => {
       const isSelected = releaseSelectedTeam === team;
