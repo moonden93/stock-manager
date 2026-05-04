@@ -3,10 +3,11 @@
 // ============================================
 // 동작:
 //   1) Firestore에서 데이터 읽기
-//   2) Google Sheets 2개 생성 (보고용, 재난백업용)
+//   2) Google Sheets 3가지 생성 (주차별보고/재난백업용/누적 마스터)
 //   3) Drive의 "재고관리 백업" 폴더에 저장
 //   4) 첨부 문서(PDF/이미지)를 "재고관리 백업/문서" 폴더에 sync
 //      (이름·크기 같으면 건너뜀 → 매주 똑같은 파일 중복 안 됨)
+//   * 같은 이름 파일이 이미 있으면 휴지통으로 옮긴 뒤 새 파일 생성 (중복 방지)
 //
 // 실행 방법:
 //   - 이 코드를 https://script.google.com 에 새 프로젝트로 붙여넣기
@@ -15,14 +16,21 @@
 //
 // 결과물:
 //   사용자의 Google Drive → "재고관리 백업" 폴더 안에:
-//   - 보고용_2026-05-09 (Google Sheets, 매주 신규)
-//   - 재난백업용_2026-05-09 (Google Sheets, 매주 신규)
+//   - 2026년 5월 1주차_재고관리_주차별보고 (Google Sheets, 매주 갱신)
+//   - 2026년 5월 1주차_재고관리_재난백업용 (Google Sheets, 매주 갱신)
+//   - 2026년 5월 1주차_클로드연동 기존시트 (Google Sheets, 매주 누적 — 직전주 복사 + 새 탭)
+//   - 월별보고_2026년 4월 (Google Sheets, 매월 첫째 토요일만)
 //   - 문서/ (서브폴더, Firestore의 첨부 파일들 sync)
 
 const FIRESTORE_PROJECT = 'moon-dental-stock';
 const FIRESTORE_PATH = 'appData/main';
 const DRIVE_FOLDER_NAME = '재고관리 백업';
 const DOCS_SUBFOLDER_NAME = '문서';
+
+// 마스터 시트 누적 (원본은 절대 건드리지 않음)
+// 시드: 사용자가 "{week}_클로드연동 기존시트" 파일을 폴더에 미리 넣어둠 (원본 전체 탭 복사본)
+// 매주 토요일: 같은 주차 파일 있으면 휴지통 → 가장 최근 누적파일 복사 → 새 이름 → 이번 주차 탭 추가
+const CUMULATIVE_NAME_SUFFIX = '_클로드연동 기존시트';
 
 // ============================================
 // 메인 — 트리거가 호출하는 함수 (매주 토요일 12시)
@@ -44,20 +52,33 @@ function weeklyBackup() {
   const folder = getOrCreateFolder(DRIVE_FOLDER_NAME);
   const weekLabel = getMonthWeekLabelKr();  // "2026년 5월 1주차"
 
-  // 1. 주차별 보고 + 재난백업
-  createReportSheet(data, '주차별보고_' + weekLabel, folder);
-  createRecoverySheet(data, '재난백업용_' + weekLabel, folder);
+  // 1. 주차별 보고 + 재난백업 — 같은 이름 파일 있으면 먼저 휴지통, 새 파일만 남도록
+  const reportName = weekLabel + '_재고관리_주차별보고';
+  const recoveryName = weekLabel + '_재고관리_재난백업용';
+  trashIfExists_(folder, reportName);
+  trashIfExists_(folder, recoveryName);
+  createReportSheet(data, reportName, folder);
+  createRecoverySheet(data, recoveryName, folder);
 
-  // 2. 첫째 주 토요일이면 → 직전 월 보고서도 생성
+  // 2. 첫째 주 토요일이면 → 직전 월 보고서도 생성 (이름은 기존 그대로 유지)
   if (isFirstSaturdayOfMonth()) {
     const prev = getPreviousMonth();
     const monthLabel = prev.year + '년 ' + prev.month + '월';
     Logger.log('📊 첫째 주 토요일 — ' + monthLabel + ' 월별보고 생성');
-    createMonthlyReportSheet(data, prev.year, prev.month, '월별보고_' + monthLabel, folder);
+    const monthlyName = '월별보고_' + monthLabel;
+    trashIfExists_(folder, monthlyName);
+    createMonthlyReportSheet(data, prev.year, prev.month, monthlyName, folder);
   }
 
   // 3. 첨부 문서 sync (변경된 것만)
   syncDocuments(data, folder);
+
+  // 4. 마스터 시트 누적 — 실패해도 백업은 완료된 상태로 종료
+  try {
+    appendToMasterSheet(data);
+  } catch (e) {
+    Logger.log('⚠️ 마스터 시트 누적 실패 (백업 자체는 완료됨): ' + e);
+  }
 
   Logger.log('✓ 백업 완료 — Drive 폴더: ' + DRIVE_FOLDER_NAME);
 }
@@ -95,6 +116,205 @@ function getPreviousMonth() {
 
 // 옛 트리거가 호출하는 이름 호환 (이미 dailyBackup 트리거 등록한 경우 대비)
 function dailyBackup() { weeklyBackup(); }
+
+// 마스터 시트 누적만 단독 실행 (테스트용) — Apps Script 편집기에서 ▶ 실행
+function runMasterSheetNow() {
+  const data = fetchFirestore();
+  if (!Array.isArray(data.inventory) || data.inventory.length === 0) {
+    throw new Error('Firestore inventory가 비어있음');
+  }
+  appendToMasterSheet(data);
+}
+
+// ============================================
+// 마스터 시트 누적 — 매주 새 파일 생성 (이전 주차 파일을 복사 → 새 이름 → 이번 주차 탭 추가)
+// ============================================
+// 동작:
+//   1. 같은 이름 파일이 있으면 휴지통으로 (재실행 시 중복 방지)
+//   2. "재고관리 백업" 폴더에서 가장 최근 "..._클로드연동 기존시트" 파일을 찾기
+//   3. 그 파일을 복사 → 이번 주차 이름(예: "2026년 5월 1주차_클로드연동 기존시트")으로 변경
+//   4. 이번 주차 탭("26년5월1주차")을 추가 + 모든 탭을 newest first로 정렬
+//
+// 컬럼 구조 (원본 탭과 동일):
+//   업체명 | 종류 | 품명 | 규격 | 단가 | 현 재고량 | 기준 재고량 | 입고량 | (팀1) | (팀2) | ...
+function appendToMasterSheet(data) {
+  const inventory = data.inventory || [];
+  const history = data.history || [];
+  const teams = data.teams || [];
+
+  if (inventory.length === 0) {
+    Logger.log('마스터 시트 누적 건너뜀 — inventory 비어있음');
+    return;
+  }
+
+  const folder = getOrCreateFolder(DRIVE_FOLDER_NAME);
+  const newFileName = getCumulativeFileName();   // "2026년 5월 1주차_클로드연동 기존시트"
+  const tabName = getMasterTabName();            // "26년5월1주차"
+
+  // 같은 이름 파일 먼저 휴지통 (재실행 시 중복 방지 — 새 파일만 남도록)
+  trashIfExists_(folder, newFileName);
+
+  // 가장 최근 누적 파일을 복사 (방금 trash한 건 제외됨)
+  const latest = findLatestCumulativeFile_(folder);
+  if (!latest) {
+    Logger.log('⚠️ 시드 파일 없음 — "..._클로드연동 기존시트" 형식 파일을 ' +
+               DRIVE_FOLDER_NAME + ' 폴더에 먼저 넣어야 합니다. 누적 건너뜀');
+    return;
+  }
+  Logger.log('📂 가장 최근 누적 파일: ' + latest.getName() + ' → 복사');
+  const targetFile = latest.makeCopy(newFileName, folder);
+  Logger.log('📁 새 파일 생성: ' + newFileName);
+  const createdNewFile = true;
+
+  // 그 주의 history만 집계
+  const weekKey = isoWeek(new Date());
+  const weekIn = {};   // weekIn[vendor::name] = qty
+  const weekOut = {};  // weekOut[vendor::name][team] = qty
+  history.forEach(function(h) {
+    if (h.weekKey !== weekKey) return;
+    const k = (h.vendor || '') + '::' + (h.name || '');
+    if (h.type === 'in') {
+      weekIn[k] = (weekIn[k] || 0) + (h.qty || 0);
+    } else if (h.type === 'out') {
+      const t = h.team || '(미지정)';
+      if (!weekOut[k]) weekOut[k] = {};
+      weekOut[k][t] = (weekOut[k][t] || 0) + (h.qty || 0);
+    }
+  });
+
+  // 미지정 출고가 있으면 팀 컬럼 추가
+  const teamCols = teams.slice();
+  let hasUnassigned = false;
+  Object.keys(weekOut).forEach(function(k) {
+    if (weekOut[k]['(미지정)']) hasUnassigned = true;
+  });
+  if (hasUnassigned) teamCols.push('(미지정)');
+
+  // 헤더 + 데이터 행
+  const headers = ['업체명', '종류', '품명', '규격', '단가', '현 재고량', '기준 재고량', '입고량'];
+  teamCols.forEach(function(t) { headers.push(t); });
+
+  const sorted = inventory.slice().sort(function(a, b) {
+    return (a.vendor || '').localeCompare(b.vendor || '') ||
+           (a.name || '').localeCompare(b.name || '');
+  });
+  const rows = [headers];
+  sorted.forEach(function(it) {
+    const k = (it.vendor || '') + '::' + (it.name || '');
+    const row = [
+      it.vendor || '',
+      it.category || '',
+      it.name || '',
+      it.unit || '',
+      it.price || 0,
+      it.stock || 0,
+      it.minStock || 0,
+      weekIn[k] || 0
+    ];
+    teamCols.forEach(function(t) {
+      row.push((weekOut[k] && weekOut[k][t]) || 0);
+    });
+    rows.push(row);
+  });
+
+  // 탭 추가/갱신
+  const ss = SpreadsheetApp.openById(targetFile.getId());
+  let sheet = ss.getSheetByName(tabName);
+  if (sheet) {
+    sheet.clear();
+    Logger.log('🔄 탭 갱신: ' + tabName);
+  } else {
+    sheet = ss.insertSheet(tabName, 0);
+    Logger.log('➕ 새 탭 생성: ' + tabName);
+  }
+
+  sheet.getRange(1, 1, rows.length, headers.length).setValues(rows);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold');
+  sheet.setFrozenRows(1);
+  if (createdNewFile) sheet.autoResizeColumns(1, headers.length);
+
+  // 탭 정렬: 모든 주차 탭을 newest first로
+  sortTabsNewestFirst_(ss);
+
+  Logger.log('✓ 마스터 시트 누적 완료 — 파일: ' + newFileName +
+             ', 탭: ' + tabName + ' (품목 ' + (rows.length - 1) + ', 팀 ' + teamCols.length + ')');
+}
+
+// 누적 파일명: "2026년 5월 1주차_클로드연동 기존시트"
+function getCumulativeFileName() {
+  return getMonthWeekLabelKr() + CUMULATIVE_NAME_SUFFIX;
+}
+
+// 탭 이름: "26년5월1주차" (2026+) / "11월1주차" (2025) — 원본 탭 명명 규칙 유지
+function getMasterTabName() {
+  const tz = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy/M/d');
+  const parts = tz.split('/');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  const week = Math.ceil(day / 7);
+  if (year >= 2026) {
+    return (year - 2000) + '년' + month + '월' + week + '주차';
+  }
+  return month + '월' + week + '주차';
+}
+
+// 폴더 안에서 같은 이름 파일을 모두 휴지통으로 이동 (재실행 시 중복 방지)
+function trashIfExists_(folder, fileName) {
+  const it = folder.getFilesByName(fileName);
+  let n = 0;
+  while (it.hasNext()) { it.next().setTrashed(true); n++; }
+  if (n > 0) Logger.log('🗑️ 기존 파일 ' + n + '개 휴지통: ' + fileName);
+}
+
+// 폴더 안에서 가장 최근 "..._클로드연동 기존시트" 파일 (수정시각 기준)
+// 휴지통 파일은 자동 제외됨
+function findLatestCumulativeFile_(folder) {
+  const it = folder.getFiles();
+  let latest = null;
+  let latestTime = 0;
+  while (it.hasNext()) {
+    const f = it.next();
+    if (f.getName().indexOf(CUMULATIVE_NAME_SUFFIX) === -1) continue;
+    const t = f.getLastUpdated().getTime();
+    if (t > latestTime) {
+      latestTime = t;
+      latest = f;
+    }
+  }
+  return latest;
+}
+
+// 탭 이름을 정렬 키로 — "26년5월1주차"=260501, "12월4주차"=251204 (연도 없으면 2025)
+// 파싱 못하는 탭은 -1 → 맨 뒤로
+function parseTabKey_(name) {
+  let m = name.match(/^(\d+)년(\d+)월(\d+)주차$/);
+  if (m) return parseInt(m[1], 10) * 10000 + parseInt(m[2], 10) * 100 + parseInt(m[3], 10);
+  m = name.match(/^(\d+)월(\d+)주차$/);
+  if (m) return 25 * 10000 + parseInt(m[1], 10) * 100 + parseInt(m[2], 10);
+  return -1;
+}
+
+// 모든 탭을 newest first로 정렬. 비-주차 탭은 맨 뒤로.
+function sortTabsNewestFirst_(ss) {
+  const sheets = ss.getSheets();
+  const sorted = sheets.slice().sort(function(a, b) {
+    return parseTabKey_(b.getName()) - parseTabKey_(a.getName());  // 내림차순
+  });
+  // 이미 정렬되어 있으면 skip
+  let same = true;
+  for (let i = 0; i < sheets.length; i++) {
+    if (sheets[i] !== sorted[i]) { same = false; break; }
+  }
+  if (same) return;
+
+  // 원하는 자리로 하나씩 이동 (Sheet 객체 참조는 안정적)
+  for (let i = 0; i < sorted.length; i++) {
+    ss.setActiveSheet(sorted[i]);
+    ss.moveActiveSheet(i + 1);
+  }
+  Logger.log('🔀 탭 ' + sorted.length + '개 정렬 (newest first)');
+}
 
 // ============================================
 // 문서 sync — Firestore documents의 base64를 Drive 파일로 저장
