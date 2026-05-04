@@ -750,7 +750,13 @@ function renderStatsByAnomaly() {
     catPast[c].qty += h.qty;
     catPast[c].items.add(h.vendor + '::' + h.name);
   });
-  const allCats = new Set([...Object.keys(catThis), ...Object.keys(catPast)]);
+  // 분류 목록은 inventory에서 — 출고 0건인 분류도 "사용 없음"으로 표시
+  // (숨김 항목 제외해서 의미 있는 분류만)
+  const inventoryCats = new Set();
+  inventory.forEach(it => {
+    if (!it.hidden && it.category) inventoryCats.add(it.category);
+  });
+  const allCats = new Set([...inventoryCats, ...Object.keys(catThis), ...Object.keys(catPast)]);
   const catData = Array.from(allCats).map(c => {
     const tc = catThis[c] ? catThis[c].cost : 0;
     const pc = catPast[c] ? catPast[c].cost : 0;
@@ -759,9 +765,16 @@ function renderStatsByAnomaly() {
     const delta = thisComp - pastComp;
     const pct = pastComp > 0 ? (delta / pastComp) * 100 : null;
     const itemCount = catThis[c] ? catThis[c].items.size : 0;
-    return { category: c, thisCost: tc, pastCost: pc, thisComp, pastComp, delta, pct, itemCount };
-  }).filter(d => d.thisCost > 0 || d.pastCost > 0)
-    .sort((a, b) => b.thisCost - a.thisCost);
+    // 등록 품목 수 (inventory 기반)
+    const registered = inventory.filter(it => !it.hidden && (it.category || '') === c).length;
+    return { category: c, thisCost: tc, pastCost: pc, thisComp, pastComp, delta, pct, itemCount, registered };
+  }).sort((a, b) => {
+    // 활동 있는 분류 먼저(비용 큰 순), 활동 없는 분류 뒤
+    const aActive = a.thisCost > 0 || a.pastCost > 0;
+    const bActive = b.thisCost > 0 || b.pastCost > 0;
+    if (aActive !== bActive) return aActive ? -1 : 1;
+    return b.thisCost - a.thisCost;
+  });
 
   if (catData.length > 0) {
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
@@ -779,7 +792,10 @@ function renderStatsByAnomaly() {
         pctText = '중단'; pctClass = 'text-slate-400';
       }
       let comment, commentClass;
-      if (d.pastComp === 0 && d.thisComp > 0) {
+      if (d.thisComp === 0 && d.pastComp === 0) {
+        comment = '📦 4개월간 출고 기록 없음 (등록 품목 ' + d.registered + '종)';
+        commentClass = 'text-slate-400';
+      } else if (d.pastComp === 0 && d.thisComp > 0) {
         comment = '✨ 이번 달부터 사용 시작'; commentClass = 'text-emerald-700';
       } else if (d.thisComp === 0 && d.pastComp > 0) {
         comment = '⛔ 이번 달 사용 없음 (평소 ' + formatWon(d.pastComp) + (isIncomplete ? '/주' : '/월') + ')';
