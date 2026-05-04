@@ -7,6 +7,7 @@
 let releaseSelectedTeam = '';
 let releaseSelectedRequester = '';
 let releaseSelectedVendor = '';
+let releaseSelectedCategory = '';  // 분류 필터
 let releaseSearchTerm = '';
 
 // 목록에 없는 품목 직접 요청 (아코디언 + 폼 상태)
@@ -36,6 +37,7 @@ function getStandardTeams() {
 function getReleaseFilteredItems() {
   return inventory.filter(i => {
     if (releaseSelectedVendor && i.vendor !== releaseSelectedVendor) return false;
+    if (releaseSelectedCategory && (i.category || '') !== releaseSelectedCategory) return false;
     if (releaseSearchTerm) {
       if (!matchesSearch(i.name, releaseSearchTerm) && !matchesSearch(i.vendor, releaseSearchTerm)) return false;
     }
@@ -93,6 +95,7 @@ function renderReleaseItems() {
 
 function renderRelease() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
+  const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];
   const filtered = getReleaseFilteredItems();
   
@@ -203,7 +206,20 @@ function renderRelease() {
     html += '<button onclick="releaseSelectedVendor = \'' + escapeJs(v) + '\'; renderRelease();" class="px-3 py-1.5 text-sm rounded-full ' +
       (releaseSelectedVendor === v ? 'bg-teal-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div>';
+  html += '</div>';
+  // 분류 필터 (업체 아래)
+  if (categories.length > 0) {
+    html += '<p class="text-xs text-slate-500 mt-3 mb-2">분류:</p>' +
+      '<div class="flex flex-wrap gap-1">' +
+      '<button onclick="releaseSelectedCategory = \'\'; renderRelease();" class="px-3 py-1.5 text-sm rounded-full ' +
+      (!releaseSelectedCategory ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체</button>';
+    categories.forEach(c => {
+      html += '<button onclick="releaseSelectedCategory = \'' + escapeJs(c) + '\'; renderRelease();" class="px-3 py-1.5 text-sm rounded-full ' +
+        (releaseSelectedCategory === c ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(c) + '</button>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
 
   // ── 목록에 없는 품목 직접 요청 (버튼 + 펼침 폼) ──
   html += '<div class="px-3 py-3 border-b border-slate-100">' +
@@ -530,6 +546,7 @@ function confirmRelease() {
     cart = [];
     releaseSearchTerm = '';
     releaseSelectedVendor = '';
+    releaseSelectedCategory = '';
     renderRelease();
   }, '예, 요청', 'teal');
 }

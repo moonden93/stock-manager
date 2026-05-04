@@ -417,6 +417,33 @@ function generateReportExcel(data) {
   applyFormat(wsCombined, []);
   XLSX.utils.book_append_sheet(wb, wsCombined, '입출고+요청');
 
+  // 3-2. 분류별 합계 (이번 주 출고를 분류별로 집계)
+  const catMap = {};
+  thisOutHist.forEach(h => {
+    const inv = inventory.find(it => it.vendor === h.vendor && it.name === h.name);
+    const cat = (inv && inv.category) || '(분류 없음)';
+    if (!catMap[cat]) catMap[cat] = { count: 0, qty: 0, cost: 0, items: {} };
+    catMap[cat].count++;
+    catMap[cat].qty += h.qty || 0;
+    catMap[cat].cost += (h.qty || 0) * (h.price || 0);
+    const k = (h.vendor || '') + '::' + (h.name || '');
+    catMap[cat].items[k] = (catMap[cat].items[k] || 0) + (h.qty || 0);
+  });
+  const totalCatCost = Object.keys(catMap).reduce((s, c) => s + catMap[c].cost, 0);
+  const catRows = [['분류별 합계 — 이번 주 출고 기준'], [],
+                   ['분류', '품목 종류', '출고 건수', '출고 수량', '출고 금액(원)', '비율(%)']];
+  Object.entries(catMap)
+    .sort((a, b) => b[1].cost - a[1].cost)
+    .forEach(([c, s]) => {
+      const itemTypes = Object.keys(s.items).length;
+      const pct = totalCatCost > 0 ? Math.round((s.cost / totalCatCost) * 1000) / 10 : 0;
+      catRows.push([c, itemTypes, s.count, s.qty, s.cost, pct]);
+    });
+  if (Object.keys(catMap).length === 0) catRows.push(['(이번 주 출고 없음)']);
+  const wsCat = XLSX.utils.aoa_to_sheet(catRows);
+  applyFormat(wsCat, [1, 2, 3, 4, 5], 2);  // 헤더가 2행이라 데이터는 row 3부터
+  XLSX.utils.book_append_sheet(wb, wsCat, '분류별 합계');
+
   // 4. 팀별 AI 분석 (이번 달 vs 지난 3개월 평균)
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);

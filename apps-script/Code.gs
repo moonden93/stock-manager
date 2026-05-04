@@ -960,6 +960,34 @@ function createReportSheet(data, name, folder) {
   });
   writeRows(ss.insertSheet('입출고+요청'), combined);
 
+  // ─ 3-2. 분류별 합계 (이번 주 출고를 분류별로 집계) ─
+  const catMap = {};
+  thisOutHist.forEach(function(h) {
+    // 분류는 inventory에서 lookup (history엔 category 없음)
+    const inv = inventory.find(function(it) { return it.vendor === h.vendor && it.name === h.name; });
+    const cat = (inv && inv.category) || '(분류 없음)';
+    if (!catMap[cat]) catMap[cat] = { count: 0, qty: 0, cost: 0, items: {} };
+    catMap[cat].count++;
+    catMap[cat].qty += h.qty || 0;
+    catMap[cat].cost += (h.qty || 0) * (h.price || 0);
+    const k = (h.vendor || '') + '::' + (h.name || '');
+    catMap[cat].items[k] = (catMap[cat].items[k] || 0) + (h.qty || 0);
+  });
+  const totalCatCost = Object.keys(catMap).reduce(function(s, c) { return s + catMap[c].cost; }, 0);
+  const catRows = [['분류별 합계 — 이번 주 출고 기준'], [],
+                   ['분류', '품목 종류', '출고 건수', '출고 수량', '출고 금액(원)', '비율(%)']];
+  Object.keys(catMap)
+    .map(function(c) { return [c, catMap[c]]; })
+    .sort(function(a, b) { return b[1].cost - a[1].cost; })
+    .forEach(function(pair) {
+      const c = pair[0], s = pair[1];
+      const itemTypes = Object.keys(s.items).length;
+      const pct = totalCatCost > 0 ? Math.round((s.cost / totalCatCost) * 1000) / 10 : 0;
+      catRows.push([c, itemTypes, s.count, s.qty, s.cost, pct]);
+    });
+  if (Object.keys(catMap).length === 0) catRows.push(['(이번 주 출고 없음)']);
+  writeRows(ss.insertSheet('분류별 합계'), catRows);
+
   // ─ 4. 팀별 AI 분석 (이번 달 vs 지난 3개월) ─
   const now = new Date();
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);

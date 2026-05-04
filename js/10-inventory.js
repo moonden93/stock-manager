@@ -9,6 +9,7 @@
 let invSearchTerm = '';
 let invFilter = 'all';
 let invVendorFilter = '';
+let invCategoryFilter = '';  // 분류 필터 (예: '치과재료', '구강위생용품')
 let invShowHidden = false;  // 숨김 항목 보기 토글 (OFF = 안 보임, ON = 흐리게 보임)
 
 function getInventoryFilteredItems() {
@@ -19,6 +20,7 @@ function getInventoryFilteredItems() {
   if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock <= i.minStock);
   if (invFilter === 'normal') filtered = filtered.filter(i => i.stock > i.minStock);
   if (invVendorFilter) filtered = filtered.filter(i => i.vendor === invVendorFilter);
+  if (invCategoryFilter) filtered = filtered.filter(i => (i.category || '') === invCategoryFilter);
   if (invSearchTerm) {
     filtered = filtered.filter(i => matchesSearch(i.name, invSearchTerm) || matchesSearch(i.vendor, invSearchTerm));
   }
@@ -68,6 +70,7 @@ function renderInventory() {
   const low = visibleInv.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
   const hiddenCount = inventory.length - visibleInv.length;
   const vendors = [...new Set(visibleInv.map(i => i.vendor))].sort();
+  const categories = [...new Set(visibleInv.map(i => i.category || '').filter(Boolean))].sort();
   const filtered = getInventoryFilteredItems();
 
   let html = '<div class="space-y-4">' +
@@ -102,7 +105,19 @@ function renderInventory() {
     html += '<button onclick="invVendorFilter = \'' + escapeJs(v) + '\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
       (invVendorFilter === v ? 'bg-orange-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div>' +
+  html += '</div>';
+  // 분류 필터 (업체 아래)
+  if (categories.length > 0) {
+    html += '<div class="flex flex-wrap gap-1 mt-2">' +
+      '<button onclick="invCategoryFilter = \'\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
+      (!invCategoryFilter ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체 분류</button>';
+    categories.forEach(c => {
+      html += '<button onclick="invCategoryFilter = \'' + escapeJs(c) + '\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
+        (invCategoryFilter === c ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(c) + '</button>';
+    });
+    html += '</div>';
+  }
+  html += '</div>' +
     '<div id="inventory-items-count" class="px-4 py-2 bg-slate-50 text-xs text-slate-600">' +
     '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정' +
     '</div>' +

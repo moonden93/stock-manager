@@ -729,6 +729,88 @@ function renderStatsByAnomaly() {
     return html;
   }
 
+  // ─── 분류별 비교 + 자동 코멘트 ───
+  // 분류는 inventory.category에서 lookup (history엔 category 없음)
+  function catOfHistory_(h) {
+    const inv = inventory.find(i => i.vendor === h.vendor && i.name === h.name);
+    return (inv && inv.category) || '(분류 없음)';
+  }
+  const catThis = {}, catPast = {};
+  thisMonth.forEach(h => {
+    const c = catOfHistory_(h);
+    if (!catThis[c]) catThis[c] = { cost: 0, qty: 0, items: new Set() };
+    catThis[c].cost += h.qty * (h.price || 0);
+    catThis[c].qty += h.qty;
+    catThis[c].items.add(h.vendor + '::' + h.name);
+  });
+  past3.forEach(h => {
+    const c = catOfHistory_(h);
+    if (!catPast[c]) catPast[c] = { cost: 0, qty: 0, items: new Set() };
+    catPast[c].cost += h.qty * (h.price || 0);
+    catPast[c].qty += h.qty;
+    catPast[c].items.add(h.vendor + '::' + h.name);
+  });
+  const allCats = new Set([...Object.keys(catThis), ...Object.keys(catPast)]);
+  const catData = Array.from(allCats).map(c => {
+    const tc = catThis[c] ? catThis[c].cost : 0;
+    const pc = catPast[c] ? catPast[c].cost : 0;
+    const thisComp = isIncomplete ? (tc / thisWeeks) : tc;
+    const pastComp = isIncomplete ? (pc / past3Weeks) : (pc / 3);
+    const delta = thisComp - pastComp;
+    const pct = pastComp > 0 ? (delta / pastComp) * 100 : null;
+    const itemCount = catThis[c] ? catThis[c].items.size : 0;
+    return { category: c, thisCost: tc, pastCost: pc, thisComp, pastComp, delta, pct, itemCount };
+  }).filter(d => d.thisCost > 0 || d.pastCost > 0)
+    .sort((a, b) => b.thisCost - a.thisCost);
+
+  if (catData.length > 0) {
+    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
+      '<h3 class="text-sm font-bold text-slate-900 mb-3">📦 분류별 변동</h3>';
+    catData.forEach(d => {
+      let pctText = '–', pctClass = 'text-slate-500';
+      if (d.pct !== null) {
+        pctText = (d.pct > 0 ? '+' : '') + Math.round(d.pct) + '%';
+        if (d.pct >= 30) pctClass = 'text-red-600';
+        else if (d.pct <= -30) pctClass = 'text-blue-600';
+        else pctClass = 'text-slate-600';
+      } else if (d.thisComp > 0) {
+        pctText = '신규'; pctClass = 'text-emerald-600';
+      } else {
+        pctText = '중단'; pctClass = 'text-slate-400';
+      }
+      let comment, commentClass;
+      if (d.pastComp === 0 && d.thisComp > 0) {
+        comment = '✨ 이번 달부터 사용 시작'; commentClass = 'text-emerald-700';
+      } else if (d.thisComp === 0 && d.pastComp > 0) {
+        comment = '⛔ 이번 달 사용 없음 (평소 ' + formatWon(d.pastComp) + (isIncomplete ? '/주' : '/월') + ')';
+        commentClass = 'text-slate-600';
+      } else if (d.pct >= 50) {
+        comment = '📈 평소 대비 크게 증가 (+' + formatWon(Math.abs(d.delta)) + (isIncomplete ? '/주' : '') + ')';
+        commentClass = 'text-red-700';
+      } else if (d.pct >= 30) {
+        comment = '🔼 평소보다 늘어남'; commentClass = 'text-red-700';
+      } else if (d.pct <= -50) {
+        comment = '📉 평소 대비 크게 감소 (-' + formatWon(Math.abs(d.delta)) + (isIncomplete ? '/주' : '') + ' 절약)';
+        commentClass = 'text-blue-700';
+      } else if (d.pct <= -30) {
+        comment = '🔽 평소보다 줄어듦'; commentClass = 'text-blue-700';
+      } else {
+        comment = '✅ 평소와 비슷한 사용 패턴'; commentClass = 'text-slate-600';
+      }
+      html += '<div class="py-2 border-t border-slate-100 first:border-t-0">' +
+        '<div class="flex items-baseline justify-between gap-2">' +
+        '<span class="font-bold text-slate-900">' + escapeHtml(d.category) + '</span>' +
+        '<span class="text-sm font-bold ' + pctClass + '">' + pctText + '</span></div>' +
+        '<div class="text-xs text-slate-500 mt-0.5">' +
+        '이번: <strong class="text-slate-700">' + formatWon(d.thisComp) + '</strong>' + (isIncomplete ? '/주' : '') +
+        ' · 직전: ' + formatWon(d.pastComp) + (isIncomplete ? '/주' : '/월') +
+        ' · 품목 ' + d.itemCount + '종</div>' +
+        '<div class="text-xs mt-1 ' + commentClass + '">' + comment + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
   // 팀별 카드 — 활동 있는 모든 팀 표시 (비용 큰 순)
   // 비활동 팀은 별도 처리
   const activeTeams = sortedTeams.filter(t => teamAnomalies[t] && (teamAnomalies[t].thisCost > 0 || teamAnomalies[t].pastAvgCost > 0));
