@@ -186,7 +186,10 @@ function renderRelease() {
     'oninput="releaseSelectedRequester = this.value; updateCartBar();" ' +
     'placeholder="담당자 이름" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" />' +
     '</div></div></div>';
-  
+
+  // 내 팀 대기 요청 (수정/취소 가능 — 비밀번호 없이) — Step 3 위
+  html += renderMyPendingRequestsSection();
+
   // Step 3: 품목
   html += '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="px-4 py-3 bg-slate-50 flex items-center gap-2">' +
@@ -239,14 +242,8 @@ function renderRelease() {
   } else {
     filtered.forEach(item => { html += _releaseItemRowHtml(item); });
   }
-  // items 목록 + 카드 종료
-  html += '</div></div>';
-
-  // 내 팀 대기 요청 (수정/취소 가능 — 비밀번호 없이)
-  html += renderMyPendingRequestsSection();
-
-  // 루트 종료
-  html += '</div>';
+  // items 목록 + 카드 + 루트 종료
+  html += '</div></div></div>';
 
   document.getElementById('page-content').innerHTML = html;
   renderCartBar();
@@ -527,13 +524,18 @@ function showRequestConfirmModal() {
       '</div>';
   });
 
+  // 오늘 날짜 (KST)
+  const now = new Date();
+  const dowKor = ['일', '월', '화', '수', '목', '금', '토'][now.getDay()];
+  const dateStr = now.getFullYear() + '. ' + (now.getMonth() + 1) + '. ' + now.getDate() + '. (' + dowKor + ')';
+
   const html =
     '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
     '<h3 class="text-base font-bold text-slate-900">반출 요청 등록</h3>' +
     '<p class="text-xs text-slate-600 mt-1">[' + escapeHtml(releaseSelectedTeam) + '] ' +
-    escapeHtml(releaseSelectedRequester) + '님</p>' +
+    escapeHtml(releaseSelectedRequester) + '님 · ' + dateStr + '</p>' +
     '</div>' +
     '<div class="px-5 py-4 overflow-y-auto">' +
     '<div class="border border-slate-200 rounded-lg p-3 bg-slate-50 mb-3">' +
@@ -546,7 +548,7 @@ function showRequestConfirmModal() {
     '<div>' +
     '<label class="text-xs font-bold text-slate-700 mb-1 block">📝 메모 (선택)</label>' +
     '<textarea id="confirm-memo" rows="3" maxlength="300" autofocus ' +
-    'placeholder="예: 이 재료 급해서 화요일까지 받고 싶어요" ' +
+    'placeholder="예: 문치과 화이팅" ' +
     'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg resize-none focus:outline-none focus:border-teal-500"></textarea>' +
     '</div>' +
     '</div>' +
@@ -626,11 +628,29 @@ function doSubmitRequest(memo) {
 // ============================================
 // 비밀번호 없이 직원이 자기 요청 수정 가능. 변경은 audit log 기록.
 function renderMyPendingRequestsSection() {
-  if (!releaseSelectedTeam) return '';
+  if (!releaseSelectedTeam) {
+    // 팀 선택 전에도 섹션은 보여서 "여기 있어요" 인식되게 (안내 메시지)
+    return '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
+      '<div class="px-4 py-3 bg-slate-50 flex items-center gap-2">' +
+      '<span class="w-7 h-7 bg-slate-300 text-white rounded-full flex items-center justify-center font-bold text-xs">⏳</span>' +
+      '<h3 class="font-bold text-slate-900">요청관리</h3>' +
+      '</div>' +
+      '<div class="px-4 py-6 text-center text-sm text-slate-400">위에서 팀을 선택하면 해당 팀의 대기 요청이 보여요</div>' +
+      '</div>';
+  }
   const teamPending = requests.filter(r =>
     r.team === releaseSelectedTeam && (r.status || 'completed') === 'pending'
   );
-  if (teamPending.length === 0) return '';
+  if (teamPending.length === 0) {
+    return '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-hidden">' +
+      '<div class="px-4 py-3 bg-slate-50 flex items-center gap-2">' +
+      '<span class="w-7 h-7 bg-slate-300 text-white rounded-full flex items-center justify-center font-bold text-xs">⏳</span>' +
+      '<h3 class="font-bold text-slate-900">요청관리</h3>' +
+      '<span class="ml-auto text-xs text-slate-500">' + escapeHtml(releaseSelectedTeam) + '</span>' +
+      '</div>' +
+      '<div class="px-4 py-6 text-center text-sm text-slate-400">대기 중인 요청 없음</div>' +
+      '</div>';
+  }
 
   // requestId 별로 그룹핑
   const groups = {};
@@ -643,10 +663,12 @@ function renderMyPendingRequestsSection() {
   const groupArr = Object.entries(groups)
     .sort((a, b) => (b[1].date || '').localeCompare(a[1].date || ''));
 
-  let html = '<div class="bg-white rounded-2xl border-2 border-amber-300 shadow-sm overflow-hidden mt-4">' +
-    '<div class="px-4 py-3 bg-amber-50 flex items-center justify-between">' +
-    '<h3 class="font-bold text-slate-900">⏳ ' + escapeHtml(releaseSelectedTeam) + ' 대기 요청 (' + groupArr.length + '건)</h3>' +
-    '<span class="text-[11px] text-slate-500">수정/취소 가능</span>' +
+  let html = '<div class="bg-white rounded-2xl border-2 border-amber-300 shadow-sm overflow-hidden">' +
+    '<div class="px-4 py-3 bg-amber-50 flex items-center gap-2">' +
+    '<span class="w-7 h-7 bg-amber-500 text-white rounded-full flex items-center justify-center font-bold text-xs">⏳</span>' +
+    '<h3 class="font-bold text-slate-900">요청관리</h3>' +
+    '<span class="text-xs text-slate-700">' + escapeHtml(releaseSelectedTeam) + ' 대기 ' + groupArr.length + '건</span>' +
+    '<span class="ml-auto text-[11px] text-slate-500">수정/취소 가능</span>' +
     '</div>' +
     '<div class="divide-y divide-slate-100">';
 
@@ -724,17 +746,31 @@ function saveMyRequestEdit(groupId) {
   if (items.length === 0) { closeModal(); return; }
   const newMemo = (document.getElementById('edit-req-memo').value || '').trim();
   const changes = [];
+  const editAt = new Date().toISOString();
 
   items.forEach((it, idx) => {
     const input = document.getElementById('edit-req-qty-' + idx);
     if (!input) return;
     const newQty = parseInt(input.value, 10);
     if (isNaN(newQty) || newQty < 1) return;
-    if (newQty !== it.qty) {
-      changes.push({ name: it.name, before: it.qty, after: newQty });
-      it.qty = newQty;
-    }
-    if ((it.memo || '') !== newMemo) {
+    const oldMemo = it.memo || '';
+    const qtyChanged = (newQty !== it.qty);
+    const memoChanged = (oldMemo !== newMemo);
+    if (qtyChanged || memoChanged) {
+      // 수정 이력을 항목에 직접 보존 (반출관리에서 표시)
+      if (!Array.isArray(it.editHistory)) it.editHistory = [];
+      it.editHistory.push({
+        at: editAt,
+        qtyFrom: it.qty,
+        qtyTo: newQty,
+        memoFrom: oldMemo,
+        memoTo: newMemo,
+        by: it.requester || it.member || '본인'
+      });
+      if (qtyChanged) {
+        changes.push({ name: it.name, before: it.qty, after: newQty });
+        it.qty = newQty;
+      }
       it.memo = newMemo;
     }
   });
@@ -767,9 +803,17 @@ function cancelMyRequest(groupId) {
 
   askConfirm('요청 취소',
     items[0].requester + '님의 대기 요청을 취소합니다.\n\n' +
-    items.length + '종 ' + totalQty + '개\n\n계속하시겠습니까?',
+    items.length + '종 ' + totalQty + '개\n\n취소된 요청은 반출관리에서 기록으로 남습니다.\n계속하시겠습니까?',
     function() {
-      // audit log (삭제 전)
+      // 소프트 취소: 데이터 보존, status만 변경
+      const cancelledAt = new Date().toISOString();
+      const cancelledBy = items[0].requester || items[0].member || '본인';
+      items.forEach(it => {
+        it.status = 'cancelled';
+        it.cancelledDate = cancelledAt;
+        it.cancelledBy = cancelledBy;
+      });
+      // audit log
       if (typeof logEvent === 'function') {
         logEvent('request', 'cancel_by_requester', {
           summary: '요청자 본인 취소: [' + items[0].team + '] ' + (items[0].requester || '') +
@@ -782,10 +826,8 @@ function cancelMyRequest(groupId) {
           }))
         });
       }
-      const targetIds = new Set(items.map(it => it.id));
-      requests = requests.filter(r => !targetIds.has(r.id));
       saveAll();
-      showToast('요청 취소됨');
+      showToast('요청 취소됨 (반출관리에 기록 보존)');
       renderRelease();
     }, '예, 취소', 'red');
 }

@@ -71,6 +71,7 @@ function renderManage() {
   // 상태별 카운트
   const pendingCount = requests.filter(r => getReqStatus(r) === 'pending').length;
   const completedCount = requests.filter(r => getReqStatus(r) === 'completed').length;
+  const cancelledCount = requests.filter(r => getReqStatus(r) === 'cancelled').length;
   
   // 통계 (현재 status 필터 기준)
   const statusFiltered = requests.filter(r => getReqStatus(r) === manageStatusFilter);
@@ -98,17 +99,22 @@ function renderManage() {
     '<h2 class="text-lg font-bold text-slate-900 mb-1">📋 반출 요청 관리</h2>' +
     '<p class="text-sm text-slate-600"><strong class="text-amber-700">대기</strong> 중인 요청을 확인하고 <strong class="text-emerald-700">반출 완료</strong> 처리합니다</p></div>' +
     
-    // 상태 탭 (대기 / 완료)
-    '<div class="grid grid-cols-2 gap-2">' +
-    '<button onclick="manageStatusFilter = \'pending\'; renderManage();" class="rounded-xl p-4 border-2 transition ' +
+    // 상태 탭 (대기 / 완료 / 취소)
+    '<div class="grid grid-cols-3 gap-2">' +
+    '<button onclick="manageStatusFilter = \'pending\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
     (manageStatusFilter === 'pending' ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
-    '<p class="text-xs ' + (manageStatusFilter === 'pending' ? 'text-amber-700' : 'text-slate-500') + ' font-bold">⏳ 반출 대기</p>' +
-    '<p class="text-3xl font-bold ' + (manageStatusFilter === 'pending' ? 'text-amber-600' : 'text-slate-700') + '">' + pendingCount + '</p>' +
+    '<p class="text-xs ' + (manageStatusFilter === 'pending' ? 'text-amber-700' : 'text-slate-500') + ' font-bold">⏳ 대기</p>' +
+    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'pending' ? 'text-amber-600' : 'text-slate-700') + '">' + pendingCount + '</p>' +
     '</button>' +
-    '<button onclick="manageStatusFilter = \'completed\'; renderManage();" class="rounded-xl p-4 border-2 transition ' +
+    '<button onclick="manageStatusFilter = \'completed\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
     (manageStatusFilter === 'completed' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
-    '<p class="text-xs ' + (manageStatusFilter === 'completed' ? 'text-emerald-700' : 'text-slate-500') + ' font-bold">✅ 반출 완료</p>' +
-    '<p class="text-3xl font-bold ' + (manageStatusFilter === 'completed' ? 'text-emerald-600' : 'text-slate-700') + '">' + completedCount + '</p>' +
+    '<p class="text-xs ' + (manageStatusFilter === 'completed' ? 'text-emerald-700' : 'text-slate-500') + ' font-bold">✅ 완료</p>' +
+    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'completed' ? 'text-emerald-600' : 'text-slate-700') + '">' + completedCount + '</p>' +
+    '</button>' +
+    '<button onclick="manageStatusFilter = \'cancelled\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
+    (manageStatusFilter === 'cancelled' ? 'border-slate-500 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
+    '<p class="text-xs ' + (manageStatusFilter === 'cancelled' ? 'text-slate-700' : 'text-slate-500') + ' font-bold">❌ 취소</p>' +
+    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'cancelled' ? 'text-slate-700' : 'text-slate-700') + '">' + cancelledCount + '</p>' +
     '</button>' +
     '</div>' +
     
@@ -155,6 +161,8 @@ function renderManage() {
       const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
       const totalQty = g.items.reduce((s, i) => s + i.qty, 0);
       const isPending = g.status === 'pending';
+      const isCancelled = g.status === 'cancelled';
+      const isCompleted = g.status === 'completed';
       const gid = escapeJs(g.groupId);
 
       // 대기 상태일 때만 선택 상태 초기화
@@ -201,20 +209,41 @@ function renderManage() {
       // 메모 표시 (있으면)
       const groupMemo = (g.items.find(it => it.memo) || {}).memo || '';
 
-      html += '<div class="px-4 py-3 hover:bg-slate-50 ' + (isPending ? 'bg-amber-50/30' : '') + '">' +
+      // 취소 정보 (취소된 그룹)
+      let cancelledInfoHtml = '';
+      if (isCancelled) {
+        const byList = [...new Set(g.items.map(it => it.cancelledBy).filter(Boolean))];
+        const dateList = [...new Set(g.items.map(it => (it.cancelledDate || '').slice(0, 10)).filter(Boolean))];
+        cancelledInfoHtml = '<div class="text-xs px-3 py-2 mb-2 bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-2 flex-wrap text-slate-600">' +
+          '<span>❌</span>' +
+          '<span class="font-bold">' + (byList.length > 0 ? byList.map(escapeHtml).join(', ') + '님이 취소' : '취소됨') + '</span>' +
+          (dateList.length > 0 ? '<span>· ' + dateList.map(d => {
+            const dt = new Date(d + 'T00:00:00');
+            return (dt.getMonth() + 1) + '/' + dt.getDate();
+          }).join(', ') + '</span>' : '') +
+          '</div>';
+      }
+
+      // 그룹 배경색
+      const groupBgClass = isCancelled ? 'bg-slate-100 opacity-70'
+                          : (isPending ? 'bg-amber-50/30' : '');
+
+      html += '<div class="px-4 py-3 hover:bg-slate-50 ' + groupBgClass + '">' +
         '<div class="flex items-center justify-between mb-2">' +
         '<div class="flex items-center gap-2 flex-wrap">' +
         '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
         '<span class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold">' + escapeHtml(g.team) + '</span>' +
         '<span class="text-xs text-slate-700">' + escapeHtml(g.requester) + '님 요청</span>' +
-        (isPending ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⏳ 대기</span>'
-                   : '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">✅ 완료</span>') +
+        (isPending ? '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">⏳ 대기</span>' : '') +
+        (isCompleted ? '<span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-bold">✅ 완료</span>' : '') +
+        (isCancelled ? '<span class="px-2 py-0.5 bg-slate-300 text-slate-700 rounded-full text-xs font-bold">❌ 취소</span>' : '') +
         '</div>' +
         '<div class="flex items-center gap-2">' +
-        '<span class="text-sm font-bold text-slate-900">' + g.items.length + '종 · ' + totalQty + '개</span>' +
-        '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>' +
+        '<span class="text-sm font-bold ' + (isCancelled ? 'text-slate-500 line-through' : 'text-slate-900') + '">' + g.items.length + '종 · ' + totalQty + '개</span>' +
+        (isCancelled ? '' : '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>') +
         '</div></div>' +
         (groupMemo ? '<div class="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-slate-800">📝 <strong>요청자 메모:</strong> ' + escapeHtml(groupMemo) + '</div>' : '') +
+        cancelledInfoHtml +
         releasedInfoHtml;
 
       // 대기 상태: 전체선택 바 추가
@@ -243,6 +272,15 @@ function renderManage() {
           const isShort = isChecked && releaseQty > stock;
           const catBadge = categoryBadgeHtml_(resolveCategory_(it, item));
 
+          // 수정 이력 표시 (있으면)
+          let editHistHtml = '';
+          if (Array.isArray(it.editHistory) && it.editHistory.length > 0) {
+            const lastEdit = it.editHistory[it.editHistory.length - 1];
+            if (lastEdit.qtyFrom !== lastEdit.qtyTo) {
+              editHistHtml = ' <span class="text-[10px] px-1 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-200" title="수정됨: ' + lastEdit.qtyFrom + '개 → ' + lastEdit.qtyTo + '개">✏️ <s class="text-slate-500">' + lastEdit.qtyFrom + '</s>→<strong>' + lastEdit.qtyTo + '</strong></span>';
+            }
+          }
+
           html += '<div class="flex items-center gap-2 py-2 px-2 ' + (isChecked ? 'bg-white' : 'bg-slate-100 opacity-60') + ' rounded-lg border border-slate-100">' +
             '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' ' +
             'onchange="toggleItemCheck(\'' + gid + '\', \'' + it.id + '\', this.checked)" ' +
@@ -252,7 +290,7 @@ function renderManage() {
             '<p class="text-sm text-slate-800 truncate">' +
             (it.isCustom ? '<span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1 align-middle">🆕 직접 요청</span>' : '') +
             escapeHtml(it.name) + '</p>' +
-            '<p class="text-xs text-slate-500">요청 ' + it.qty +
+            '<p class="text-xs text-slate-500">요청 ' + it.qty + editHistHtml +
             (it.isCustom
               ? ' · <button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700">상세보기</button>'
               : ' · 재고 ' + stock + (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '')) +
