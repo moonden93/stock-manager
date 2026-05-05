@@ -213,28 +213,16 @@ function migrateTeamsV3(currentTeams) {
 }
 
 // ============================================
-// ID 기반 머지: 클라우드 우선 + 최근 로컬 항목만 보존
+// ID 기반 머지: 클라우드 우선 + 로컬에만 있는 항목 보존
 // ============================================
-// 핵심 원칙:
-// - 클라우드가 source of truth (다른 기기 변경사항 즉시 반영)
-// - 로컬에만 있는 항목 중 "최근 N분 내" 생성된 것만 보존 (방금 만든 거 사라지지 않게)
-// - 오래된 로컬-only 항목은 자동으로 버림 (옛 캐시 데이터 자동 정리)
-//
-// → 폰이 옛 테스트 데이터를 안고 있어도 다음 sync에서 자동 정리됨.
-// → 동시에 방금 만든 요청이 sync 사이에 사라지는 일도 없음.
-const RECENT_LOCAL_PRESERVE_MS = 10 * 60 * 1000;  // 10분
+// 기기 A가 항목을 만들고 Firebase 쓰기 실패 → 새로고침 시 클라우드 sync로
+// 그 항목이 사라지던 사고를 막기 위함. 클라우드의 같은 ID 항목이 있으면
+// 클라우드 버전 사용(다른 기기의 상태 변경 반영), 없으면 로컬 항목 보존.
 function mergeByIdPreserveLocal(localArr, cloudArr) {
   if (!Array.isArray(localArr)) return cloudArr.slice();
   const cloudIds = new Set();
   cloudArr.forEach(it => { if (it && it.id) cloudIds.add(it.id); });
-  const now = Date.now();
-  const localOnly = localArr.filter(it => {
-    if (!it || !it.id || cloudIds.has(it.id)) return false;
-    // date 필드가 ISO 문자열로 들어있음 (history/requests 둘 다)
-    const itTime = it.date ? new Date(it.date).getTime() : 0;
-    if (!itTime) return false;  // date 없으면 stale로 간주
-    return (now - itTime) < RECENT_LOCAL_PRESERVE_MS;
-  });
+  const localOnly = localArr.filter(it => it && it.id && !cloudIds.has(it.id));
   return [...cloudArr, ...localOnly];
 }
 
