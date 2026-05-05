@@ -293,7 +293,12 @@ function renderManage() {
         '</div>' +
         '<div class="flex items-center gap-2">' +
         '<span class="text-sm font-bold ' + (isCancelled ? 'text-slate-500 line-through' : 'text-slate-900') + '">' + g.items.length + '종 · ' + totalQty + '개</span>' +
-        (isCancelled ? '' : '<button onclick="cancelRequestGroup(\'' + gid + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 요청을 취소합니다 (취소 탭으로 이동, 기록 보존)">❌ 취소</button>') +
+        // 대기: ❌ 취소 (취소 탭으로 영구 이동) / 완료: ↩ 되돌리기 (대기 탭으로 복귀)
+        (isCancelled ? '' :
+          (isPending
+            ? '<button onclick="cancelRequestGroup(\'' + gid + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="요청을 취소합니다 (취소 탭으로 이동, 기록 보존)">❌ 취소</button>'
+            : '<button onclick="cancelRequestGroup(\'' + gid + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold" title="반출 완료를 되돌립니다 (재고 복원 + 대기로 복귀)">↩ 되돌리기</button>'
+          )) +
         '</div></div>' +
         (groupMemo ? '<div class="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-slate-800">📝 <strong>요청자 메모:</strong> ' + escapeHtml(groupMemo) + '</div>' : '') +
         cancelledInfoHtml +
@@ -774,11 +779,11 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
 }
 
 // ============================================
-// 요청 취소 (대기/완료 모두 — 어떤 기록도 삭제 안 함)
+// 요청 취소 (어떤 기록도 삭제 안 함)
 // ============================================
-// 대기 → 취소: status만 변경
-// 완료 → 취소: 재고 복원 + history 항목에 cancelled 플래그 (보존)
-// 모든 기록은 [취소] 탭에서 영구 조회 가능
+// 대기 → 취소: status='cancelled' (영구 취소, [취소] 탭으로 이동)
+// 완료 → 대기 복귀: 재고 복원 + status='pending' + history에 cancelled 플래그
+//   → 잘못 처리한 거 되돌릴 수 있음. statusHistory에 처리 정보 보존
 function cancelRequestGroup(groupId) {
   const targetItems = requests.filter(r => makeGroupId(r) === groupId);
   if (targetItems.length === 0) return;
@@ -786,49 +791,68 @@ function cancelRequestGroup(groupId) {
   const isPending = manageStatusFilter === 'pending';
   const totalQty = targetItems.reduce((s, i) => s + i.qty, 0);
 
-  const title = isPending ? '대기 요청 취소' : '완료 처리 취소';
+  const title = isPending ? '대기 요청 취소' : '반출 완료 취소';
   const message = isPending
     ? '이 대기 요청을 취소합니다.\n\n총 ' + targetItems.length + '종 ' + totalQty + '개\n\n[취소] 탭으로 이동되며 기록은 영구 보존됩니다.'
-    : '이 반출 완료를 취소합니다.\n\n· 재고가 복원됩니다.\n· [취소] 탭으로 이동되며 기록은 영구 보존됩니다.\n· 입출고 이력은 보존되지만 통계에서 제외됩니다.\n\n총 ' + targetItems.length + '종 ' + totalQty + '개';
+    : '이 반출 완료를 취소합니다.\n\n· 재고가 복원됩니다\n· 요청은 [대기] 상태로 되돌아갑니다\n· 입출고 이력은 통계에서 제외 (기록은 보존)\n\n총 ' + targetItems.length + '종 ' + totalQty + '개';
 
   askConfirm(title, message, function() {
-    const cancelledAt = new Date().toISOString();
-    const cancelledBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+    const actionAt = new Date().toISOString();
+    const actionBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
     const groupRequestIds = new Set(targetItems.map(it => it.requestId).filter(Boolean));
 
-    if (!isPending) {
-      // 완료 → 취소: 재고 복원 + history에 cancelled 플래그 (삭제 X)
+    if (isPending) {
+      // 대기 → 취소: status만 cancelled로 (영구 취소)
+      targetItems.forEach(it => {
+        it.previousStatus = it.status || 'pending';
+        it.status = 'cancelled';
+        it.cancelledDate = actionAt;
+        it.cancelledBy = actionBy;
+      });
+    } else {
+      // 완료 → 대기 복귀: 재고 복원 + status='pending'
       targetItems.forEach(it => {
         const item = inventory.find(i => i.id === it.itemId);
         if (item) item.stock += it.qty;
       });
+      // history는 cancelled 플래그만 (삭제 X) — 통계에서 자동 제외
       history.forEach(h => {
         if (groupRequestIds.has(h.requestId)) {
           h.cancelled = true;
-          h.cancelledDate = cancelledAt;
-          h.cancelledBy = cancelledBy;
+          h.cancelledDate = actionAt;
+          h.cancelledBy = actionBy;
         }
+      });
+      // 요청 status를 pending으로 되돌리고, 처리 정보는 statusHistory에 보존
+      targetItems.forEach(it => {
+        if (!Array.isArray(it.statusHistory)) it.statusHistory = [];
+        it.statusHistory.push({
+          at: actionAt,
+          from: 'completed',
+          to: 'pending',
+          by: actionBy,
+          previousCompletedDate: it.completedDate,
+          previousReleasedBy: it.releasedBy,
+          previousReleasedDate: it.releasedDate
+        });
+        it.status = 'pending';
+        delete it.completedDate;
+        delete it.releasedBy;
+        delete it.releasedDate;
       });
     }
 
-    // 모든 요청 항목을 cancelled로 (status만 변경, 데이터 보존)
-    targetItems.forEach(it => {
-      it.previousStatus = it.status || 'pending';  // 뭐였는지 기록
-      it.status = 'cancelled';
-      it.cancelledDate = cancelledAt;
-      it.cancelledBy = cancelledBy;
-    });
-
     // audit log
     if (typeof logEvent === 'function') {
-      logEvent('request', isPending ? 'cancel_pending' : 'cancel_completed', {
-        summary: (isPending ? '대기 취소' : '완료 취소') +
+      logEvent('request', isPending ? 'cancel_pending' : 'revert_completed_to_pending', {
+        summary: (isPending ? '대기 → 취소' : '완료 → 대기 복귀') +
                  ': [' + targetItems[0].team + '] ' + (targetItems[0].requester || targetItems[0].member) +
                  ' ' + targetItems.length + '종 ' + totalQty + '개',
         team: targetItems[0].team,
         requester: targetItems[0].requester || targetItems[0].member,
         wasStatus: isPending ? 'pending' : 'completed',
-        cancelledBy: cancelledBy,
+        nowStatus: isPending ? 'cancelled' : 'pending',
+        actionBy: actionBy,
         items: targetItems.map(it => ({
           id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,
           vendor: it.vendor, unit: it.unit, date: it.date
@@ -839,7 +863,9 @@ function cancelRequestGroup(groupId) {
     delete manageSelection[groupId];
     saveAll();
     updateHeaderStats();
-    showToast(isPending ? '취소됨 — [취소] 탭에서 확인' : '완료 취소됨 — 재고 복원 + [취소] 탭에 기록');
+    showToast(isPending
+      ? '취소됨 — [취소] 탭에서 확인'
+      : '반출 완료 취소 — 재고 복원 + [대기] 상태로 복귀');
     renderManage();
   }, '예, 취소', 'red');
 }

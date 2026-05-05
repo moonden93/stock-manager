@@ -209,6 +209,15 @@ window.addEventListener('online', () => {
   forceFetchRequestsCollection();
 });
 
+// 폴링 백업: listener가 어떤 이유로든 잠들어도 5초 안에 따라잡음.
+// 탭이 활성일 때만 동작 (백그라운드일 땐 visibility 핸들러가 처리).
+// 5초 간격 = 사용자 체감 실시간 + Firestore 비용 미미.
+window._phase2PollTimer = window._phase2PollTimer || setInterval(() => {
+  if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive) {
+    forceFetchRequestsCollection();
+  }
+}, 5000);
+
 // Firebase 준비되면 listener 활성화
 if (typeof window !== 'undefined') {
   if (window.firebaseReady) {
