@@ -604,6 +604,21 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     }
     history.push(histRec);
 
+    // Phase 1: 반출 처리 audit log
+    if (typeof logEvent === 'function') {
+      logEvent('request', 'process', {
+        summary: '[' + it.team + '] ' + (it.requester || it.member) + ' → ' + releasedBy + '님 처리: ' + it.name + ' x ' + releaseQty,
+        requestId: it.id,
+        team: it.team,
+        requester: it.requester || it.member,
+        releasedBy: releasedBy,
+        item: it.name,
+        qty: releaseQty,
+        partial: releaseQty !== it.qty,
+        originalQty: it.qty
+      });
+    }
+
     if (releaseQty === it.qty) {
       // 전량 반출: 요청 status 변경
       it.status = 'completed';
@@ -685,12 +700,28 @@ function deleteRequestGroup(groupId) {
       history = history.filter(h => !groupRequestIds.has(h.requestId));
     }
 
+    // Phase 1: 삭제 audit log (삭제 전에 데이터 보존)
+    if (typeof logEvent === 'function') {
+      const summary = (isPending ? '대기 삭제' : '완료 취소') +
+                      ': [' + targetItems[0].team + '] ' + (targetItems[0].requester || targetItems[0].member) +
+                      ' ' + targetItems.length + '종 ' + totalQty + '개';
+      logEvent('request', isPending ? 'delete_pending' : 'cancel_completed', {
+        summary: summary,
+        team: targetItems[0].team,
+        requester: targetItems[0].requester || targetItems[0].member,
+        items: targetItems.map(it => ({
+          id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,
+          vendor: it.vendor, unit: it.unit, status: it.status, date: it.date
+        }))
+      });
+    }
+
     // 요청에서 해당 항목들만 삭제
     requests = requests.filter(r => !targetIds.has(r.id));
 
     // 선택 상태 초기화
     delete manageSelection[groupId];
-    
+
     saveAll();
     updateHeaderStats();
     showToast(isPending ? '대기 요청이 삭제되었습니다' : '완료 요청이 취소되고 재고가 복원되었습니다');

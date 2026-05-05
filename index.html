@@ -118,6 +118,9 @@
 <!-- 4.5. 주간 자동 이메일 백업 -->
 <script src="js/15-backup.js"></script>
 
+<!-- 4.6. Phase 1 안전 기반: 변경 이력 -->
+<script src="js/16-audit-log.js"></script>
+
 <!-- 5. 메인 진입점 (반드시 마지막) -->
 <script src="js/99-main.js"></script>
 
@@ -129,7 +132,7 @@
   (async () => {
     try {
       const { initializeApp } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js");
-      const { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js");
+      const { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, orderBy, limit } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js");
 
       const firebaseConfig = {
         apiKey: "AIzaSyCTbS9JLCiGIjqviYrW5_KMIZOSA95oYSU",
@@ -149,6 +152,12 @@
       window.firebaseSetDoc = setDoc;
       window.firebaseOnSnapshot = onSnapshot;
       window.firebaseServerTimestamp = serverTimestamp;
+      // Phase 1: events/ 컬렉션 — append-only audit log
+      window.firebaseCollection = collection;
+      window.firebaseAddDoc = addDoc;
+      window.firebaseQuery = query;
+      window.firebaseOrderBy = orderBy;
+      window.firebaseLimit = limit;
       window.firebaseReady = true;
 
       window.dispatchEvent(new Event('firebaseReady'));

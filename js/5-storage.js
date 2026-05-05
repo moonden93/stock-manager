@@ -312,14 +312,46 @@ function saveToLocalStorage() {
 // ============================================
 // Firebase Firestore 저장 (클라우드 메인)
 // ============================================
+// Phase 1 안전망: 직전 클라우드 카운트 캐시 (대량 감소 감지용)
+window._lastCloudSnapshot = window._lastCloudSnapshot || {
+  inventoryCount: 0, historyCount: 0, requestsCount: 0
+};
+
 async function saveToFirebase() {
   if (!window.firebaseReady) return;
 
-  // 보호: inventory + teams 둘 다 비어있는 비정상 상태에선 저장 거부.
+  // 보호 1: inventory + teams 둘 다 비어있는 비정상 상태에선 저장 거부.
   if (isDataSuspicious({ inventory, teams })) {
     console.warn('⚠️ 로컬 데이터가 비어있어 Firebase 저장을 거부했습니다 (클라우드 보호 모드)');
     return;
   }
+
+  // Phase 1 보호 2: 대량 감소 감지 (직전 클라우드 대비 30%+ 감소면 차단)
+  // 의도적이라면 콘솔에서 window._allowMassDecrease=true 설정 후 다시 시도
+  const prev = window._lastCloudSnapshot;
+  function checkMassDecrease(name, before, after) {
+    if (!before || before <= 5) return false;  // 표본 너무 작으면 무시
+    const drop = (before - after) / before;
+    if (drop > 0.3 && !window._allowMassDecrease) {
+      console.error('🛑 ' + name + ' 대량 감소 감지: ' + before + ' → ' + after +
+                    ' (' + Math.round(drop * 100) + '% 감소). 저장 거부.');
+      console.error('   의도적이라면 콘솔에서 window._allowMassDecrease=true 설정 후 다시 시도');
+      if (typeof showToast === 'function') {
+        showToast(name + ' 대량 감소 감지 — 저장 거부. 콘솔 확인.', 'error');
+      }
+      if (typeof logEvent === 'function') {
+        logEvent('system', 'save_blocked', {
+          summary: name + ' 대량 감소 (' + before + '→' + after + ')',
+          field: name, before, after, dropPct: Math.round(drop * 100)
+        });
+      }
+      return true;
+    }
+    return false;
+  }
+  if (checkMassDecrease('requests', prev.requestsCount, requests.length)) return;
+  if (checkMassDecrease('inventory', prev.inventoryCount, inventory.length)) return;
+  if (checkMassDecrease('history', prev.historyCount, history.length)) return;
 
   try {
     // setDoc + merge:true: payload에 포함된 필드만 갱신. 빈 teams/teamMembers를
@@ -351,6 +383,17 @@ async function saveToFirebase() {
     await window.firebaseSetDoc(docRef, payload, { merge: true });
     console.log('✅ Firebase 저장 성공');
     if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
+    // 성공 시 snapshot 갱신 (다음 save 비교 기준)
+    window._lastCloudSnapshot = {
+      inventoryCount: inventory.length,
+      historyCount: history.length,
+      requestsCount: requests.length
+    };
+    // _allowMassDecrease 플래그는 1회 사용 후 자동 해제
+    if (window._allowMassDecrease) {
+      window._allowMassDecrease = false;
+      console.log('ℹ️ _allowMassDecrease 플래그 자동 해제 (1회 사용 후)');
+    }
   } catch (err) {
     console.error('❌ Firebase 저장 실패:', err);
     if (typeof setFirebaseStatus === 'function') setFirebaseStatus('error', err && err.message);
@@ -385,6 +428,12 @@ async function loadFromFirebase() {
       saveToLocalStorage();
       console.log('✅ Firebase 로드 성공' + (cloudIncomplete ? ' (클라우드 부분 비어있음 — 자가 복원 검토)' : ''));
       if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
+      // Phase 1 안전망: 로드된 클라우드 카운트를 기준선으로 (다음 save 비교용)
+      window._lastCloudSnapshot = {
+        inventoryCount: (data.inventory || []).length,
+        historyCount: (data.history || []).length,
+        requestsCount: (data.requests || []).length
+      };
       return { loaded: true, cloudIncomplete };
     }
     return { loaded: false, cloudIncomplete: false };
@@ -419,6 +468,12 @@ function _applySyncData(data) {
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
   if (typeof renderFn === 'function') renderFn();
+  // Phase 1 안전망: 클라우드 카운트 기준선 갱신
+  window._lastCloudSnapshot = {
+    inventoryCount: (data.inventory || []).length,
+    historyCount: (data.history || []).length,
+    requestsCount: (data.requests || []).length
+  };
   console.log('🔄 동기화 완료');
 }
 
@@ -511,6 +566,10 @@ async function mcForceSyncFromCloud() {
     console.error('Firebase 연결 안 됨');
     if (typeof showToast === 'function') showToast('Firebase 연결 안 됨', 'error');
     return;
+  }
+  // Phase 1 안전망: audit log
+  if (typeof logEvent === 'function') {
+    logEvent('system', 'force_sync_from_cloud', { summary: '로컬을 클라우드 데이터로 강제 교체' });
   }
   try {
     const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');

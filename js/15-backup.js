@@ -830,8 +830,27 @@ if (typeof window !== 'undefined') {
     console.log('🧹 백업 쿨다운/주차 기록 초기화');
   };
 
+  // ⚠️ 위험 함수 잠금 — 콘솔에서 누구나 wipe하지 못하게 unlock token 필요
+  // 사용 예: mcUnlockDanger('잘못 누르면 모두 다 사라짐을 이해합니다')
+  function _isUnlocked() {
+    return window._dangerUnlocked === true;
+  }
+  window.mcUnlockDanger = function(phrase) {
+    if (phrase === '잘못 누르면 모두 다 사라짐을 이해합니다') {
+      window._dangerUnlocked = true;
+      console.log('🔓 위험 함수 잠금 해제됨 (이 세션 한정). 5분 후 자동 재잠금.');
+      setTimeout(() => { window._dangerUnlocked = false; console.log('🔒 위험 함수 자동 재잠금'); }, 5 * 60 * 1000);
+    } else {
+      console.error('잘못된 phrase. 정확한 문구를 입력해주세요.');
+    }
+  };
+
   // 시트 데이터(PREBUILT_HISTORY)를 history로 강제 재import.
   window.mcReimportFromSheets = function() {
+    if (!_isUnlocked()) {
+      console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
+      return;
+    }
     if (typeof PREBUILT_HISTORY === 'undefined') {
       console.error('PREBUILT_HISTORY 로드 안 됨 — 페이지 새로고침 후 재시도');
       return;
@@ -842,6 +861,8 @@ if (typeof window !== 'undefined') {
       console.log('취소됨');
       return;
     }
+    if (typeof logEvent === 'function') logEvent('system', 'mass_replace', { summary: 'history 시트 데이터 교체', before: oldCount, after: newCount });
+    window._allowMassDecrease = true;  // 의도된 대량 변경
     history.length = 0;
     PREBUILT_HISTORY.forEach(h => history.push(h));
     saveAll();
@@ -857,10 +878,16 @@ if (typeof window !== 'undefined') {
   // ⚠️ teamMembers는 유지 (사용자 설정 보존)
   // ⚠️ teams는 유지 (사용자 설정 보존)
   window.mcResetToSheetData = function() {
+    if (!_isUnlocked()) {
+      console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
+      return;
+    }
     if (typeof PREBUILT_HISTORY === 'undefined') {
       console.error('PREBUILT_HISTORY 로드 안 됨 — 페이지 새로고침 후 재시도');
       return;
     }
+    window._allowMassDecrease = true;  // 의도된 대량 변경
+    if (typeof logEvent === 'function') logEvent('system', 'mass_reset', { summary: 'mcResetToSheetData 실행' });
     const summary = '【 반출 기록을 시트 데이터로 리셋 】\n\n' +
       '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
       '요청:    ' + requests.length + '건 → 0건 (전부 삭제)\n\n' +

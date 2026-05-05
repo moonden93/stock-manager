@@ -537,8 +537,21 @@ function confirmRelease() {
         reqRecord.customImages = c.customImages || [];
       }
       requests.push(reqRecord);
+      // Phase 1: 모든 요청 생성을 audit log에 영구 기록
+      if (typeof logEvent === 'function') {
+        logEvent('request', 'create', {
+          summary: '[' + reqRecord.team + '] ' + reqRecord.requester + ' 요청: ' + reqRecord.name + ' x ' + reqRecord.qty,
+          requestId: reqRecord.id,
+          team: reqRecord.team,
+          requester: reqRecord.requester,
+          item: reqRecord.name,
+          qty: reqRecord.qty,
+          vendor: reqRecord.vendor,
+          isCustom: !!reqRecord.isCustom
+        });
+      }
     });
-    
+
     saveAll();
     updateHeaderStats();
     const totalQty = cart.reduce((s, c) => s + c.qty, 0);
