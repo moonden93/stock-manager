@@ -447,7 +447,7 @@ function generateReportExcel(data) {
   // 4. 팀별 AI 분석 (이번 달 vs 지난 3개월 평균)
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-  const outHist = history.filter(h => h.type === 'out');
+  const outHist = history.filter(h => h.type === 'out' && !h.cancelled);
   const thisMonth = outHist.filter(h => new Date(h.date) >= tmStart);
   const past3 = outHist.filter(h => {
     const d = new Date(h.date);

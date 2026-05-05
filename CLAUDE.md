@@ -259,4 +259,63 @@ mcGetThisWeek()                 // 현재 ISO 주차
 
 ---
 
-_마지막 갱신: 2026-05-04 (누적 마스터 시트 기능 추가)_
+_마지막 갱신: 2026-05-05 (사고 + Phase 1 안전 기반 + 요청자 수정/취소)_
+
+---
+
+## 11. 2026-05-05 작업 요약 (사고 + 재설계 시작)
+
+### 사고
+- 20:02 KST: 5/3 유현영 5건 production 요청 데이터 wipe됨
+- 원인: 시간 기반 머지(commit f26c6f7)가 stale local + 일시적 빈 cloud 상황에서
+  옛 로컬 항목 드롭 → ensureStandardTeams_ 자동 saveAll → 클라우드 영구 wipe
+- 즉시 revert (commit c50dde7). 데이터는 어디에도 남아있지 않아 복구 불가
+- 본질 원인: 단일 문서 구조 + 변경 이력 부재. Phase 1 안전 기반 도입함
+
+### Phase 1 안전 기반 (완료)
+- [REDESIGN.md](REDESIGN.md) — 50명 동시접속 안전 운영 5단계 계획
+- [js/16-audit-log.js](js/16-audit-log.js) — Firestore `events/` 컬렉션 append-only 변경 이력
+  - `logEvent(type, action, payload)` — 카테고리별 기록
+  - device id + label + 클라이언트 시간 자동 포함
+  - `mcViewRecentEvents()` / `mcViewEventsByType('request')` 콘솔 진단
+- saveToFirebase 대량 감소 가드: 30%+ 감소 시 차단 (`_allowMassDecrease=true`로 1회 우회)
+- 위험 콘솔 함수 잠금: `mcUnlockDanger("...")` 5분 일시 해제
+- 요청 생성/처리/삭제 모두 audit log 자동 기록
+
+### 요청자 본인 수정/취소 + 메모 + 이력 보존 (완료)
+- 요청 등록 confirm 모달에 메모 입력 (placeholder "예: 문치과 화이팅")
+- 요청 탭 Step 2 직후 "요청관리" 섹션 (같은 팀 대기 요청 ✏️ 수정 / 🗑️ 취소)
+- 비밀번호 없이 직원 본인 책임으로 가능
+- 취소 = 소프트 취소 (`status='cancelled'`, 데이터 보존)
+- 수정 = `editHistory` 배열에 영구 추가 (qtyFrom/To, memoFrom/To, by, at)
+- 반출관리 표시:
+  - 취소 그룹: 회색 + ❌ 취소 배지 + 취소자/날짜
+  - 수정된 항목: `✏️ <s>5</s>→10` 인라인 표시
+- 반출관리 상태 탭 3개: 대기 / 완료 / 취소
+- 완료/취소 탭은 **주차별 collapsible 그룹** (`toggleManageWeek(wk)`)
+
+### 다음 진행 우선순위 (사용자 결정 사항)
+1. **Phase 2** — 요청 컬렉션화 (race condition 본질 해결). 며칠 테스트 후 진행
+2. **Phase 4** — Google 로그인 도입. 50명 동시접속 운영 필수 권장
+
+### 알려진 제약 / 미해결
+- **Race condition** 여전 존재 — 단일 문서 구조 (Phase 2에서 해결)
+- **인증 없음** — device 단위만 추적 (Phase 4에서 사용자 단위)
+- **5/3 유현영 5건** — 복구 불가, 유현영 선생님 확인 후 재입력 필요
+- **Apps Script GitHub 자동 sync 안 됨** — 변경 시 코드 복붙 필요
+
+### 콘솔 함수 (사고 대비)
+```js
+// 변경 이력 조회
+mcViewRecentEvents()              // 최근 50건
+mcViewEventsByType('request')     // 요청 관련만
+mcViewEventsByType('system')      // 시스템 액션 (wipe, sync 등)
+
+// 기기 식별 (audit log에 표시될 라벨)
+setDeviceLabel('원장님 PC')
+setDeviceLabel('9층 데스크 폰')
+
+// 위험 함수 사용 (5분 일시 해제)
+mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다")
+mcResetToSheetData()  // 잠금 해제 후 사용 가능
+```

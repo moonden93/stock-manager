@@ -90,7 +90,7 @@ function exportStatsToExcel() {
   }
   
   // 현재 필터 적용된 출고 데이터 (사용자 지정 기간 포함)
-  let baseHistory = history.filter(h => h.type === 'out');
+  let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled);
   if (statsPeriod === 'month') {
     const ms = new Date(); ms.setDate(1); ms.setHours(0,0,0,0);
     baseHistory = baseHistory.filter(h => new Date(h.date) >= ms);

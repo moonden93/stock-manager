@@ -236,7 +236,29 @@ function isDataSuspicious(d) {
   if (!d) return true;
   const invEmpty = !Array.isArray(d.inventory) || d.inventory.length === 0;
   const teamsEmpty = !Array.isArray(d.teams) || d.teams.length === 0;
+  // 핵심 골격(품목+팀) 둘 다 비어있으면 비정상.
+  // requests/teamMembers는 별도 개별 가드(saveToFirebase의 대량 감소 가드)로 보호.
   return invEmpty && teamsEmpty;
+}
+
+// Phase 1 강화: 클라우드 데이터의 갑작스런 대량 감소 감지 (load 시점)
+// 사고 후 wipe된 클라우드를 안고 시작하지 않게 추가 경고.
+function detectCloudWipeOnLoad(data, lastSnap) {
+  if (!data || !lastSnap) return null;
+  const checks = [];
+  if (Array.isArray(data.requests) && lastSnap.requestsCount > 5) {
+    const drop = (lastSnap.requestsCount - data.requests.length) / lastSnap.requestsCount;
+    if (drop > 0.5) checks.push('requests ' + lastSnap.requestsCount + '→' + data.requests.length);
+  }
+  if (Array.isArray(data.history) && lastSnap.historyCount > 100) {
+    const drop = (lastSnap.historyCount - data.history.length) / lastSnap.historyCount;
+    if (drop > 0.3) checks.push('history ' + lastSnap.historyCount + '→' + data.history.length);
+  }
+  if (Array.isArray(data.inventory) && lastSnap.inventoryCount > 100) {
+    const drop = (lastSnap.inventoryCount - data.inventory.length) / lastSnap.inventoryCount;
+    if (drop > 0.3) checks.push('inventory ' + lastSnap.inventoryCount + '→' + data.inventory.length);
+  }
+  return checks.length > 0 ? checks.join(', ') : null;
 }
 
 // 변경사항 적용 헬퍼: 클라우드 데이터를 로컬에 반영하되 보호 규칙 적용

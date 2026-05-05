@@ -384,7 +384,7 @@ function generateReportExcel() {
   // 11-stats.js의 이상치 로직 포팅: 팀별 + 품목별 집계, ±30%/신규/중단 분류
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-  const outHist = history.filter(h => h.type === 'out');
+  const outHist = history.filter(h => h.type === 'out' && !h.cancelled);
   const thisMonth = outHist.filter(h => new Date(h.date) >= tmStart);
   const past3 = outHist.filter(h => {
     const d = new Date(h.date);

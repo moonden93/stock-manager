@@ -155,7 +155,40 @@ function renderManage() {
       '<p class="text-4xl mb-2">📭</p>' +
       '<p class="text-sm">' + emptyMsg + '</p></div>';
   } else {
-    groups.forEach(g => {
+    // 완료/취소 탭은 주차별로 묶어서 collapsible 표시 (계속 누적되는 기록 정리)
+    const groupByWeek = (manageStatusFilter !== 'pending');
+    let lastWeekKey = null;
+    window._manageExpandedWeeks = window._manageExpandedWeeks || {};
+
+    groups.forEach((g, gi) => {
+      // 주차 헤더 삽입 (완료/취소 탭에서만)
+      if (groupByWeek) {
+        const wk = (typeof getWeekKey === 'function') ? getWeekKey(g.date) : (g.date || '').slice(0, 7);
+        if (wk !== lastWeekKey) {
+          if (lastWeekKey !== null) html += '</div></div>';  // 이전 주차 닫기
+          // 첫 번째 주차는 자동 펼침, 나머지는 사용자 선호 또는 접힘
+          const isFirst = (lastWeekKey === null);
+          const expanded = (window._manageExpandedWeeks[wk] === undefined) ? isFirst : window._manageExpandedWeeks[wk];
+          // 그 주차에 속한 그룹 수 + 합계 미리 계산
+          let wkCount = 0, wkQty = 0;
+          for (let j = gi; j < groups.length; j++) {
+            const wk2 = (typeof getWeekKey === 'function') ? getWeekKey(groups[j].date) : (groups[j].date || '').slice(0, 7);
+            if (wk2 !== wk) break;
+            wkCount += groups[j].items.length;
+            wkQty += groups[j].items.reduce((s, i) => s + i.qty, 0);
+          }
+          const wkLabel = (typeof formatWeekLabel === 'function') ? formatWeekLabel(wk) : wk;
+          html += '<div class="border-t-2 border-slate-200">' +
+            '<button onclick="toggleManageWeek(\'' + escapeJs(wk) + '\')" ' +
+            'class="w-full px-4 py-3 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 text-left">' +
+            '<span class="text-slate-500 text-xs">' + (expanded ? '▼' : '▶') + '</span>' +
+            '<span class="font-bold text-slate-800 text-sm">📅 ' + escapeHtml(wkLabel) + '</span>' +
+            '<span class="ml-auto text-xs text-slate-600">' + wkCount + '종 · ' + wkQty + '개</span>' +
+            '</button>' +
+            '<div class="' + (expanded ? '' : 'hidden') + '">';
+          lastWeekKey = wk;
+        }
+      }
       // 날짜만 표시 (시간 X) — 같은 날 여러 번 신청해도 한 카드라 시간 의미 없음
       const dt = new Date(g.date);
       const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
@@ -240,7 +273,7 @@ function renderManage() {
         '</div>' +
         '<div class="flex items-center gap-2">' +
         '<span class="text-sm font-bold ' + (isCancelled ? 'text-slate-500 line-through' : 'text-slate-900') + '">' + g.items.length + '종 · ' + totalQty + '개</span>' +
-        (isCancelled ? '' : '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>') +
+        (isCancelled ? '' : '<button onclick="cancelRequestGroup(\'' + gid + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 요청을 취소합니다 (취소 탭으로 이동, 기록 보존)">❌ 취소</button>') +
         '</div></div>' +
         (groupMemo ? '<div class="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-slate-800">📝 <strong>요청자 메모:</strong> ' + escapeHtml(groupMemo) + '</div>' : '') +
         cancelledInfoHtml +
@@ -359,10 +392,26 @@ function renderManage() {
 
       html += '</div>';
     });
+    // 마지막 주차 컨테이너 닫기 (완료/취소 탭에서만)
+    if (groupByWeek && lastWeekKey !== null) {
+      html += '</div></div>';
+    }
   }
-  
+
   html += '</div></div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// 주차 헤더 토글
+function toggleManageWeek(weekKey) {
+  window._manageExpandedWeeks = window._manageExpandedWeeks || {};
+  // 현재 상태가 undefined인 경우는 첫 번째라서 자동 펼침된 상태 → 접음
+  if (window._manageExpandedWeeks[weekKey] === undefined) {
+    window._manageExpandedWeeks[weekKey] = false;
+  } else {
+    window._manageExpandedWeeks[weekKey] = !window._manageExpandedWeeks[weekKey];
+  }
+  renderManage();
 }
 
 // ============================================
@@ -705,71 +754,78 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
 }
 
 // ============================================
-// 요청 삭제 (대기/완료 모두 처리)
+// 요청 취소 (대기/완료 모두 — 어떤 기록도 삭제 안 함)
 // ============================================
-function deleteRequestGroup(groupId) {
-  // 그룹에 속한 항목들 (현재 탭의 status로 묶인 것만)
+// 대기 → 취소: status만 변경
+// 완료 → 취소: 재고 복원 + history 항목에 cancelled 플래그 (보존)
+// 모든 기록은 [취소] 탭에서 영구 조회 가능
+function cancelRequestGroup(groupId) {
   const targetItems = requests.filter(r => makeGroupId(r) === groupId);
   if (targetItems.length === 0) return;
 
   const isPending = manageStatusFilter === 'pending';
   const totalQty = targetItems.reduce((s, i) => s + i.qty, 0);
 
-  let title, message, confirmText;
-  if (isPending) {
-    title = '대기 요청 삭제';
-    message = '이 대기 요청을 삭제하시겠습니까?\n\n총 ' + targetItems.length + '종 ' + totalQty + '개\n\n💡 아직 재고가 차감되지 않아 복원이 필요 없습니다.';
-    confirmText = '예, 삭제';
-  } else {
-    title = '완료 요청 취소';
-    message = '이 반출 완료 내역을 취소하시겠습니까?\n\n취소된 수량은 재고로 복원됩니다.\n총 ' + targetItems.length + '종 ' + totalQty + '개';
-    confirmText = '예, 취소';
-  }
+  const title = isPending ? '대기 요청 취소' : '완료 처리 취소';
+  const message = isPending
+    ? '이 대기 요청을 취소합니다.\n\n총 ' + targetItems.length + '종 ' + totalQty + '개\n\n[취소] 탭으로 이동되며 기록은 영구 보존됩니다.'
+    : '이 반출 완료를 취소합니다.\n\n· 재고가 복원됩니다.\n· [취소] 탭으로 이동되며 기록은 영구 보존됩니다.\n· 입출고 이력은 보존되지만 통계에서 제외됩니다.\n\n총 ' + targetItems.length + '종 ' + totalQty + '개';
 
   askConfirm(title, message, function() {
-    const targetIds = new Set(targetItems.map(it => it.id));
-    // 그룹에 속한 원본 requestId들 (history 정리용)
+    const cancelledAt = new Date().toISOString();
+    const cancelledBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
     const groupRequestIds = new Set(targetItems.map(it => it.requestId).filter(Boolean));
 
     if (!isPending) {
-      // 완료 상태였으면 재고 복원
+      // 완료 → 취소: 재고 복원 + history에 cancelled 플래그 (삭제 X)
       targetItems.forEach(it => {
         const item = inventory.find(i => i.id === it.itemId);
         if (item) item.stock += it.qty;
       });
-      // 이력에서 해당 requestId들과 매칭되는 항목 삭제
-      // (history는 항목별 requestId로 보존되므로 그룹의 모든 requestId를 제거)
-      history = history.filter(h => !groupRequestIds.has(h.requestId));
+      history.forEach(h => {
+        if (groupRequestIds.has(h.requestId)) {
+          h.cancelled = true;
+          h.cancelledDate = cancelledAt;
+          h.cancelledBy = cancelledBy;
+        }
+      });
     }
 
-    // Phase 1: 삭제 audit log (삭제 전에 데이터 보존)
+    // 모든 요청 항목을 cancelled로 (status만 변경, 데이터 보존)
+    targetItems.forEach(it => {
+      it.previousStatus = it.status || 'pending';  // 뭐였는지 기록
+      it.status = 'cancelled';
+      it.cancelledDate = cancelledAt;
+      it.cancelledBy = cancelledBy;
+    });
+
+    // audit log
     if (typeof logEvent === 'function') {
-      const summary = (isPending ? '대기 삭제' : '완료 취소') +
-                      ': [' + targetItems[0].team + '] ' + (targetItems[0].requester || targetItems[0].member) +
-                      ' ' + targetItems.length + '종 ' + totalQty + '개';
-      logEvent('request', isPending ? 'delete_pending' : 'cancel_completed', {
-        summary: summary,
+      logEvent('request', isPending ? 'cancel_pending' : 'cancel_completed', {
+        summary: (isPending ? '대기 취소' : '완료 취소') +
+                 ': [' + targetItems[0].team + '] ' + (targetItems[0].requester || targetItems[0].member) +
+                 ' ' + targetItems.length + '종 ' + totalQty + '개',
         team: targetItems[0].team,
         requester: targetItems[0].requester || targetItems[0].member,
+        wasStatus: isPending ? 'pending' : 'completed',
+        cancelledBy: cancelledBy,
         items: targetItems.map(it => ({
           id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,
-          vendor: it.vendor, unit: it.unit, status: it.status, date: it.date
+          vendor: it.vendor, unit: it.unit, date: it.date
         }))
       });
     }
 
-    // 요청에서 해당 항목들만 삭제
-    requests = requests.filter(r => !targetIds.has(r.id));
-
-    // 선택 상태 초기화
     delete manageSelection[groupId];
-
     saveAll();
     updateHeaderStats();
-    showToast(isPending ? '대기 요청이 삭제되었습니다' : '완료 요청이 취소되고 재고가 복원되었습니다');
+    showToast(isPending ? '취소됨 — [취소] 탭에서 확인' : '완료 취소됨 — 재고 복원 + [취소] 탭에 기록');
     renderManage();
-  }, confirmText, 'red');
+  }, '예, 취소', 'red');
 }
+
+// 기존 deleteRequestGroup 호출이 남아있을 수 있어 alias 유지
+function deleteRequestGroup(groupId) { cancelRequestGroup(groupId); }
 
 // ============================================
 // 직접 요청(isCustom) 상세 보기 모달

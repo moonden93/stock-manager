@@ -200,7 +200,7 @@ function appendToMasterSheet(data) {
     const k = (h.vendor || '') + '::' + (h.name || '');
     if (h.type === 'in') {
       weekIn[k] = (weekIn[k] || 0) + (h.qty || 0);
-    } else if (h.type === 'out') {
+    } else if (h.type === 'out' && !h.cancelled) {
       const t = h.team || '(미지정)';
       if (!weekOut[k]) weekOut[k] = {};
       weekOut[k][t] = (weekOut[k][t] || 0) + (h.qty || 0);

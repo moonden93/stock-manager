@@ -16,7 +16,7 @@ let anomalyMonth = '';
 
 function renderStats() {
   // 기간 필터링
-  let baseHistory = history.filter(h => h.type === 'out');
+  let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled);
   
   if (statsPeriod === 'month') {
     const monthStart = new Date();
@@ -525,7 +525,7 @@ function renderStatsByAnomaly() {
   const thisMonthEnd = new Date(targetYear, targetMonth + 1, 1);  // 다음 달 1일 (exclusive)
   const threeMonthsAgoStart = new Date(targetYear, targetMonth - 3, 1);
 
-  const outHistory = history.filter(h => h.type === 'out');
+  const outHistory = history.filter(h => h.type === 'out' && !h.cancelled);
   const thisMonth = outHistory.filter(h => {
     const d = new Date(h.date);
     return d >= thisMonthStart && d < thisMonthEnd;
