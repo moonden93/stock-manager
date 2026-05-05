@@ -871,12 +871,73 @@ if (typeof window !== 'undefined') {
     console.log('✓ history 교체 완료: ' + oldCount + ' → ' + newCount + '건 (Firestore에도 반영)');
   };
 
-  // 반출 기록만 시트 데이터로 리셋 (담당자/품목 설정은 보존).
-  // - history: 시트 1481건으로 교체 (테스트로 처리한 5월 기록 제거)
-  // - requests: 비움 (테스트 요청 제거)
-  // ⚠️ inventory는 유지 (사용자 설정 보존)
-  // ⚠️ teamMembers는 유지 (사용자 설정 보존)
-  // ⚠️ teams는 유지 (사용자 설정 보존)
+  // 종합 초기화: 시트 4월 5주차 스냅샷으로 모든 운영 데이터 되돌림.
+  // - inventory: 시트 568개로 교체 (재고/단가 모두)
+  // - history: 시트 1481건으로 교체 (테스트 출고 제거)
+  // - requests: 비움 + requests/ 컬렉션 docs 모두 삭제
+  // ⚠️ teams/teamMembers/documents 유지 (운영 설정)
+  window.mcFullResetToSheet = async function() {
+    if (!_isUnlocked()) {
+      console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
+      return;
+    }
+    if (typeof PREBUILT_HISTORY === 'undefined' || typeof INITIAL_ITEMS === 'undefined') {
+      console.error('데이터 로드 안 됨 — 페이지 새로고침 후 재시도');
+      return;
+    }
+    const summary = '【 시트 4월 5주차로 완전 초기화 】\n\n' +
+      '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n' +
+      '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
+      '요청:    ' + requests.length + '건 → 0건 (단일문서 + 컬렉션 모두)\n\n' +
+      '【 보존됨 】\n팀, 담당자, 문서함\n\n계속하시겠습니까?';
+    if (!confirm(summary)) {
+      console.log('취소됨');
+      return;
+    }
+    if (typeof logEvent === 'function') {
+      logEvent('system', 'full_reset_to_sheet', {
+        summary: '시트 4월 5주차로 완전 초기화',
+        before: { inventory: inventory.length, history: history.length, requests: requests.length }
+      });
+    }
+    window._allowMassDecrease = true;
+
+    // 1. requests/ 컬렉션의 모든 doc 삭제 (안 하면 listener가 다시 가져옴)
+    if (window.firebaseReady && window.firebaseGetDocs && window.firebaseDeleteDoc) {
+      try {
+        const col = window.firebaseCollection(window.firebaseDB, 'requests');
+        const snap = await window.firebaseGetDocs(col);
+        console.log('🗑️ requests/ 컬렉션 ' + snap.size + '개 삭제 중...');
+        let done = 0;
+        for (const docSnap of snap.docs) {
+          await window.firebaseDeleteDoc(docSnap.ref);
+          done++;
+          if (done % 5 === 0 || done === snap.size) console.log('  ' + done + '/' + snap.size);
+        }
+        console.log('✓ 컬렉션 정리 완료');
+      } catch (err) {
+        console.error('컬렉션 삭제 실패 (수동 정리 필요):', err.message);
+      }
+    }
+
+    // 2. 로컬 데이터 reset
+    inventory.length = 0;
+    INITIAL_ITEMS.forEach(it => inventory.push({ ...it }));
+    history.length = 0;
+    PREBUILT_HISTORY.forEach(h => history.push(h));
+    requests.length = 0;
+
+    // 3. saveAll로 단일 문서에도 반영
+    window._allowMassDecrease = true;  // 한번 더 (saveAll에서 소비됨)
+    saveAll();
+
+    if (typeof updateHeaderStats === 'function') updateHeaderStats();
+    if (typeof switchTab === 'function') switchTab(currentTab);
+    console.log('✓ 시트 4월 5주차로 초기화 완료. 모든 기기 새로고침 권장.');
+    if (typeof showToast === 'function') showToast('초기화 완료. 다른 기기는 새로고침 필요', 'success');
+  };
+
+  // 옛 함수 (담당자/품목 보존, history+requests만 리셋) — 호환 유지
   window.mcResetToSheetData = function() {
     if (!_isUnlocked()) {
       console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
