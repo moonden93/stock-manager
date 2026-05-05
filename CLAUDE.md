@@ -294,8 +294,24 @@ _마지막 갱신: 2026-05-05 (사고 + Phase 1 안전 기반 + 요청자 수정
 - 반출관리 상태 탭 3개: 대기 / 완료 / 취소
 - 완료/취소 탭은 **주차별 collapsible 그룹** (`toggleManageWeek(wk)`)
 
-### 다음 진행 우선순위 (사용자 결정 사항)
-1. **Phase 2** — 요청 컬렉션화 (race condition 본질 해결). 며칠 테스트 후 진행
+### Phase 2 시작 (병렬 쓰기, 비파괴 마이그레이션)
+- [js/17-requests-collection.js](js/17-requests-collection.js) — 요청 per-document 컬렉션
+- 매 saveAll에 디바운스(1.5초) 후 자동 병렬 upsert
+- 단일 문서는 그대로, requests/{id} 컬렉션이 같이 채워짐
+- 사고로 단일 문서 wipe돼도 requests/ 컬렉션에 백업 자동 존재
+- 콘솔 함수:
+  - `mcBackfillRequestsCollection()` — 현재 메모리 → 컬렉션 백필 (1회)
+  - `mcCheckRequestsCollection()` — 컬렉션 vs 단일 문서 동기화 확인
+- **다음 단계**: 1~2주 검증 후 읽기를 컬렉션으로 cutover (race condition 완전 해소)
+
+### 4탭 + 주차별 그룹 (반출관리)
+- 상태 탭: 대기 / 완료 / 취소 / 전체 (NEW)
+- 모든 탭에서 주차별 collapsible 그룹
+- 현재 주차만 자동 펼침, 과거 주차는 접힘 (탭하면 펼침)
+- `_manageExpandedWeeks` 객체로 사용자 토글 상태 보존
+
+### 다음 진행 우선순위
+1. **Phase 2 cutover** — 검증 후 컬렉션 읽기 전환 (race condition 본질 해결)
 2. **Phase 4** — Google 로그인 도입. 50명 동시접속 운영 필수 권장
 
 ### 알려진 제약 / 미해결

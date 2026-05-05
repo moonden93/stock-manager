@@ -52,7 +52,9 @@ function ensureSelection(groupId, items) {
 
 function renderManage() {
   // status 필터 먼저 적용
-  let filtered = requests.filter(r => getReqStatus(r) === manageStatusFilter);
+  let filtered = (manageStatusFilter === 'all')
+    ? requests.slice()
+    : requests.filter(r => getReqStatus(r) === manageStatusFilter);
   filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
   
   if (manageFilter === 'today') {
@@ -72,6 +74,7 @@ function renderManage() {
   const pendingCount = requests.filter(r => getReqStatus(r) === 'pending').length;
   const completedCount = requests.filter(r => getReqStatus(r) === 'completed').length;
   const cancelledCount = requests.filter(r => getReqStatus(r) === 'cancelled').length;
+  const allCount = requests.length;
   
   // 통계 (현재 status 필터 기준)
   const statusFiltered = requests.filter(r => getReqStatus(r) === manageStatusFilter);
@@ -99,22 +102,27 @@ function renderManage() {
     '<h2 class="text-lg font-bold text-slate-900 mb-1">📋 반출 요청 관리</h2>' +
     '<p class="text-sm text-slate-600"><strong class="text-amber-700">대기</strong> 중인 요청을 확인하고 <strong class="text-emerald-700">반출 완료</strong> 처리합니다</p></div>' +
     
-    // 상태 탭 (대기 / 완료 / 취소)
-    '<div class="grid grid-cols-3 gap-2">' +
-    '<button onclick="manageStatusFilter = \'pending\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
+    // 상태 탭 (대기 / 완료 / 취소 / 전체)
+    '<div class="grid grid-cols-4 gap-2">' +
+    '<button onclick="manageStatusFilter = \'pending\'; renderManage();" class="rounded-xl p-2 border-2 transition ' +
     (manageStatusFilter === 'pending' ? 'border-amber-500 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
-    '<p class="text-xs ' + (manageStatusFilter === 'pending' ? 'text-amber-700' : 'text-slate-500') + ' font-bold">⏳ 대기</p>' +
-    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'pending' ? 'text-amber-600' : 'text-slate-700') + '">' + pendingCount + '</p>' +
+    '<p class="text-[10px] ' + (manageStatusFilter === 'pending' ? 'text-amber-700' : 'text-slate-500') + ' font-bold">⏳ 대기</p>' +
+    '<p class="text-xl font-bold ' + (manageStatusFilter === 'pending' ? 'text-amber-600' : 'text-slate-700') + '">' + pendingCount + '</p>' +
     '</button>' +
-    '<button onclick="manageStatusFilter = \'completed\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
+    '<button onclick="manageStatusFilter = \'completed\'; renderManage();" class="rounded-xl p-2 border-2 transition ' +
     (manageStatusFilter === 'completed' ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
-    '<p class="text-xs ' + (manageStatusFilter === 'completed' ? 'text-emerald-700' : 'text-slate-500') + ' font-bold">✅ 완료</p>' +
-    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'completed' ? 'text-emerald-600' : 'text-slate-700') + '">' + completedCount + '</p>' +
+    '<p class="text-[10px] ' + (manageStatusFilter === 'completed' ? 'text-emerald-700' : 'text-slate-500') + ' font-bold">✅ 완료</p>' +
+    '<p class="text-xl font-bold ' + (manageStatusFilter === 'completed' ? 'text-emerald-600' : 'text-slate-700') + '">' + completedCount + '</p>' +
     '</button>' +
-    '<button onclick="manageStatusFilter = \'cancelled\'; renderManage();" class="rounded-xl p-3 border-2 transition ' +
+    '<button onclick="manageStatusFilter = \'cancelled\'; renderManage();" class="rounded-xl p-2 border-2 transition ' +
     (manageStatusFilter === 'cancelled' ? 'border-slate-500 bg-slate-100' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
-    '<p class="text-xs ' + (manageStatusFilter === 'cancelled' ? 'text-slate-700' : 'text-slate-500') + ' font-bold">❌ 취소</p>' +
-    '<p class="text-2xl font-bold ' + (manageStatusFilter === 'cancelled' ? 'text-slate-700' : 'text-slate-700') + '">' + cancelledCount + '</p>' +
+    '<p class="text-[10px] ' + (manageStatusFilter === 'cancelled' ? 'text-slate-700' : 'text-slate-500') + ' font-bold">❌ 취소</p>' +
+    '<p class="text-xl font-bold text-slate-700">' + cancelledCount + '</p>' +
+    '</button>' +
+    '<button onclick="manageStatusFilter = \'all\'; renderManage();" class="rounded-xl p-2 border-2 transition ' +
+    (manageStatusFilter === 'all' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300') + '">' +
+    '<p class="text-[10px] ' + (manageStatusFilter === 'all' ? 'text-blue-700' : 'text-slate-500') + ' font-bold">📋 전체</p>' +
+    '<p class="text-xl font-bold ' + (manageStatusFilter === 'all' ? 'text-blue-600' : 'text-slate-700') + '">' + allCount + '</p>' +
     '</button>' +
     '</div>' +
     
@@ -155,20 +163,21 @@ function renderManage() {
       '<p class="text-4xl mb-2">📭</p>' +
       '<p class="text-sm">' + emptyMsg + '</p></div>';
   } else {
-    // 완료/취소 탭은 주차별로 묶어서 collapsible 표시 (계속 누적되는 기록 정리)
-    const groupByWeek = (manageStatusFilter !== 'pending');
+    // 모든 탭에서 주차별 collapsible 그룹 (현재 주차만 자동 펼침, 나머지 접힘)
+    const groupByWeek = true;
+    const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
     let lastWeekKey = null;
     window._manageExpandedWeeks = window._manageExpandedWeeks || {};
 
     groups.forEach((g, gi) => {
-      // 주차 헤더 삽입 (완료/취소 탭에서만)
       if (groupByWeek) {
         const wk = (typeof getWeekKey === 'function') ? getWeekKey(g.date) : (g.date || '').slice(0, 7);
         if (wk !== lastWeekKey) {
           if (lastWeekKey !== null) html += '</div></div>';  // 이전 주차 닫기
-          // 첫 번째 주차는 자동 펼침, 나머지는 사용자 선호 또는 접힘
-          const isFirst = (lastWeekKey === null);
-          const expanded = (window._manageExpandedWeeks[wk] === undefined) ? isFirst : window._manageExpandedWeeks[wk];
+          // 현재 주차만 자동 펼침. 첫 번째라도 과거 주차면 접힘.
+          // 사용자가 토글하면 그 선호를 따름.
+          const isCurrentWk = (wk === currentWeek);
+          const expanded = (window._manageExpandedWeeks[wk] === undefined) ? isCurrentWk : window._manageExpandedWeeks[wk];
           // 그 주차에 속한 그룹 수 + 합계 미리 계산
           let wkCount = 0, wkQty = 0;
           for (let j = gi; j < groups.length; j++) {
