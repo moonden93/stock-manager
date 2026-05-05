@@ -595,6 +595,10 @@ function doSubmitRequest(memo) {
         reqRecord.customImages = c.customImages || [];
       }
       requests.push(reqRecord);
+      // Phase 2 — 즉시 컬렉션에 쓰기 (디바운스 우회로 실시간 반영 보장)
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(reqRecord);
+      }
       // Phase 1: 모든 요청 생성을 audit log에 영구 기록
       if (typeof logEvent === 'function') {
         logEvent('request', 'create', {

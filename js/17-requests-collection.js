@@ -103,9 +103,8 @@ function setupRequestsCollectionListener() {
   try {
     const col = window.firebaseCollection(window.firebaseDB, 'requests');
     window.firebaseOnSnapshot(col, (snap) => {
-      // 자기 디바이스의 pending write는 스킵 (echo 방지)
-      if (snap.metadata && snap.metadata.hasPendingWrites) return;
-
+      // ⚠️ hasPendingWrites 필터 제거: PC가 자기 변경 중일 때 폰의 변경이
+      // 같이 무시되던 버그. 자기 변경의 echo는 어차피 같은 데이터라 안전함.
       const newReqs = [];
       snap.forEach(doc => {
         const d = doc.data();
@@ -115,6 +114,7 @@ function setupRequestsCollectionListener() {
         }
         newReqs.push(cleaned);
       });
+      console.log('🔄 requests/ listener fired (' + newReqs.length + '건, pending=' + (snap.metadata && snap.metadata.hasPendingWrites) + ')');
 
       // 사용자가 입력 중이면 sync 보류 (입력 깨짐 방지)
       const isTyping = (function() {
