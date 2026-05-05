@@ -315,31 +315,92 @@ _마지막 갱신: 2026-05-05 (사고 + Phase 1 안전 기반 + 요청자 수정
 - 단일 문서 appData/main.requests는 backup으로 계속 쓰기 (안전망)
 - applyCloudData는 컬렉션 listener 활성화되면 단일 문서 requests 무시
 - 입력 중일 때 sync 보류 + focusout 후 적용 (입력 깨짐 방지)
+- 디바운스 1500ms → 300ms 단축 (실시간성 향상)
+- 새 요청 생성 시 즉시 upsertRequestDoc (디바운스 우회로 즉시 반영)
 - 효과: 두 기기가 동시에 다른 요청 만들어도 충돌 0 (다른 문서)
 
-### 다음 진행 우선순위
-1. **검증 (1~2주)** — Phase 2 안정성 확인. 문제 있으면 `_requestsCollectionListenerActive=false`로 즉시 롤백 가능
-2. **Phase 3** — inventory/history도 컬렉션화 (1MB 한도 영구 해소)
-3. **Phase 4** — Google 로그인 도입. 50명 동시접속 운영 필수 권장
+### 기기간 실시간 동기화 (3중 안전망)
+폰마다 listener 활성도 다름 (브라우저/OS/배터리/메모리/네트워크) — 일관된 동작을 위해:
+1. **realtime listener** — 즉시 반영 (이상적)
+2. **이벤트 핸들러** — 탭 복귀/포커스/온라인 시 forceFetchRequestsCollection
+   - `visibilitychange → visible`
+   - `focus`
+   - `online`
+3. **5초 폴링** — 위 둘 다 실패해도 최대 5초 안에 따라잡음
+   (탭이 visible할 때만 동작)
+
+→ 어떤 기기든 변경 후 최대 5초 안에 동기화 보장
+
+### 완료 → 대기 되돌리기 (취소 단어 분리)
+사용자 명확한 요구로 단어 분리:
+- **대기 탭 [❌ 취소]** — 요청 자체 취소, [취소] 탭으로 영구 이동
+- **완료 탭 [↩ 되돌리기]** — 반출 처리 되돌림 (재고 복원 + 대기 상태 복귀)
+  - statusHistory 배열에 처리 정보 (이전 처리자/완료일/반출일) 보존
+  - history는 cancelled 플래그만 (통계에서 자동 제외)
+  - audit: revert_completed_to_pending
+
+### 통계에서 cancelled history 자동 제외
+js/11-stats.js, 14-export.js, 15-backup.js, scripts/lib-monthly.js,
+scripts/weekly-backup.js, apps-script/Code.gs 모두:
+`history.filter(h => h.type === 'out' && !h.cancelled)`
+
+### mcFullResetToSheet — 종합 초기화 함수
+시트 4월 5주차 스냅샷으로 모든 운영 데이터 되돌림 (테스트 정리용):
+- inventory: 568개로 교체 (재고/단가 모두)
+- history: 1481건으로 교체
+- requests: 비움 + requests/ 컬렉션 docs 모두 삭제 (Phase 2 listener 대비)
+- 보존: teams, teamMembers, documents
+- mcUnlockDanger 필요. audit 'full_reset_to_sheet' 기록.
+
+### 다음 진행 우선순위 (사용자 결정)
+1. **검증 (1주 정도)** — Phase 2 + 5초 폴링 + 양방향 sync 안정성
+2. **Apps Script 코드 갱신** — GitHub 자동 sync 안 됨. 사용자가 직접 복붙 필요
+   (취소 통계 제외 등 새 코드 적용 안 하면 토요일 백업이 옛 로직)
+3. **Phase 4: Google 로그인** ⭐ — 50명 동시접속 운영 강력 권장 (1일 작업)
+4. **Phase 3: inventory/history 컬렉션화** — 1MB 한도 영구 해소 (2~3일)
+5. **덴트웹 통합** — 환자 데이터 받으면 진행
+6. **Audit log 조회 UI** — 화면에서 변경 이력 보기 (반나절)
 
 ### 알려진 제약 / 미해결
-- **Race condition** 여전 존재 — 단일 문서 구조 (Phase 2에서 해결)
-- **인증 없음** — device 단위만 추적 (Phase 4에서 사용자 단위)
-- **5/3 유현영 5건** — 복구 불가, 유현영 선생님 확인 후 재입력 필요
-- **Apps Script GitHub 자동 sync 안 됨** — 변경 시 코드 복붙 필요
+- **Phase 2 검증 중** — 1주 정도 모니터링 후 단일문서 requests 필드 deprecated 가능
+- **인증 없음** — device 단위만 추적 (Phase 4에서 해결 예정)
+- **5/3 유현영 5건** — 복구 불가. 유현영 선생님 확인 후 재입력 필요
+- **Apps Script GitHub 자동 sync 안 됨** — 변경 시 사용자가 코드 복붙 필요
+- **mcFullResetToSheet으로 테스트 데이터 정리됨** (2026-05-05)
 
-### 콘솔 함수 (사고 대비)
+### 콘솔 함수 레퍼런스
 ```js
-// 변경 이력 조회
+// 변경 이력 조회 (Firestore events/ 컬렉션)
 mcViewRecentEvents()              // 최근 50건
 mcViewEventsByType('request')     // 요청 관련만
-mcViewEventsByType('system')      // 시스템 액션 (wipe, sync 등)
+mcViewEventsByType('system')      // 시스템 액션 (wipe, sync, full_reset)
 
-// 기기 식별 (audit log에 표시될 라벨)
+// 기기 식별 (audit log에 표시될 라벨 — 한 번 설정)
 setDeviceLabel('원장님 PC')
 setDeviceLabel('9층 데스크 폰')
 
-// 위험 함수 사용 (5분 일시 해제)
+// Phase 2 진단
+mcCheckPhase2Status()             // listener/hook 상태 확인
+mcCheckRequestsCollection()       // 컬렉션 vs 단일문서 동기화 확인
+mcBackfillRequestsCollection()    // 메모리 → 컬렉션 백필 (1회)
+
+// 위험 함수 (5분 일시 해제 후 사용)
 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다")
-mcResetToSheetData()  // 잠금 해제 후 사용 가능
+mcResetToSheetData()              // history + requests만 리셋
+mcFullResetToSheet()              // 모든 운영 데이터 시트 스냅샷으로
+mcForceSyncFromCloud()            // 로컬을 클라우드 데이터로 완전 교체
+
+// 백업
+mcDownloadReportNow()             // 주차별보고 즉시 다운로드
+mcDownloadRecoveryNow()           // 재난백업용 즉시 다운로드
+mcDownloadMonthlyReportNow('2026-04')   // 월별보고
+mcSendBackupNow()                 // 메일 강제 발송 (5분 쿨다운)
+mcResetBackupCooldown()           // 쿨다운 초기화
+
+// 진단
+mcGetThisWeek()                   // 현재 ISO 주차
 ```
+
+---
+
+_마지막 갱신: 2026-05-05 저녁 (Phase 2 cutover + 양방향 실시간 + 단어 분리 + mcFullResetToSheet)_
