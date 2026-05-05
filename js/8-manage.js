@@ -163,9 +163,22 @@ function renderManage() {
       '<p class="text-4xl mb-2">📭</p>' +
       '<p class="text-sm">' + emptyMsg + '</p></div>';
   } else {
-    // 모든 탭에서 주차별 collapsible 그룹 (현재 주차만 자동 펼침, 나머지 접힘)
+    // 모든 탭에서 주차별 collapsible 그룹
+    // 자동 펼침 정책:
+    //   1) 현재 주차가 그룹에 있으면 → 그것만 펼침
+    //   2) 현재 주차가 없으면 → 가장 최신 주차 (그룹 정렬 첫 번째) 펼침
     const groupByWeek = true;
     const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
+    // 그룹 안에 현재 주차가 있는지 미리 검사
+    const hasCurrentWeek = groups.some(g => {
+      const wk = (typeof getWeekKey === 'function') ? getWeekKey(g.date) : '';
+      return wk === currentWeek;
+    });
+    // 자동 펼칠 주차 결정
+    const autoOpenWeek = hasCurrentWeek
+      ? currentWeek
+      : ((typeof getWeekKey === 'function' && groups.length > 0) ? getWeekKey(groups[0].date) : '');
+
     let lastWeekKey = null;
     window._manageExpandedWeeks = window._manageExpandedWeeks || {};
 
@@ -174,10 +187,8 @@ function renderManage() {
         const wk = (typeof getWeekKey === 'function') ? getWeekKey(g.date) : (g.date || '').slice(0, 7);
         if (wk !== lastWeekKey) {
           if (lastWeekKey !== null) html += '</div></div>';  // 이전 주차 닫기
-          // 현재 주차만 자동 펼침. 첫 번째라도 과거 주차면 접힘.
-          // 사용자가 토글하면 그 선호를 따름.
-          const isCurrentWk = (wk === currentWeek);
-          const expanded = (window._manageExpandedWeeks[wk] === undefined) ? isCurrentWk : window._manageExpandedWeeks[wk];
+          const isAutoOpen = (wk === autoOpenWeek);
+          const expanded = (window._manageExpandedWeeks[wk] === undefined) ? isAutoOpen : window._manageExpandedWeeks[wk];
           // 그 주차에 속한 그룹 수 + 합계 미리 계산
           let wkCount = 0, wkQty = 0;
           for (let j = gi; j < groups.length; j++) {
