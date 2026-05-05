@@ -198,6 +198,9 @@ function renderManage() {
         }
       }
 
+      // 메모 표시 (있으면)
+      const groupMemo = (g.items.find(it => it.memo) || {}).memo || '';
+
       html += '<div class="px-4 py-3 hover:bg-slate-50 ' + (isPending ? 'bg-amber-50/30' : '') + '">' +
         '<div class="flex items-center justify-between mb-2">' +
         '<div class="flex items-center gap-2 flex-wrap">' +
@@ -211,6 +214,7 @@ function renderManage() {
         '<span class="text-sm font-bold text-slate-900">' + g.items.length + '종 · ' + totalQty + '개</span>' +
         '<button onclick="deleteRequestGroup(\'' + gid + '\')" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="요청 삭제">🗑️</button>' +
         '</div></div>' +
+        (groupMemo ? '<div class="mb-2 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-slate-800">📝 <strong>요청자 메모:</strong> ' + escapeHtml(groupMemo) + '</div>' : '') +
         releasedInfoHtml;
 
       // 대기 상태: 전체선택 바 추가

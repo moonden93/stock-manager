@@ -239,8 +239,14 @@ function renderRelease() {
   } else {
     filtered.forEach(item => { html += _releaseItemRowHtml(item); });
   }
-  // items 목록 + 카드 + 루트 종료
-  html += '</div></div></div>';
+  // items 목록 + 카드 종료
+  html += '</div></div>';
+
+  // 내 팀 대기 요청 (수정/취소 가능 — 비밀번호 없이)
+  html += renderMyPendingRequestsSection();
+
+  // 루트 종료
+  html += '</div>';
 
   document.getElementById('page-content').innerHTML = html;
   renderCartBar();
@@ -478,7 +484,7 @@ function renderCartBar() {
     '<div class="flex items-center gap-3">' +
     '<div class="flex-1"><p class="text-xs text-slate-500">담은 품목 ' + cart.length + '종 · 총 ' + totalQty + '개</p>' +
     (!canSubmit ? '<p class="text-xs text-amber-600 font-medium">⚠️ ' + (!releaseSelectedTeam ? '팀 선택' : '담당자 입력') + ' 필요</p>' : '') + '</div>' +
-    '<button onclick="cart = []; renderRelease();" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700">취소</button>' +
+    '<button onclick="cart = []; window._cartMemo = \'\'; renderRelease();" class="px-4 py-3 bg-slate-100 hover:bg-slate-200 rounded-xl font-bold text-slate-700">취소</button>' +
     '<button onclick="confirmRelease()" class="big-btn flex-1 max-w-[240px] ' +
     (canSubmit ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-slate-300 hover:bg-slate-400 text-slate-700') + '">' +
     '📋 반출 요청 (' + totalQty + '개)</button>' +
@@ -506,15 +512,64 @@ function confirmRelease() {
     return;
   }
   
-  let message = '[' + releaseSelectedTeam + '] ' + releaseSelectedRequester + '님 반출 요청\n\n';
-  message += cart.map(function(c) { return '· ' + c.name + ' ' + c.qty; }).join('\n');
-  message += '\n\n총 ' + cart.reduce(function(s, c) { return s + c.qty; }, 0) + '개를 요청하시겠습니까?';
-  message += '\n\n💡 실제 반출(재고 차감)은 [요청관리]에서 "반출 완료" 버튼을 눌러야 처리됩니다.';
-  
-  askConfirm('반출 요청 등록', message, function() {
-    const reqId = 'R' + Date.now();
-    const reqDate = new Date().toISOString();
-    
+  // 메모 입력이 포함된 커스텀 confirm 모달
+  showRequestConfirmModal();
+}
+
+// 반출 요청 등록 confirm 모달 (메모 입력 포함)
+function showRequestConfirmModal() {
+  const totalQty = cart.reduce(function(s, c) { return s + c.qty; }, 0);
+  let itemsHtml = '';
+  cart.forEach(function(c) {
+    itemsHtml += '<div class="flex justify-between text-sm py-1">' +
+      '<span class="text-slate-700">· ' + escapeHtml(c.name) + '</span>' +
+      '<span class="font-bold text-teal-700">' + c.qty + escapeHtml(c.unit || '개') + '</span>' +
+      '</div>';
+  });
+
+  const html =
+    '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
+    '<h3 class="text-base font-bold text-slate-900">반출 요청 등록</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">[' + escapeHtml(releaseSelectedTeam) + '] ' +
+    escapeHtml(releaseSelectedRequester) + '님</p>' +
+    '</div>' +
+    '<div class="px-5 py-4 overflow-y-auto">' +
+    '<div class="border border-slate-200 rounded-lg p-3 bg-slate-50 mb-3">' +
+    itemsHtml +
+    '<div class="border-t border-slate-200 mt-2 pt-2 flex justify-between text-sm font-bold">' +
+    '<span class="text-slate-700">총</span>' +
+    '<span class="text-teal-700">' + cart.length + '종 · ' + totalQty + '개</span>' +
+    '</div>' +
+    '</div>' +
+    '<div>' +
+    '<label class="text-xs font-bold text-slate-700 mb-1 block">📝 메모 (선택)</label>' +
+    '<textarea id="confirm-memo" rows="3" maxlength="300" autofocus ' +
+    'placeholder="예: 이 재료 급해서 화요일까지 받고 싶어요" ' +
+    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg resize-none focus:outline-none focus:border-teal-500"></textarea>' +
+    '</div>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">아니오</button>' +
+    '<button onclick="submitRequest()" class="flex-1 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold">예, 요청</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+// 모달의 [예, 요청] 버튼 핸들러
+function submitRequest() {
+  const memo = (document.getElementById('confirm-memo').value || '').trim();
+  closeModal();
+  doSubmitRequest(memo);
+}
+
+function doSubmitRequest(memo) {
+  if (cart.length === 0) return;
+  const reqId = 'R' + Date.now();
+  const reqDate = new Date().toISOString();
+  {
+
     // 요청만 등록 (재고 차감/이력 기록 안 함)
     cart.forEach(c => {
       const reqRecord = {
@@ -528,7 +583,8 @@ function confirmRelease() {
         qty: c.qty,
         unit: c.unit,
         team: releaseSelectedTeam,
-        requester: releaseSelectedRequester
+        requester: releaseSelectedRequester,
+        memo: memo  // 같은 그룹 모든 항목에 동일 메모
       };
       // 직접 요청 항목: 설명 + 사진 보존
       if (c.isCustom) {
@@ -557,9 +613,179 @@ function confirmRelease() {
     const totalQty = cart.reduce((s, c) => s + c.qty, 0);
     showToast('반출 요청 등록 완료! ' + cart.length + '종 ' + totalQty + '개 (요청관리에서 처리하세요)', 'success');
     cart = [];
+    window._cartMemo = '';
     releaseSearchTerm = '';
     releaseSelectedVendor = '';
     releaseSelectedCategory = '';
     renderRelease();
-  }, '예, 요청', 'teal');
+  }
+}
+
+// ============================================
+// 내 팀 대기 요청 — 요청 탭에서 수정/취소 가능
+// ============================================
+// 비밀번호 없이 직원이 자기 요청 수정 가능. 변경은 audit log 기록.
+function renderMyPendingRequestsSection() {
+  if (!releaseSelectedTeam) return '';
+  const teamPending = requests.filter(r =>
+    r.team === releaseSelectedTeam && (r.status || 'completed') === 'pending'
+  );
+  if (teamPending.length === 0) return '';
+
+  // requestId 별로 그룹핑
+  const groups = {};
+  teamPending.forEach(r => {
+    const gid = r.requestId || r.id;
+    if (!groups[gid]) groups[gid] = { items: [], date: r.date, requester: r.requester || r.member, memo: r.memo || '' };
+    groups[gid].items.push(r);
+    if (!groups[gid].memo && r.memo) groups[gid].memo = r.memo;
+  });
+  const groupArr = Object.entries(groups)
+    .sort((a, b) => (b[1].date || '').localeCompare(a[1].date || ''));
+
+  let html = '<div class="bg-white rounded-2xl border-2 border-amber-300 shadow-sm overflow-hidden mt-4">' +
+    '<div class="px-4 py-3 bg-amber-50 flex items-center justify-between">' +
+    '<h3 class="font-bold text-slate-900">⏳ ' + escapeHtml(releaseSelectedTeam) + ' 대기 요청 (' + groupArr.length + '건)</h3>' +
+    '<span class="text-[11px] text-slate-500">수정/취소 가능</span>' +
+    '</div>' +
+    '<div class="divide-y divide-slate-100">';
+
+  groupArr.forEach(([gid, g]) => {
+    const dateStr = (g.date || '').slice(0, 10);
+    const totalQty = g.items.reduce((s, it) => s + (it.qty || 0), 0);
+    html += '<div class="px-4 py-3">' +
+      '<div class="flex items-center gap-2 mb-2 flex-wrap">' +
+      '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
+      '<span class="text-xs font-bold text-slate-700">' + escapeHtml(g.requester || '') + '</span>' +
+      '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[11px] font-bold">' + g.items.length + '종 · ' + totalQty + '개</span>' +
+      '<div class="ml-auto flex gap-1">' +
+      '<button onclick="openEditMyRequest(\'' + escapeJs(gid) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold">✏️ 수정</button>' +
+      '<button onclick="cancelMyRequest(\'' + escapeJs(gid) + '\')" class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold">🗑️ 취소</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="text-xs text-slate-700 space-y-0.5">';
+    g.items.forEach(it => {
+      html += '<div>· ' + escapeHtml(it.name) + ' <strong>' + it.qty + '</strong>' + (it.unit ? escapeHtml(it.unit) : '개') + '</div>';
+    });
+    if (g.memo) {
+      html += '<div class="mt-2 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-[11px] text-slate-700">📝 ' + escapeHtml(g.memo) + '</div>';
+    }
+    html += '</div></div>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+// 수정 모달
+function openEditMyRequest(groupId) {
+  const items = requests.filter(r =>
+    (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+  );
+  if (items.length === 0) return;
+  const memo = items.find(it => it.memo) ? items.find(it => it.memo).memo : '';
+
+  let html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">✏️ 요청 수정</h3>' +
+    '<p class="text-xs text-slate-500 mt-1">' + escapeHtml(items[0].team) + ' / ' + escapeHtml(items[0].requester || '') + '</p></div>' +
+    '<div class="px-5 py-4 space-y-3 overflow-y-auto">';
+
+  items.forEach((it, idx) => {
+    html += '<div class="border border-slate-200 rounded-lg p-3">' +
+      '<p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) + '</p>' +
+      '<p class="text-[11px] text-slate-500 mb-2">' + escapeHtml(it.vendor) + '</p>' +
+      '<div class="flex items-center gap-2">' +
+      '<span class="text-xs text-slate-600">수량:</span>' +
+      '<input type="number" id="edit-req-qty-' + idx + '" data-id="' + escapeJs(it.id) + '" value="' + it.qty + '" min="1" inputmode="numeric" ' +
+      'class="w-20 h-9 text-center text-sm font-bold bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+      '<span class="text-xs text-slate-500">' + escapeHtml(it.unit || '개') + '</span>' +
+      '</div></div>';
+  });
+
+  html += '<div>' +
+    '<label class="text-xs font-bold text-slate-700 mb-1 block">📝 메모 (선택)</label>' +
+    '<textarea id="edit-req-memo" rows="3" maxlength="300" ' +
+    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg resize-none focus:outline-none focus:border-blue-500">' +
+    escapeHtml(memo) + '</textarea>' +
+    '</div>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveMyRequestEdit(\'' + escapeJs(groupId) + '\')" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold">저장</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+function saveMyRequestEdit(groupId) {
+  const items = requests.filter(r =>
+    (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+  );
+  if (items.length === 0) { closeModal(); return; }
+  const newMemo = (document.getElementById('edit-req-memo').value || '').trim();
+  const changes = [];
+
+  items.forEach((it, idx) => {
+    const input = document.getElementById('edit-req-qty-' + idx);
+    if (!input) return;
+    const newQty = parseInt(input.value, 10);
+    if (isNaN(newQty) || newQty < 1) return;
+    if (newQty !== it.qty) {
+      changes.push({ name: it.name, before: it.qty, after: newQty });
+      it.qty = newQty;
+    }
+    if ((it.memo || '') !== newMemo) {
+      it.memo = newMemo;
+    }
+  });
+
+  // audit log
+  if (typeof logEvent === 'function') {
+    logEvent('request', 'update', {
+      summary: '수정: [' + items[0].team + '] ' + (items[0].requester || '') +
+               ' (' + changes.length + '개 항목 변경)',
+      requestId: groupId,
+      team: items[0].team,
+      requester: items[0].requester || '',
+      qtyChanges: changes,
+      newMemo: newMemo
+    });
+  }
+
+  saveAll();
+  closeModal();
+  showToast('요청 수정 완료', 'success');
+  renderRelease();
+}
+
+function cancelMyRequest(groupId) {
+  const items = requests.filter(r =>
+    (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+  );
+  if (items.length === 0) return;
+  const totalQty = items.reduce((s, it) => s + (it.qty || 0), 0);
+
+  askConfirm('요청 취소',
+    items[0].requester + '님의 대기 요청을 취소합니다.\n\n' +
+    items.length + '종 ' + totalQty + '개\n\n계속하시겠습니까?',
+    function() {
+      // audit log (삭제 전)
+      if (typeof logEvent === 'function') {
+        logEvent('request', 'cancel_by_requester', {
+          summary: '요청자 본인 취소: [' + items[0].team + '] ' + (items[0].requester || '') +
+                   ' ' + items.length + '종 ' + totalQty + '개',
+          team: items[0].team,
+          requester: items[0].requester || '',
+          items: items.map(it => ({
+            id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,
+            vendor: it.vendor, unit: it.unit, date: it.date, memo: it.memo || ''
+          }))
+        });
+      }
+      const targetIds = new Set(items.map(it => it.id));
+      requests = requests.filter(r => !targetIds.has(r.id));
+      saveAll();
+      showToast('요청 취소됨');
+      renderRelease();
+    }, '예, 취소', 'red');
 }
