@@ -188,17 +188,17 @@ if (typeof window !== 'undefined') {
     window.saveAll = function() {
       const r = original.apply(this, arguments);
       // 병렬 쓰기: 변경된 거 모두 (간단히 전체 upsert — 서버는 idempotent)
-      // 너무 자주 부르면 안 되니까 디바운스
+      // 디바운스 짧게 (300ms) — 실시간성 향상
       clearTimeout(window._phase2DebounceTimer);
       window._phase2DebounceTimer = setTimeout(() => {
         if (Array.isArray(window.requests) && window.requests.length > 0) {
           upsertRequestsBatch(window.requests);
         }
-      }, 1500);
+      }, 300);
       return r;
     };
     window.saveAll._phase2Patched = true;
-    console.log('✓ Phase 2 병렬 쓰기 hook 활성화');
+    console.log('✓ Phase 2 병렬 쓰기 hook 활성화 (디바운스 300ms)');
   }
   // 다른 스크립트가 다 로드된 후 patch
   if (document.readyState === 'loading') {
@@ -207,3 +207,15 @@ if (typeof window !== 'undefined') {
     setTimeout(patchSaveAll, 500);
   }
 })();
+
+// 콘솔 진단: Phase 2 상태 한 번에 확인
+window.mcCheckPhase2Status = function() {
+  console.log('=== Phase 2 상태 ===');
+  console.log('Firebase 준비:', window.firebaseReady);
+  console.log('컬렉션 listener 활성:', window._requestsCollectionListenerActive);
+  console.log('병렬 쓰기 hook:', !!(window.saveAll && window.saveAll._phase2Patched));
+  console.log('현재 requests 수:', (window.requests || []).length);
+  console.log('---');
+  console.log('만약 listener 비활성이면: setupRequestsCollectionListener() 직접 호출 시도');
+  console.log('또는 페이지 하드 리로드 (Ctrl+Shift+R)');
+};
