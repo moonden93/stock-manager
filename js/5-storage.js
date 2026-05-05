@@ -500,6 +500,64 @@ function mcRestoreFromBackup() {
 if (typeof window !== 'undefined') window.mcRestoreFromBackup = mcRestoreFromBackup;
 
 // ============================================
+// 클라우드 강제 동기화 (로컬 → 클라우드 데이터로 교체)
+// ============================================
+// 머지 로직 우회. 폰이 옛 로컬 데이터를 가지고 있을 때 사용.
+// ⚠️ 클라우드(Firebase)는 절대 건드리지 않음. 한 방향(cloud → local)만.
+//   - 다른 기기에서 변경한 게 화면에 안 보일 때
+//   - 폰의 옛 캐시 데이터를 버리고 PC와 일치시킬 때
+async function mcForceSyncFromCloud() {
+  if (!window.firebaseReady) {
+    console.error('Firebase 연결 안 됨');
+    if (typeof showToast === 'function') showToast('Firebase 연결 안 됨', 'error');
+    return;
+  }
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    const snapshot = await window.firebaseGetDoc(docRef);
+    if (!snapshot.exists()) {
+      console.error('클라우드에 데이터 없음');
+      if (typeof showToast === 'function') showToast('클라우드 데이터 없음', 'error');
+      return;
+    }
+    const data = snapshot.data();
+    if (isDataSuspicious(data)) {
+      console.error('클라우드 데이터 비정상 — 동기화 중단');
+      if (typeof showToast === 'function') showToast('클라우드 데이터가 비정상이라 동기화 중단', 'error');
+      return;
+    }
+    // 로컬 완전 교체 (머지 안 함)
+    inventory.length = 0;
+    if (Array.isArray(data.inventory)) data.inventory.forEach(it => inventory.push(it));
+    history.length = 0;
+    if (Array.isArray(data.history)) data.history.forEach(h => history.push(h));
+    requests.length = 0;
+    if (Array.isArray(data.requests)) data.requests.forEach(r => requests.push(r));
+    teams.length = 0;
+    if (Array.isArray(data.teams)) data.teams.forEach(t => teams.push(t));
+    Object.keys(teamMembers).forEach(k => delete teamMembers[k]);
+    if (data.teamMembers && typeof data.teamMembers === 'object') {
+      Object.keys(data.teamMembers).forEach(k => { teamMembers[k] = data.teamMembers[k]; });
+    }
+    documents.length = 0;
+    if (Array.isArray(data.documents)) data.documents.forEach(d => documents.push(d));
+
+    // localStorage만 갱신 — Firebase는 push 안 함 (한 방향)
+    saveToLocalStorage();
+    if (typeof updateHeaderStats === 'function') updateHeaderStats();
+    if (typeof switchTab === 'function') switchTab(currentTab);
+    console.log('✓ 클라우드 강제 동기화 완료',
+      '- 품목:', inventory.length, '/ 이력:', history.length,
+      '/ 요청:', requests.length, '/ 팀:', teams.length);
+    if (typeof showToast === 'function') showToast('클라우드 데이터로 동기화 완료', 'success');
+  } catch (err) {
+    console.error('동기화 실패:', err);
+    if (typeof showToast === 'function') showToast('동기화 실패: ' + (err.message || ''), 'error');
+  }
+}
+if (typeof window !== 'undefined') window.mcForceSyncFromCloud = mcForceSyncFromCloud;
+
+// ============================================
 // 모든 데이터 저장 (localStorage + Firebase)
 // ============================================
 function saveAll() {

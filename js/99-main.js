@@ -204,19 +204,38 @@ function updateHeaderStats() {
 // Firebase 연결 상태 배지
 // ============================================
 // 사용자가 헤더에서 항상 클라우드 연결 상태를 볼 수 있게 함.
-// 폰에서 동기화 안 될 때 어디가 문제인지 즉시 파악 가능.
+// 연결됨 상태에서 탭하면 강제 동기화 옵션 (폰 옛 데이터 정리용).
 function setFirebaseStatus(state, detail) {
   const el = document.getElementById('firebase-status');
   if (!el) return;
+  // 클라우드 연결 상태일 때만 클릭 가능 (탭하면 강제 동기화 confirm)
+  const connectedHtml =
+    '<span onclick="askForceSyncFromCloud()" style="cursor:pointer" class="text-emerald-600">' +
+    '🟢 클라우드 연결됨 <span class="text-slate-400 underline">↻ 동기화</span></span>';
   const map = {
     checking: '<span class="text-slate-400">⚪ 연결 확인 중...</span>',
-    connected: '<span class="text-emerald-600">🟢 클라우드 연결됨</span>',
+    connected: connectedHtml,
     syncing:   '<span class="text-blue-600">🔵 동기화 중...</span>',
     offline:   '<span class="text-amber-600">🟡 오프라인 (로컬만 저장)</span>',
     error:     '<span class="text-red-600 font-medium">🔴 클라우드 연결 실패</span>' +
                (detail ? '<br><span class="text-[9px] text-red-500">' + escapeHtml(detail).slice(0, 80) + '</span>' : '')
   };
   el.innerHTML = map[state] || map.checking;
+}
+
+// 강제 동기화 confirm. 한 방향(cloud → local)이므로 클라우드 데이터는 안전.
+function askForceSyncFromCloud() {
+  askConfirm(
+    '클라우드와 강제 동기화',
+    '이 기기의 로컬 데이터를 버리고 클라우드의 최신 데이터로 갱신합니다.\n\n' +
+    '· 다른 기기/PC에서 변경한 내용이 화면에 안 보일 때 사용\n' +
+    '· 클라우드(Firebase) 데이터는 절대 변경되지 않음 (한 방향)\n' +
+    '· 다른 기기 사용자에게는 영향 없음\n\n' +
+    '계속하시겠습니까?',
+    function() { mcForceSyncFromCloud(); },
+    '동기화',
+    'amber'
+  );
 }
 
 // Firebase 모듈 로드 자체가 실패하면 firebaseError 이벤트가 옴
