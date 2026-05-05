@@ -86,6 +86,97 @@ window.mcCheckRequestsCollection = async function() {
   }
 };
 
+// ============================================
+// Phase 2 cutover: requests/ 컬렉션을 source of truth로
+// ============================================
+// 단일 문서 appData/main의 requests 필드 대신 컬렉션 listener로 sync.
+// 효과:
+//   - 두 기기가 동시에 다른 요청 만들어도 race condition 없음 (다른 문서)
+//   - 한 요청 변경이 다른 요청에 영향 0
+//   - 단일 문서가 wipe돼도 requests/ 컬렉션은 손상 안 됨
+
+function setupRequestsCollectionListener() {
+  if (!window.firebaseReady) return;
+  if (window._requestsCollectionListenerActive) return;
+  if (!window.firebaseOnSnapshot || !window.firebaseCollection) return;
+
+  try {
+    const col = window.firebaseCollection(window.firebaseDB, 'requests');
+    window.firebaseOnSnapshot(col, (snap) => {
+      // 자기 디바이스의 pending write는 스킵 (echo 방지)
+      if (snap.metadata && snap.metadata.hasPendingWrites) return;
+
+      const newReqs = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        const cleaned = {};
+        for (const k in d) {
+          if (k.charAt(0) !== '_') cleaned[k] = d[k];  // 메타 필드 (_syncedAt, _device 등) 제외
+        }
+        newReqs.push(cleaned);
+      });
+
+      // 사용자가 입력 중이면 sync 보류 (입력 깨짐 방지)
+      const isTyping = (function() {
+        const el = document.activeElement;
+        if (!el) return false;
+        if (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'button') return true;
+        if (el.tagName === 'TEXTAREA') return true;
+        return false;
+      })();
+      if (isTyping) {
+        window._pendingRequestsSync = newReqs;
+        return;
+      }
+      _applyRequestsSync(newReqs);
+    }, (err) => {
+      console.error('requests/ listener error:', err);
+    });
+    window._requestsCollectionListenerActive = true;
+    console.log('✓ Phase 2 cutover: requests/ 컬렉션 listener 활성화');
+  } catch (err) {
+    console.error('requests/ listener 등록 실패:', err);
+  }
+}
+
+function _applyRequestsSync(newReqs) {
+  // 전역 requests 배열을 교체 (in-place로 다른 모듈의 참조 유지)
+  if (typeof window.requests === 'undefined') return;
+  window.requests.length = 0;
+  newReqs.forEach(r => window.requests.push(r));
+  // localStorage 갱신 (오프라인 대비)
+  if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
+  // 헤더 + 현재 탭 재렌더링
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+  if (typeof currentTab !== 'undefined') {
+    const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
+    const renderFn = window[fnName];
+    if (typeof renderFn === 'function') renderFn();
+  }
+}
+
+// 입력이 끝나면 보류된 sync 적용
+document.addEventListener('focusout', () => {
+  setTimeout(() => {
+    if (window._pendingRequestsSync) {
+      const data = window._pendingRequestsSync;
+      window._pendingRequestsSync = null;
+      _applyRequestsSync(data);
+    }
+  }, 0);
+}, true);
+
+// Firebase 준비되면 listener 활성화
+if (typeof window !== 'undefined') {
+  if (window.firebaseReady) {
+    setTimeout(setupRequestsCollectionListener, 1000);
+  } else {
+    window.addEventListener('firebaseReady', () => {
+      setTimeout(setupRequestsCollectionListener, 1000);
+    }, { once: true });
+  }
+}
+
 // 메인 saveAll에서 자동으로 호출되도록 hook
 // 5-storage.js의 saveAll을 직접 수정하는 대신 monkey-patch (안전)
 (function setupParallelWrite() {

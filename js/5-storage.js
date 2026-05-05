@@ -269,11 +269,11 @@ function detectCloudWipeOnLoad(data, lastSnap) {
 function applyCloudData(data) {
   if (Array.isArray(data.inventory) && data.inventory.length > 0) inventory = data.inventory;
 
-  // requests, history는 ID 기반 머지.
-  // 클라우드 우선이지만, 로컬에만 있는 항목(아직 동기화 못 한 새 요청/이력)은 보존.
-  // 이전엔 wholesale replace였어서, 폰이 요청 만들고 클라우드 쓰기 실패 시
-  // 다음 sync에서 빈 클라우드 데이터로 덮어써져 요청이 사라지는 사고가 있었음.
-  if (Array.isArray(data.requests)) {
+  // Phase 2 cutover: requests는 더 이상 단일 문서에서 안 읽음.
+  // js/17-requests-collection.js의 컬렉션 listener가 source of truth.
+  // (단일 문서는 backup으로 계속 쓰기는 함 — 안전망)
+  // 옛 코드 호환: data.requests가 있고 컬렉션 listener가 아직 활성화 안 됐으면 임시 사용
+  if (Array.isArray(data.requests) && !window._requestsCollectionListenerActive) {
     requests = mergeByIdPreserveLocal(requests, data.requests);
   }
   if (Array.isArray(data.history)) {

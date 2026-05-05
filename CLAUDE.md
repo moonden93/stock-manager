@@ -310,9 +310,17 @@ _마지막 갱신: 2026-05-05 (사고 + Phase 1 안전 기반 + 요청자 수정
 - 현재 주차만 자동 펼침, 과거 주차는 접힘 (탭하면 펼침)
 - `_manageExpandedWeeks` 객체로 사용자 토글 상태 보존
 
+### Phase 2 cutover 완료 (race condition 본질 해결)
+- requests/ 컬렉션의 onSnapshot listener가 source of truth
+- 단일 문서 appData/main.requests는 backup으로 계속 쓰기 (안전망)
+- applyCloudData는 컬렉션 listener 활성화되면 단일 문서 requests 무시
+- 입력 중일 때 sync 보류 + focusout 후 적용 (입력 깨짐 방지)
+- 효과: 두 기기가 동시에 다른 요청 만들어도 충돌 0 (다른 문서)
+
 ### 다음 진행 우선순위
-1. **Phase 2 cutover** — 검증 후 컬렉션 읽기 전환 (race condition 본질 해결)
-2. **Phase 4** — Google 로그인 도입. 50명 동시접속 운영 필수 권장
+1. **검증 (1~2주)** — Phase 2 안정성 확인. 문제 있으면 `_requestsCollectionListenerActive=false`로 즉시 롤백 가능
+2. **Phase 3** — inventory/history도 컬렉션화 (1MB 한도 영구 해소)
+3. **Phase 4** — Google 로그인 도입. 50명 동시접속 운영 필수 권장
 
 ### 알려진 제약 / 미해결
 - **Race condition** 여전 존재 — 단일 문서 구조 (Phase 2에서 해결)
