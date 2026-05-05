@@ -916,7 +916,7 @@ function createReportSheet(data, name, folder) {
   const outOfStock = inventory.filter(function(it) { return it.stock === 0; }).length;
   const lowStock = inventory.filter(function(it) { return it.stock > 0 && it.stock <= it.minStock; }).length;
   const pendingReq = requests.filter(function(r) { return r.status === 'pending'; }).length;
-  const thisOutHist = history.filter(function(h) { return h.type === 'out' && h.weekKey === weekKey; });
+  const thisOutHist = history.filter(function(h) { return h.type === 'out' && !h.cancelled && h.weekKey === weekKey; });
   const thisInHist = history.filter(function(h) { return h.type === 'in' && h.weekKey === weekKey; });
   const thisOutQty = thisOutHist.reduce(function(s, h) { return s + (h.qty || 0); }, 0);
   const thisOutCost = thisOutHist.reduce(function(s, h) { return s + (h.qty || 0) * (h.price || 0); }, 0);
@@ -1044,7 +1044,7 @@ function createReportSheet(data, name, folder) {
   const now = new Date();
   const tmStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const t3Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-  const outHist = history.filter(function(h) { return h.type === 'out'; });
+  const outHist = history.filter(function(h) { return h.type === 'out' && !h.cancelled; });
   const thisMonth = outHist.filter(function(h) { return new Date(h.date) >= tmStart; });
   const past3 = outHist.filter(function(h) {
     const d = new Date(h.date);

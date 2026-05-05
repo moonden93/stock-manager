@@ -238,7 +238,7 @@ function generateReportExcel() {
   const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
-  const thisOutHist = history.filter(h => h.type === 'out' && h.weekKey === weekKey);
+  const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
   const thisInHist  = history.filter(h => h.type === 'in'  && h.weekKey === weekKey);
   const thisOutQty = thisOutHist.reduce((s, h) => s + (h.qty || 0), 0);
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
@@ -497,7 +497,7 @@ async function sendBackupEmail(weekKey) {
   const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
-  const thisOutHist = history.filter(h => h.type === 'out' && h.weekKey === weekKey);
+  const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
   const thisOutQty = thisOutHist.reduce((s, h) => s + (h.qty || 0), 0);
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
 
@@ -562,9 +562,9 @@ function generateMonthlyReportExcel(year, month) {
                       year + '-' + String(month).padStart(2, '0') + '-' +
                       String(new Date(year, month, 0).getDate()).padStart(2, '0');
 
-  // 해당 월의 출고/입고 필터
+  // 해당 월의 출고/입고 필터 (cancelled 제외)
   const monthOut = history.filter(h => {
-    if (h.type !== 'out') return false;
+    if (h.type !== 'out' || h.cancelled) return false;
     const d = new Date(h.date);
     return d >= monthStart && d < monthEnd;
   });
@@ -977,7 +977,7 @@ if (typeof window !== 'undefined') {
         if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive && typeof forceFetchRequestsCollection === 'function') {
           forceFetchRequestsCollection();
         }
-      }, 5000);
+      }, 30000);
       console.log('▶️ Phase 2 폴링 재개');
     }
 

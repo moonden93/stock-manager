@@ -80,7 +80,7 @@ async function sendEmail(data, year, month, yearMonth, reportBuf) {
   const history = data.history || [];
 
   const monthOut = history.filter(h => {
-    if (h.type !== 'out') return false;
+    if (h.type !== 'out' || h.cancelled) return false;
     const d = new Date(h.date);
     return d >= monthStart && d < monthEnd;
   });

@@ -128,9 +128,9 @@ function generateMonthlyReportExcel(data, year, month) {
   const periodLabel = year + '-' + String(month).padStart(2, '0') + '-01 ~ ' +
                       year + '-' + String(month).padStart(2, '0') + '-' + String(lastDay).padStart(2, '0');
 
-  // 해당 월 출고/입고
+  // 해당 월 출고/입고 (cancelled 제외)
   const monthOut = history.filter(h => {
-    if (h.type !== 'out') return false;
+    if (h.type !== 'out' || h.cancelled) return false;
     const d = new Date(h.date);
     return d >= monthStart && d < monthEnd;
   });
@@ -246,7 +246,7 @@ function generateMonthlyReportExcel(data, year, month) {
   // 5. 팀별 AI 분석 (보고월 vs 직전 3개월 평균)
   const prev3Start = new Date(year, month - 4, 1);
   const past3 = history.filter(h => {
-    if (h.type !== 'out') return false;
+    if (h.type !== 'out' || h.cancelled) return false;
     const d = new Date(h.date);
     return d >= prev3Start && d < monthStart;
   });

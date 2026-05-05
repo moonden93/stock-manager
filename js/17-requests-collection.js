@@ -214,14 +214,16 @@ window.addEventListener('online', () => {
   forceFetchRequestsCollection();
 });
 
-// 폴링 백업: listener가 어떤 이유로든 잠들어도 5초 안에 따라잡음.
+// 폴링 백업: listener가 어떤 이유로든 잠들어도 따라잡기용 안전망.
 // 탭이 활성일 때만 동작 (백그라운드일 땐 visibility 핸들러가 처리).
-// 5초 간격 = 사용자 체감 실시간 + Firestore 비용 미미.
+// 30초 간격 — Firestore 비용 절약 (50명 동시접속 시 5초 폴링은 무료 한도 초과 위험).
+//   listener는 변경분만 read 비용 (거의 무료) → 평소엔 listener에 의존, 폴링은 안전망.
+//   사용자 행동(visibility/focus/online) 시점엔 즉시 fetch되므로 30초여도 체감 OK.
 window._phase2PollTimer = window._phase2PollTimer || setInterval(() => {
   if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive) {
     forceFetchRequestsCollection();
   }
-}, 5000);
+}, 30000);
 
 // Firebase 준비되면 listener 활성화
 if (typeof window !== 'undefined') {

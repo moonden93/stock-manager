@@ -352,7 +352,7 @@ function renderStatsByWeekly(baseHistory) {
 // renderStats가 사용 중인 statsPeriod / statsCustomStart / statsCustomEnd 필터를 그대로 재사용해
 // "지금 보이는 기간"의 해당 팀 이력만 보여준다.
 function openTeamStatsDetail(teamName) {
-  let baseHistory = history.filter(h => h.type === 'out' && h.team === teamName);
+  let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled && h.team === teamName);
 
   if (statsPeriod === 'month') {
     const monthStart = new Date();
