@@ -876,6 +876,9 @@ if (typeof window !== 'undefined') {
   // - history: 시트 1481건으로 교체 (테스트 출고 제거)
   // - requests: 비움 + requests/ 컬렉션 docs 모두 삭제
   // ⚠️ teams/teamMembers/documents 유지 (운영 설정)
+  //
+  // ⚠️ 중요: 다른 기기 탭은 모두 닫고 실행할 것.
+  //   안 그러면 다른 기기 메모리의 옛 데이터가 다시 푸시되어 살아남.
   window.mcFullResetToSheet = async function() {
     if (!_isUnlocked()) {
       console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
@@ -889,7 +892,9 @@ if (typeof window !== 'undefined') {
       '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n' +
       '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
       '요청:    ' + requests.length + '건 → 0건 (단일문서 + 컬렉션 모두)\n\n' +
-      '【 보존됨 】\n팀, 담당자, 문서함\n\n계속하시겠습니까?';
+      '【 보존됨 】\n팀, 담당자, 문서함\n\n' +
+      '⚠️ 다른 기기/탭은 모두 닫혔나요?\n' +
+      '안 닫혔으면 옛 데이터가 다시 살아날 수 있음.\n\n계속하시겠습니까?';
     if (!confirm(summary)) {
       console.log('취소됨');
       return;
@@ -901,6 +906,17 @@ if (typeof window !== 'undefined') {
       });
     }
     window._allowMassDecrease = true;
+
+    // 0. Phase 2 리스너 / 폴링 / 병렬 쓰기 일시 중단 (echo로 옛 데이터 부활 방지)
+    const wasListenerActive = window._requestsCollectionListenerActive;
+    const savedPollTimer = window._phase2PollTimer;
+    if (savedPollTimer) {
+      clearInterval(savedPollTimer);
+      window._phase2PollTimer = null;
+      console.log('⏸️ Phase 2 폴링 중단');
+    }
+    window._requestsCollectionListenerActive = false;  // _applyRequestsSync 차단 플래그로 활용 (아래 saveAll hook 가드)
+    window._resetInProgress = true;
 
     // 1. requests/ 컬렉션의 모든 doc 삭제 (안 하면 listener가 다시 가져옴)
     if (window.firebaseReady && window.firebaseGetDocs && window.firebaseDeleteDoc) {
@@ -922,19 +938,55 @@ if (typeof window !== 'undefined') {
 
     // 2. 로컬 데이터 reset
     inventory.length = 0;
-    INITIAL_ITEMS.forEach(it => inventory.push({ ...it }));
+    INITIAL_ITEMS.forEach((it, i) => inventory.push(Object.assign({ id: 'M' + String(i).padStart(4, '0') }, it)));
     history.length = 0;
     PREBUILT_HISTORY.forEach(h => history.push(h));
     requests.length = 0;
 
-    // 3. saveAll로 단일 문서에도 반영
-    window._allowMassDecrease = true;  // 한번 더 (saveAll에서 소비됨)
+    // 3. saveAll로 단일 문서에도 반영 (requests 빈 배열도 push되도록 _allowMassDecrease 유지)
+    window._allowMassDecrease = true;
     saveAll();
+
+    // 4. 잠시 대기 (Firestore writes 완료 + 다른 기기 listener echo 정리)
+    await new Promise(r => setTimeout(r, 2500));
+
+    // 5. 한 번 더 컬렉션 비었는지 확인 + 잔여 doc 정리 (다른 기기가 그 사이 push 했을 수도)
+    if (window.firebaseReady && window.firebaseGetDocs && window.firebaseDeleteDoc) {
+      try {
+        const col = window.firebaseCollection(window.firebaseDB, 'requests');
+        const snap = await window.firebaseGetDocs(col);
+        if (snap.size > 0) {
+          console.warn('⚠️ 다른 기기가 ' + snap.size + '건 다시 push함 — 재삭제');
+          for (const docSnap of snap.docs) {
+            await window.firebaseDeleteDoc(docSnap.ref);
+          }
+          console.log('✓ 잔여 ' + snap.size + '건 정리됨');
+        } else {
+          console.log('✓ 컬렉션 깨끗함 확인');
+        }
+      } catch (err) {
+        console.error('잔여 확인 실패:', err.message);
+      }
+    }
+
+    // 6. Phase 2 listener / 폴링 재개
+    window._resetInProgress = false;
+    window._requestsCollectionListenerActive = wasListenerActive;
+    if (!window._phase2PollTimer) {
+      window._phase2PollTimer = setInterval(() => {
+        if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive && typeof forceFetchRequestsCollection === 'function') {
+          forceFetchRequestsCollection();
+        }
+      }, 5000);
+      console.log('▶️ Phase 2 폴링 재개');
+    }
 
     if (typeof updateHeaderStats === 'function') updateHeaderStats();
     if (typeof switchTab === 'function') switchTab(currentTab);
-    console.log('✓ 시트 4월 5주차로 초기화 완료. 모든 기기 새로고침 권장.');
-    if (typeof showToast === 'function') showToast('초기화 완료. 다른 기기는 새로고침 필요', 'success');
+    console.log('✓ 시트 4월 5주차로 초기화 완료.');
+    console.log('   현재 상태: 품목 ' + inventory.length + ' / 이력 ' + history.length + ' / 요청 ' + requests.length);
+    console.log('   ⚠️ 다른 기기는 반드시 새로고침(F5) 또는 앱 재시작.');
+    if (typeof showToast === 'function') showToast('초기화 완료. 다른 기기는 반드시 새로고침!', 'success');
   };
 
   // 옛 함수 (담당자/품목 보존, history+requests만 리셋) — 호환 유지

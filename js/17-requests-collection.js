@@ -142,6 +142,11 @@ function setupRequestsCollectionListener() {
 function _applyRequestsSync(newReqs) {
   // 전역 requests 배열을 교체 (in-place로 다른 모듈의 참조 유지)
   if (typeof window.requests === 'undefined') return;
+  // 리셋 중이면 listener echo 무시 (중간 상태가 화면에 깜빡이는 것 방지)
+  if (window._resetInProgress) {
+    console.log('⏸️ reset 중 — listener echo 무시');
+    return;
+  }
   window.requests.length = 0;
   newReqs.forEach(r => window.requests.push(r));
   // localStorage 갱신 (오프라인 대비)
@@ -243,6 +248,11 @@ if (typeof window !== 'undefined') {
       // 디바운스 짧게 (300ms) — 실시간성 향상
       clearTimeout(window._phase2DebounceTimer);
       window._phase2DebounceTimer = setTimeout(() => {
+        // 리셋 진행 중이면 push 안 함 (옛 데이터 부활 방지)
+        if (window._resetInProgress) {
+          console.log('⏸️ reset 중 — Phase 2 push 건너뜀');
+          return;
+        }
         if (Array.isArray(window.requests) && window.requests.length > 0) {
           upsertRequestsBatch(window.requests);
         }
