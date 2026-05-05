@@ -166,6 +166,49 @@ document.addEventListener('focusout', () => {
   }, 0);
 }, true);
 
+// 백그라운드 탭 복귀/네트워크 재연결 시 강제 동기화
+// 모바일 Chrome은 백그라운드 탭의 listener를 잠재움 → 깨어나도 자동으로 안 따라잡음
+async function forceFetchRequestsCollection() {
+  if (!window.firebaseReady || !window.firebaseCollection) return;
+  try {
+    if (!window.firebaseGetDocs) {
+      const { getDocs } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js');
+      window.firebaseGetDocs = getDocs;
+    }
+    const col = window.firebaseCollection(window.firebaseDB, 'requests');
+    const snap = await window.firebaseGetDocs(col);
+    const newReqs = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const cleaned = {};
+      for (const k in d) if (k.charAt(0) !== '_') cleaned[k] = d[k];
+      newReqs.push(cleaned);
+    });
+    _applyRequestsSync(newReqs);
+    console.log('🔄 force fetch requests/ (' + newReqs.length + '건)');
+  } catch (err) {
+    console.warn('force fetch 실패:', err && err.message);
+  }
+}
+
+// 탭이 다시 보이면 강제 sync (백그라운드에서 잠들었다 깨는 케이스)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    forceFetchRequestsCollection();
+  }
+});
+
+// 윈도우 포커스 들어올 때도
+window.addEventListener('focus', () => {
+  forceFetchRequestsCollection();
+});
+
+// 네트워크 재연결 시
+window.addEventListener('online', () => {
+  console.log('🌐 네트워크 재연결 — sync');
+  forceFetchRequestsCollection();
+});
+
 // Firebase 준비되면 listener 활성화
 if (typeof window !== 'undefined') {
   if (window.firebaseReady) {
