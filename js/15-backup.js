@@ -877,22 +877,30 @@ if (typeof window !== 'undefined') {
   // - requests: 비움 + requests/ 컬렉션 docs 모두 삭제
   // ⚠️ teams/teamMembers/documents 유지 (운영 설정)
   //
+  // 옵션:
+  //   { keepInventory: true } — inventory(재고/단가)는 보존, history+requests만 시트로
+  //
   // ⚠️ 중요: 다른 기기 탭은 모두 닫고 실행할 것.
   //   안 그러면 다른 기기 메모리의 옛 데이터가 다시 푸시되어 살아남.
-  window.mcFullResetToSheet = async function() {
+  window.mcFullResetToSheet = async function(opts) {
+    opts = opts || {};
+    const keepInventory = !!opts.keepInventory;
+
     if (!_isUnlocked()) {
       console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
       return;
     }
-    if (typeof PREBUILT_HISTORY === 'undefined' || typeof INITIAL_ITEMS === 'undefined') {
+    if (typeof PREBUILT_HISTORY === 'undefined' || (!keepInventory && typeof INITIAL_ITEMS === 'undefined')) {
       console.error('데이터 로드 안 됨 — 페이지 새로고침 후 재시도');
       return;
     }
-    const summary = '【 시트 4월 5주차로 완전 초기화 】\n\n' +
-      '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n' +
+    const summary = '【 시트 4월 5주차로 ' + (keepInventory ? '부분' : '완전') + ' 초기화 】\n\n' +
+      (keepInventory
+        ? '품목:    ' + inventory.length + '개 (보존됨 — 재고/단가 그대로)\n'
+        : '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n') +
       '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
       '요청:    ' + requests.length + '건 → 0건 (단일문서 + 컬렉션 모두)\n\n' +
-      '【 보존됨 】\n팀, 담당자, 문서함\n\n' +
+      '【 보존됨 】\n팀, 담당자, 문서함' + (keepInventory ? ', 품목' : '') + '\n\n' +
       '⚠️ 다른 기기/탭은 모두 닫혔나요?\n' +
       '안 닫혔으면 옛 데이터가 다시 살아날 수 있음.\n\n계속하시겠습니까?';
     if (!confirm(summary)) {
@@ -901,7 +909,8 @@ if (typeof window !== 'undefined') {
     }
     if (typeof logEvent === 'function') {
       logEvent('system', 'full_reset_to_sheet', {
-        summary: '시트 4월 5주차로 완전 초기화',
+        summary: keepInventory ? '시트 4월 5주차로 부분 초기화 (inventory 보존)' : '시트 4월 5주차로 완전 초기화',
+        keepInventory: keepInventory,
         before: { inventory: inventory.length, history: history.length, requests: requests.length }
       });
     }
@@ -937,8 +946,10 @@ if (typeof window !== 'undefined') {
     }
 
     // 2. 로컬 데이터 reset
-    inventory.length = 0;
-    INITIAL_ITEMS.forEach((it, i) => inventory.push(Object.assign({ id: 'M' + String(i).padStart(4, '0') }, it)));
+    if (!keepInventory) {
+      inventory.length = 0;
+      INITIAL_ITEMS.forEach((it, i) => inventory.push(Object.assign({ id: 'M' + String(i).padStart(4, '0') }, it)));
+    }
     history.length = 0;
     PREBUILT_HISTORY.forEach(h => history.push(h));
     requests.length = 0;
@@ -989,37 +1000,10 @@ if (typeof window !== 'undefined') {
     if (typeof showToast === 'function') showToast('초기화 완료. 다른 기기는 반드시 새로고침!', 'success');
   };
 
-  // 옛 함수 (담당자/품목 보존, history+requests만 리셋) — 호환 유지
+  // 옛 함수 — mcFullResetToSheet({ keepInventory: true })의 별칭.
+  // 과거에는 단일 문서만 비우고 requests/ 컬렉션을 안 비워서 옛 docs가 즉시 부활하던 버그 있었음.
+  // 이제 mcFullResetToSheet의 안전 메커니즘 (listener 중단 + 컬렉션 정리 + 잔여 재확인) 공유.
   window.mcResetToSheetData = function() {
-    if (!_isUnlocked()) {
-      console.error('🔒 잠금됨. 먼저 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다") 실행');
-      return;
-    }
-    if (typeof PREBUILT_HISTORY === 'undefined') {
-      console.error('PREBUILT_HISTORY 로드 안 됨 — 페이지 새로고침 후 재시도');
-      return;
-    }
-    window._allowMassDecrease = true;  // 의도된 대량 변경
-    if (typeof logEvent === 'function') logEvent('system', 'mass_reset', { summary: 'mcResetToSheetData 실행' });
-    const summary = '【 반출 기록을 시트 데이터로 리셋 】\n\n' +
-      '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
-      '요청:    ' + requests.length + '건 → 0건 (전부 삭제)\n\n' +
-      '【 보존됨 (변경 없음) 】\n' +
-      '품목:    ' + inventory.length + '개\n' +
-      '팀:      ' + teams.length + '개\n' +
-      '담당자:  ' + Object.keys(teamMembers).length + '팀의 ' +
-        Object.values(teamMembers).reduce((s, m) => s + (m ? m.length : 0), 0) + '명\n\n' +
-      '계속하시겠습니까?';
-    if (!confirm(summary)) {
-      console.log('취소됨');
-      return;
-    }
-    history.length = 0;
-    PREBUILT_HISTORY.forEach(h => history.push(h));
-    requests.length = 0;
-    saveAll();
-    if (typeof updateHeaderStats === 'function') updateHeaderStats();
-    if (typeof switchTab === 'function') switchTab(currentTab);
-    console.log('✓ 반출 기록 리셋 완료. 새로고침 권장.');
+    return window.mcFullResetToSheet({ keepInventory: true });
   };
 }

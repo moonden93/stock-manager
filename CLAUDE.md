@@ -344,13 +344,25 @@ js/11-stats.js, 14-export.js, 15-backup.js, scripts/lib-monthly.js,
 scripts/weekly-backup.js, apps-script/Code.gs 모두:
 `history.filter(h => h.type === 'out' && !h.cancelled)`
 
-### mcFullResetToSheet — 종합 초기화 함수
+### mcFullResetToSheet — 종합 초기화 함수 (단일 진실 원천)
 시트 4월 5주차 스냅샷으로 모든 운영 데이터 되돌림 (테스트 정리용):
-- inventory: 568개로 교체 (재고/단가 모두)
+- inventory: 568개로 교체 (재고/단가 모두) — `{keepInventory:true}`로 보존 가능
 - history: 1481건으로 교체
 - requests: 비움 + requests/ 컬렉션 docs 모두 삭제 (Phase 2 listener 대비)
 - 보존: teams, teamMembers, documents
 - mcUnlockDanger 필요. audit 'full_reset_to_sheet' 기록.
+
+#### 안전 메커니즘 (필수, 빠지면 즉시 부활 버그)
+1. Phase 2 listener / 폴링 중단 + `_resetInProgress=true` (echo 차단)
+2. requests/ 컬렉션 모든 docs 삭제 (안 하면 listener가 옛 docs 다시 가져옴)
+3. 메모리 reset → saveAll → 단일 문서 비움
+4. 2.5초 대기 후 컬렉션 잔여 doc 재확인 (다른 기기가 그 사이 push했을 수도)
+5. listener / 폴링 재개
+
+#### `mcResetToSheetData` (옛 호환)
+`mcFullResetToSheet({keepInventory:true})` 의 별칭. 과거에는 단일 문서만 비우고
+컬렉션을 안 비워서 옛 docs가 listener로 즉시 부활하던 버그 있었음 (2026-05-06 수정).
+지금은 안전 메커니즘 모두 공유.
 
 ### 다음 진행 우선순위 (사용자 결정)
 1. **검증 (1주 정도)** — Phase 2 + 5초 폴링 + 양방향 sync 안정성
@@ -386,9 +398,10 @@ mcBackfillRequestsCollection()    // 메모리 → 컬렉션 백필 (1회)
 
 // 위험 함수 (5분 일시 해제 후 사용)
 mcUnlockDanger("잘못 누르면 모두 다 사라짐을 이해합니다")
-mcResetToSheetData()              // history + requests만 리셋
-mcFullResetToSheet()              // 모든 운영 데이터 시트 스냅샷으로
-mcForceSyncFromCloud()            // 로컬을 클라우드 데이터로 완전 교체
+mcFullResetToSheet()                          // 모든 운영 데이터 시트 스냅샷으로
+mcFullResetToSheet({keepInventory:true})      // history+requests만, inventory 보존
+mcResetToSheetData()                          // 위와 동일 (옛 호환 alias)
+mcForceSyncFromCloud()                        // 로컬을 클라우드 데이터로 완전 교체
 
 // 백업
 mcDownloadReportNow()             // 주차별보고 즉시 다운로드
@@ -403,4 +416,4 @@ mcGetThisWeek()                   // 현재 ISO 주차
 
 ---
 
-_마지막 갱신: 2026-05-05 저녁 (Phase 2 cutover + 양방향 실시간 + 단어 분리 + mcFullResetToSheet)_
+_마지막 갱신: 2026-05-06 (mcResetToSheetData를 mcFullResetToSheet alias로 통합 — 컬렉션 부활 버그 수정)_
