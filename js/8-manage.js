@@ -695,6 +695,10 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     // 재고 차감 (인벤토리에 있는 정규 품목만; 직접 요청은 인벤토리 외부)
     if (item) {
       item.stock -= releaseQty;
+      // 🔒 즉시 inventory 컬렉션 push (debounce 우회)
+      if (typeof upsertInventoryDoc === 'function') {
+        upsertInventoryDoc(item).catch(err => console.warn('release inv upsert 실패:', err));
+      }
     }
 
     // 이력 기록은 항상 (직접 요청 포함). isCustom일 때 설명/사진 보존.
@@ -719,6 +723,11 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
       histRec.customImages = it.customImages || [];
     }
     history.push(histRec);
+    // 🔒 즉시 history 컬렉션 push + hash 업데이트 (debounce 우회 + 중복 push 방지)
+    if (typeof upsertHistoryDoc === 'function') {
+      upsertHistoryDoc(histRec).catch(err => console.warn('release hist upsert 실패:', err));
+      if (window._historyHashes) window._historyHashes.set(histRec.id, JSON.stringify(histRec));
+    }
 
     // Phase 1: 반출 처리 audit log
     if (typeof logEvent === 'function') {
@@ -741,6 +750,10 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
       it.completedDate = completeDate;
       it.releasedBy = releasedBy;
       it.releasedDate = releasedDate;
+      // 🔒 즉시 컬렉션 push
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(it).catch(err => console.warn('complete upsert 실패:', err));
+      }
     } else {
       // 부분 반출: 원래 요청은 잔여 수량으로 유지, 완료된 부분을 별도 레코드로 추가
       it.qty = it.qty - releaseQty;
@@ -766,6 +779,11 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
         newReq.customImages = it.customImages || [];
       }
       requests.push(newReq);
+      // 🔒 부분 반출 — 잔여(it) + 완료분(newReq) 양쪽 즉시 push
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(it).catch(err => console.warn('partial it upsert 실패:', err));
+        upsertRequestDoc(newReq).catch(err => console.warn('partial newReq upsert 실패:', err));
+      }
     }
   });
 

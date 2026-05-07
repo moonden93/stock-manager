@@ -786,6 +786,10 @@ function saveMyRequestEdit(groupId) {
         it.qty = newQty;
       }
       it.memo = newMemo;
+      // 🔒 즉시 컬렉션 push (debounce 우회 — listener echo race 차단)
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(it).catch(err => console.warn('edit immediate upsert 실패:', err));
+      }
     }
   });
 
@@ -826,6 +830,10 @@ function cancelMyRequest(groupId) {
         it.status = 'cancelled';
         it.cancelledDate = cancelledAt;
         it.cancelledBy = cancelledBy;
+        // 🔒 즉시 컬렉션 push (요청자 본인 취소도 race 위험 동일)
+        if (typeof upsertRequestDoc === 'function') {
+          upsertRequestDoc(it).catch(err => console.warn('self-cancel immediate upsert 실패:', err));
+        }
       });
       // audit log
       if (typeof logEvent === 'function') {

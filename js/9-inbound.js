@@ -146,12 +146,22 @@ function confirmInbound(itemId) {
     : new Date().toISOString();
 
   item.stock += qty;
-  history.push({
+  const histRec = {
     id: 'H' + Date.now() + '_' + itemId,
     type: 'in',
     date: inboundDate,
     itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit
-  });
+  };
+  history.push(histRec);
+
+  // 🔒 즉시 컬렉션 push (debounce 우회 — 입고 직후 listener echo가 옛 상태로 덮을 위험 차단)
+  if (typeof upsertInventoryDoc === 'function') {
+    upsertInventoryDoc(item).catch(err => console.warn('inbound inv upsert 실패:', err));
+  }
+  if (typeof upsertHistoryDoc === 'function') {
+    upsertHistoryDoc(histRec).catch(err => console.warn('inbound hist upsert 실패:', err));
+    if (window._historyHashes) window._historyHashes.set(histRec.id, JSON.stringify(histRec));
+  }
 
   saveAll();
   updateHeaderStats();
