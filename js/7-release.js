@@ -695,6 +695,10 @@ function renderMyPendingRequestsSection() {
       '<span class="text-xs font-bold text-slate-700">' + escapeHtml(g.requester || '') + '</span>' +
       '<span class="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[11px] font-bold">' + g.items.length + '종 · ' + totalQty + '개</span>' +
       '<div class="ml-auto flex gap-1">' +
+      // 수정 이력 있을 때만 되돌리기 버튼 표시 (반출 되돌리기와 같은 1단계 되돌리기 패턴)
+      ((g.items.some(it => Array.isArray(it.editHistory) && it.editHistory.length > 0))
+        ? '<button onclick="revertLastEditMyRequest(\'' + escapeJs(gid) + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="가장 최근 수정 1단계를 되돌립니다">↩ 되돌리기</button>'
+        : '') +
       '<button onclick="openEditMyRequest(\'' + escapeJs(gid) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold">✏️ 수정</button>' +
       '<button onclick="cancelMyRequest(\'' + escapeJs(gid) + '\')" class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold">🗑️ 취소</button>' +
       '</div>' +
@@ -810,6 +814,77 @@ function saveMyRequestEdit(groupId) {
   closeModal();
   showToast('요청 수정 완료', 'success');
   renderRelease();
+}
+
+// ============================================
+// 수정 1단계 되돌리기 (반출 되돌리기와 동일 개념)
+// ============================================
+// editHistory의 가장 최근 1회분을 pop → qty/memo 그 직전 값으로 복원.
+// 한 번 "수정" 액션은 여러 item의 editHistory를 동일 timestamp로 추가하므로,
+// 가장 최근 timestamp를 찾아 그 timestamp 일치하는 entry 전부 pop.
+// 또 누르면 그 직전 1단계 더 되돌림. editHistory 비면 버튼 사라짐.
+function revertLastEditMyRequest(groupId) {
+  const items = requests.filter(r =>
+    (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+  );
+  if (items.length === 0) return;
+
+  // 가장 최근 editHistory entry의 timestamp 찾기 (그룹 전체 통틀어)
+  let latestAt = '';
+  items.forEach(it => {
+    if (Array.isArray(it.editHistory)) {
+      it.editHistory.forEach(e => {
+        if (e && e.at && e.at > latestAt) latestAt = e.at;
+      });
+    }
+  });
+  if (!latestAt) {
+    showToast('되돌릴 수정 이력이 없습니다', 'info');
+    return;
+  }
+
+  askConfirm('수정 되돌리기',
+    '가장 최근 수정 1단계를 되돌립니다.\n\n수량/메모가 그 직전 값으로 복원됩니다.\n\n계속하시겠습니까?',
+    function() {
+      const restored = [];
+      items.forEach(it => {
+        if (!Array.isArray(it.editHistory) || it.editHistory.length === 0) return;
+        // 같은 timestamp의 entry들 (보통 1개) — pop하면서 그 전 값으로 복원
+        // 여러 개 있어도 같은 액션이라 동일 처리
+        while (it.editHistory.length > 0) {
+          const last = it.editHistory[it.editHistory.length - 1];
+          if (!last || last.at !== latestAt) break;
+          // 복원 (이번 entry의 qtyFrom/memoFrom으로)
+          const beforeQty = it.qty;
+          const beforeMemo = it.memo || '';
+          it.qty = last.qtyFrom;
+          it.memo = last.memoFrom || '';
+          restored.push({ id: it.id, name: it.name, qty: { from: beforeQty, to: it.qty }, memo: { from: beforeMemo, to: it.memo } });
+          it.editHistory.pop();
+        }
+        // 🔒 즉시 컬렉션 push (race 차단)
+        if (typeof upsertRequestDoc === 'function') {
+          upsertRequestDoc(it).catch(err => console.warn('revert-edit immediate upsert 실패:', err));
+        }
+      });
+
+      // audit log
+      if (typeof logEvent === 'function') {
+        logEvent('request', 'revert_edit', {
+          summary: '수정 되돌리기: [' + items[0].team + '] ' + (items[0].requester || '') +
+                   ' (' + restored.length + '개 항목 복원)',
+          requestId: groupId,
+          team: items[0].team,
+          requester: items[0].requester || '',
+          revertedAt: latestAt,
+          restored: restored
+        });
+      }
+
+      saveAll();
+      showToast('수정 1단계 되돌림 (' + restored.length + '개 항목)', 'success');
+      renderRelease();
+    }, '예, 되돌리기', 'amber');
 }
 
 function cancelMyRequest(groupId) {
