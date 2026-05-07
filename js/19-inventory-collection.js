@@ -44,6 +44,50 @@ function _findRemovedInventoryIds() {
   return removed;
 }
 
+// ============================================
+// Phase 3.1: Atomic stock 변경 (FieldValue.increment)
+// ============================================
+// 두 기기가 같은 품목 stock을 동시에 변경할 때 last-write-wins 회피.
+// Firestore의 atomic increment 사용 — 서버에서 delta 합산.
+// 메모리도 즉시 반영 (낙관적 업데이트). listener echo가 서버 최종값으로 정정.
+//
+// hash 캐시도 즉시 갱신 → Phase 3 hook이 redundant push 안 함
+// (push했다간 절대값으로 덮어 increment 무력화).
+async function adjustInventoryStock(itemId, delta) {
+  if (!itemId || !delta) return;
+  const item = inventory.find(i => i.id === itemId);
+  if (!item) return;
+
+  // 1. 메모리 낙관적 업데이트
+  item.stock = (item.stock || 0) + delta;
+
+  // 2. hash 캐시 즉시 갱신 (Phase 3 hook이 절대값으로 push해 increment 덮는 것 방지)
+  if (window._inventoryHashes) {
+    window._inventoryHashes.set(item.id, JSON.stringify(item));
+  }
+  // localStorage도 즉시 갱신
+  if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
+
+  // 3. Firestore atomic increment (서버 측 합산)
+  if (!window.firebaseReady || !window.firebaseSetDoc || !window.firebaseIncrement) {
+    console.warn('Firebase 준비 안 됨 — atomic stock 적용 못함, 메모리만 갱신');
+    return;
+  }
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'inventory', itemId);
+    await window.firebaseSetDoc(docRef, {
+      stock: window.firebaseIncrement(delta),
+      _syncedAt: window.firebaseServerTimestamp(),
+      _device: (typeof getDeviceId === 'function' ? getDeviceId() : 'unknown'),
+      _deviceLabel: (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '')
+    }, { merge: true });
+  } catch (err) {
+    console.warn('atomic stock 적용 실패:', itemId, err && err.message);
+    // 실패 시 메모리는 낙관적 상태 유지 — 다음 listener echo가 서버 정설로 교정
+  }
+}
+window.adjustInventoryStock = adjustInventoryStock;
+
 async function upsertInventoryDoc(it) {
   if (!window.firebaseReady || !window.firebaseSetDoc || !it || !it.id) return;
   try {

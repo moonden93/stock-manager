@@ -71,8 +71,90 @@ function renderInbound() {
     filtered.forEach(item => { html += _inboundItemRowHtml(item); });
   }
 
-  html += '</div></div></div>';
+  html += '</div></div>';
+
+  // ============================================
+  // 📋 입고 내역 (주차별 collapsible)
+  // ============================================
+  const inHistory = (history || []).filter(h => h.type === 'in')
+    .sort((a, b) => new Date(b.date) - new Date(a.date));  // 최신순
+
+  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
+    '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📋 입고 내역</h3>' +
+    '<p class="text-xs text-slate-500 mt-0.5">총 ' + inHistory.length + '건 · 주차별로 정리</p>' +
+    '</div>';
+
+  if (inHistory.length === 0) {
+    html += '<div class="py-12 text-center text-slate-400">' +
+      '<p class="text-4xl mb-2">📥</p>' +
+      '<p class="text-sm">입고 내역이 없습니다</p></div>';
+  } else {
+    // 주차별 그룹
+    const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
+    window._inboundExpandedWeeks = window._inboundExpandedWeeks || {};
+
+    let lastWeekKey = null;
+    const weekItems = {};  // weekKey → entries 미리 계산 (header 합계용)
+    inHistory.forEach(h => {
+      const wk = (typeof getWeekKey === 'function') ? getWeekKey(h.date) : (h.date || '').slice(0, 7);
+      if (!weekItems[wk]) weekItems[wk] = [];
+      weekItems[wk].push(h);
+    });
+    const orderedWeeks = Object.keys(weekItems);  // inHistory가 최신순이라 첫 등장 순으로 자동 정렬
+
+    orderedWeeks.forEach((wk, wi) => {
+      const entries = weekItems[wk];
+      const wkLabel = (typeof formatWeekLabel === 'function') ? formatWeekLabel(wk) : wk;
+      const totalQty = entries.reduce((s, e) => s + (e.qty || 0), 0);
+      const isAutoOpen = (wk === currentWeek) || (currentWeek === '' && wi === 0);
+      const expanded = (window._inboundExpandedWeeks[wk] === undefined) ? isAutoOpen : window._inboundExpandedWeeks[wk];
+
+      html += '<div class="' + (wi > 0 ? 'border-t-2 border-slate-200' : '') + '">' +
+        '<button onclick="toggleInboundWeek(\'' + escapeJs(wk) + '\')" ' +
+        'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center gap-2 text-left">' +
+        '<span class="text-slate-500 text-xs">' + (expanded ? '▼' : '▶') + '</span>' +
+        '<span class="font-bold text-slate-800 text-sm">📅 ' + escapeHtml(wkLabel) + '</span>' +
+        '<span class="ml-auto text-xs text-slate-600">' + entries.length + '건 · ' + totalQty + '개</span>' +
+        '</button>' +
+        '<div class="' + (expanded ? '' : 'hidden') + ' divide-y divide-slate-100">';
+
+      entries.forEach(e => {
+        const dt = new Date(e.date);
+        const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
+        html += '<div class="px-4 py-3 hover:bg-slate-50">' +
+          '<div class="flex items-center gap-3">' +
+          '<div class="text-xs text-slate-500 w-12 flex-shrink-0">' + dateStr + '</div>' +
+          '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs text-slate-500">' + escapeHtml(e.vendor || '') + '</p>' +
+          '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(e.name || '') + '</p>' +
+          '</div>' +
+          '<div class="text-right flex-shrink-0">' +
+          '<span class="text-base font-bold text-emerald-700">+' + (e.qty || 0) + '</span>' +
+          '<span class="text-xs text-slate-500 ml-1">' + escapeHtml(e.unit || '') + '</span>' +
+          '</div></div></div>';
+      });
+
+      html += '</div></div>';
+    });
+  }
+
+  html += '</div>';
+  html += '</div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// 입고 내역 주차 헤더 토글
+function toggleInboundWeek(weekKey) {
+  window._inboundExpandedWeeks = window._inboundExpandedWeeks || {};
+  const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
+  if (window._inboundExpandedWeeks[weekKey] === undefined) {
+    // 첫 토글 — 기본값(현재주차=open, 나머지=closed)을 반대로
+    window._inboundExpandedWeeks[weekKey] = !(weekKey === currentWeek);
+  } else {
+    window._inboundExpandedWeeks[weekKey] = !window._inboundExpandedWeeks[weekKey];
+  }
+  renderInbound();
 }
 
 function openInboundDialog(itemId) {
