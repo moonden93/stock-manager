@@ -147,6 +147,8 @@ function _applyHistorySync(newHist) {
   // in-place 교체 (다른 모듈의 참조 유지)
   history.length = 0;
   newHist.forEach(h => history.push(h));
+  // 대량 감소 가드 기준선 갱신 (false alarm 방지)
+  if (window._lastCloudSnapshot) window._lastCloudSnapshot.historyCount = newHist.length;
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   if (typeof currentTab !== 'undefined') {

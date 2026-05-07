@@ -180,6 +180,8 @@ function _applyInventorySync(newInv) {
   });
   inventory.length = 0;
   newInv.forEach(it => inventory.push(it));
+  // 대량 감소 가드 기준선 갱신 (false alarm 방지)
+  if (window._lastCloudSnapshot) window._lastCloudSnapshot.inventoryCount = newInv.length;
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   if (typeof currentTab !== 'undefined') {

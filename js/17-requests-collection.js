@@ -149,6 +149,9 @@ function _applyRequestsSync(newReqs) {
   }
   requests.length = 0;
   newReqs.forEach(r => requests.push(r));
+  // 대량 감소 가드 기준선 갱신 — listener가 메모리를 교체했으므로 다음 saveToFirebase는
+  // 이 새 기준에서 비교해야 함 (안 그러면 옛 단일문서 카운트 vs 새 컬렉션 카운트로 false alarm)
+  if (window._lastCloudSnapshot) window._lastCloudSnapshot.requestsCount = newReqs.length;
   // localStorage 갱신 (오프라인 대비)
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   // 헤더 + 현재 탭 재렌더링
