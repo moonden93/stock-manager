@@ -716,6 +716,70 @@ function renderMyPendingRequestsSection() {
   return html;
 }
 
+// ============================================
+// 수정 모달에서 항목 1개 취소 (수량 0 대신 항목 자체 제거)
+// ============================================
+// status='cancelled' 소프트 처리 — 데이터 보존, 통계/대기에서 자동 제외
+// 같은 그룹의 다른 항목은 그대로. 모든 항목 취소되면 모달 닫고 화면 갱신.
+//
+// ⚠️ askConfirmWithReason은 modal-container를 덮어 edit 모달을 닫음.
+//    YES일 때는 처리 후 edit 모달 재오픈, NO일 때는 그냥 닫힘 (재오픈은 사용자가).
+function removeMyRequestItem(itemId, groupId) {
+  const it = requests.find(r => r.id === itemId);
+  if (!it) return;
+  if ((it.status || 'completed') !== 'pending') {
+    showToast('이미 처리되었거나 취소된 항목입니다', 'info');
+    return;
+  }
+
+  const itemName = it.name;
+  const itemQty = it.qty;
+  askConfirmWithReason('항목 취소',
+    '【' + itemName + '】 ' + itemQty + (it.unit || '개') + ' 항목을 요청에서 뺍니다.\n\n' +
+    '· 데이터는 보존 (status를 cancelled로 변경)\n' +
+    '· 같은 그룹의 다른 항목은 그대로\n' +
+    '· 모든 항목을 빼면 요청 자체가 [취소] 탭으로',
+    '예: 잘못 추가됨, 필요 없어짐',
+    function(reason) {
+      const at = new Date().toISOString();
+      const by = it.requester || it.member || '본인';
+      it.status = 'cancelled';
+      it.cancelledDate = at;
+      it.cancelledBy = by;
+      if (reason) it.cancelReason = reason;
+      // 즉시 컬렉션 push (race 차단)
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(it).catch(err => console.warn('item cancel upsert 실패:', err));
+      }
+      // audit log
+      if (typeof logEvent === 'function') {
+        logEvent('request', 'cancel_item_by_requester', {
+          summary: '항목 취소: [' + it.team + '] ' + (it.requester || '') +
+                   ' — ' + itemName + ' x ' + itemQty + (reason ? ' — ' + reason : ''),
+          requestId: it.requestId || groupId,
+          team: it.team,
+          requester: it.requester || '',
+          itemId: it.id,
+          itemName: itemName,
+          qty: itemQty,
+          reason: reason || ''
+        });
+      }
+      saveAll();
+      showToast(itemName + ' 취소됨', 'success');
+
+      // 같은 그룹에 남은 pending 있으면 edit 모달 재오픈, 없으면 화면 갱신만
+      const remaining = requests.filter(r =>
+        (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+      );
+      if (remaining.length > 0) {
+        openEditMyRequest(groupId);
+      } else {
+        renderRelease();
+      }
+    }, '예, 항목 취소', 'red');
+}
+
 // 수정 모달
 function openEditMyRequest(groupId) {
   const items = requests.filter(r =>
@@ -733,8 +797,15 @@ function openEditMyRequest(groupId) {
 
   items.forEach((it, idx) => {
     html += '<div class="border border-slate-200 rounded-lg p-3">' +
+      '<div class="flex items-start gap-2 mb-2">' +
+      '<div class="flex-1 min-w-0">' +
       '<p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) + '</p>' +
-      '<p class="text-[11px] text-slate-500 mb-2">' + escapeHtml(it.vendor) + '</p>' +
+      '<p class="text-[11px] text-slate-500">' + escapeHtml(it.vendor) + '</p>' +
+      '</div>' +
+      '<button onclick="removeMyRequestItem(\'' + escapeJs(it.id) + '\', \'' + escapeJs(groupId) + '\')" ' +
+      'class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold flex-shrink-0" ' +
+      'title="이 항목을 요청에서 뺍니다">❌ 항목 취소</button>' +
+      '</div>' +
       '<div class="flex items-center gap-2">' +
       '<span class="text-xs text-slate-600">수량:</span>' +
       '<input type="number" id="edit-req-qty-' + idx + '" data-id="' + escapeJs(it.id) + '" value="' + it.qty + '" min="1" inputmode="numeric" ' +
