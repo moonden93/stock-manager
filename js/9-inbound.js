@@ -52,17 +52,25 @@ function renderInbound() {
   const inHistory = (history || []).filter(h => h.type === 'in')
     .sort((a, b) => new Date(b.date) - new Date(a.date));  // 최신순
 
-  let inHistHtml = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
-    '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
-    '<h3 class="text-base font-bold text-slate-900">📋 입고 내역</h3>' +
-    '<p class="text-xs text-slate-500 mt-0.5">총 ' + inHistory.length + '건 · 주차별로 정리</p>' +
-    '</div>';
+  // 전체 섹션 collapsible — 기본 접힘 (너무 길어서)
+  if (typeof window._inboundHistoryExpanded === 'undefined') {
+    window._inboundHistoryExpanded = false;
+  }
+  const sectionExpanded = window._inboundHistoryExpanded;
 
-  if (inHistory.length === 0) {
+  let inHistHtml = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
+    '<button onclick="toggleInboundHistorySection()" ' +
+    'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center gap-2 text-left">' +
+    '<span class="text-slate-500 text-sm">' + (sectionExpanded ? '▼' : '▶') + '</span>' +
+    '<h3 class="text-base font-bold text-slate-900">📋 입고 내역</h3>' +
+    '<span class="ml-auto text-xs text-slate-500">총 ' + inHistory.length + '건</span>' +
+    '</button>';
+
+  if (sectionExpanded && inHistory.length === 0) {
     inHistHtml += '<div class="py-12 text-center text-slate-400">' +
       '<p class="text-4xl mb-2">📥</p>' +
       '<p class="text-sm">입고 내역이 없습니다</p></div>';
-  } else {
+  } else if (sectionExpanded) {
     const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
     window._inboundExpandedWeeks = window._inboundExpandedWeeks || {};
 
@@ -102,7 +110,6 @@ function renderInbound() {
           '</div>' +
           '<div class="text-right flex-shrink-0">' +
           '<span class="text-base font-bold text-emerald-700">+' + (e.qty || 0) + '</span>' +
-          '<span class="text-xs text-slate-500 ml-1">' + escapeHtml(e.unit || '') + '</span>' +
           '</div></div></div>';
       });
 
@@ -142,6 +149,12 @@ function renderInbound() {
 
   html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// 입고 내역 전체 섹션 토글 (헤더 클릭 시 주차 list 펼침/접힘)
+function toggleInboundHistorySection() {
+  window._inboundHistoryExpanded = !window._inboundHistoryExpanded;
+  renderInbound();
 }
 
 // 입고 내역 주차 헤더 토글
