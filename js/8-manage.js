@@ -808,6 +808,11 @@ function cancelRequestGroup(groupId) {
         it.status = 'cancelled';
         it.cancelledDate = actionAt;
         it.cancelledBy = actionBy;
+        // 🔒 즉시 컬렉션 push (debounce 우회) — listener echo가 옛 pending 상태로
+        //    덮어 cancel이 사라지는 race 차단. fire-and-forget.
+        if (typeof upsertRequestDoc === 'function') {
+          upsertRequestDoc(it).catch(err => console.warn('cancel immediate upsert 실패:', err));
+        }
       });
     } else {
       // 완료 → 대기 복귀: 재고 복원 + status='pending'
@@ -839,6 +844,10 @@ function cancelRequestGroup(groupId) {
         delete it.completedDate;
         delete it.releasedBy;
         delete it.releasedDate;
+        // 🔒 즉시 컬렉션 push (revert도 동일 race 위험)
+        if (typeof upsertRequestDoc === 'function') {
+          upsertRequestDoc(it).catch(err => console.warn('revert immediate upsert 실패:', err));
+        }
       });
     }
 

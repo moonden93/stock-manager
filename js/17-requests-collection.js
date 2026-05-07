@@ -176,6 +176,7 @@ document.addEventListener('focusout', () => {
 
 // 백그라운드 탭 복귀/네트워크 재연결 시 강제 동기화
 // 모바일 Chrome은 백그라운드 탭의 listener를 잠재움 → 깨어나도 자동으로 안 따라잡음
+window.forceFetchRequestsCollection = forceFetchRequestsCollection;
 async function forceFetchRequestsCollection() {
   if (!window.firebaseReady || !window.firebaseCollection) return;
   try {
