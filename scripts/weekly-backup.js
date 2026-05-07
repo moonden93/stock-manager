@@ -5,9 +5,6 @@
 // 2) 보고용 Excel + 재난백업용 Excel 생성
 // 3) Gmail SMTP로 첨부파일 메일 발송
 //
-// 참고: 문서 첨부파일(PDF/이미지 등)은 메일 용량 한도 때문에 미포함.
-//       Apps Script 백업의 Drive 폴더에서 별도 동기화됨.
-//
 // 환경변수 (GitHub Secrets):
 //   GMAIL_USER          — 보내는 Gmail 주소 (앱 비밀번호 발급한 계정)
 //   GMAIL_APP_PASSWORD  — Gmail 앱 비밀번호 (16자리, 일반 비번 아님)
@@ -183,7 +180,6 @@ function generateRecoveryExcel(data) {
   const requests = data.requests || [];
   const teams = data.teams || [];
   const teamMembers = data.teamMembers || {};
-  const documents = data.documents || [];
 
   const wb = XLSX.utils.book_new();
   const now = new Date();
@@ -202,8 +198,7 @@ function generateRecoveryExcel(data) {
     ['이력 수', history.length],
     ['요청 수', requests.length],
     ['팀 수', teams.length],
-    ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (Array.isArray(m) ? m.length : 0), 0)],
-    ['문서 수', documents.length]
+    ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (Array.isArray(m) ? m.length : 0), 0)]
   ];
   const wsMeta = XLSX.utils.aoa_to_sheet(meta);
   applyFormat(wsMeta, []);
@@ -263,24 +258,10 @@ function generateRecoveryExcel(data) {
   applyFormat(wsTeam, []);
   XLSX.utils.book_append_sheet(wb, wsTeam, '팀_담당자');
 
-  // 문서_메타
-  const docRows = [['ID', '업체', '파일명', '타입', '크기(byte)', '업로드일']];
-  documents.forEach(d => docRows.push([
-    d.id || '', d.vendor || '', d.name || '',
-    d.type || '', d.size || 0, d.uploadedAt || ''
-  ]));
-  const wsDoc = XLSX.utils.aoa_to_sheet(docRows);
-  applyFormat(wsDoc, [4]);  // 크기만 숫자
-  XLSX.utils.book_append_sheet(wb, wsDoc, '문서_메타');
-
   // 원본_JSON (복원용 텍스트 덤프)
-  const docsLite = documents.map(d => ({
-    id: d.id, vendor: d.vendor, name: d.name,
-    type: d.type, size: d.size, uploadedAt: d.uploadedAt
-  }));
   const fullJson = JSON.stringify({
     version: 1, weekKey, extractedAt: now.toISOString(),
-    inventory, history, requests, teams, teamMembers, documents: docsLite
+    inventory, history, requests, teams, teamMembers
   });
   const CHUNK = 30000;
   const jsonRows = [['JSON 청크 (모두 이어붙여 사용)'], []];
@@ -543,8 +524,6 @@ async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
 
-  const docCount = (data.documents || []).length;
-
   const message = [
     '문치과병원 재고관리 - 주간 자동 백업',
     '═══════════════════════════════════════',
@@ -555,7 +534,6 @@ async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
     '· 등록 품목: ' + inventory.length + '개 (품절 ' + outOfStock + ', 부족 ' + lowStock + ')',
     '· 재고 평가액: ' + totalCost.toLocaleString() + '원',
     '· 대기 중 요청: ' + pendingReq + '건',
-    '· 업로드 문서: ' + docCount + '개' + (docCount === 0 ? ' (없음)' : ' — Drive 폴더에서 확인'),
     '',
     '【 이번 주 출고 】',
     '· 건수: ' + thisOutHist.length + '건',
@@ -563,12 +541,12 @@ async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
     '',
     '【 첨부파일 】',
     '· ' + weekLabel + '_재고관리_주차별보고.xlsx — 의사결정용 리포트 (4개 시트, AI 코멘트 포함)',
-    '· ' + weekLabel + '_재고관리_재난백업용.xlsx — 시스템 복원용 (7개 시트, 반출자 포함)',
+    '· ' + weekLabel + '_재고관리_재난백업용.xlsx — 시스템 복원용 (6개 시트, 반출자 포함)',
     monthlyLabel ? '· 월별보고_' + monthlyLabel + '.xlsx — ' + monthlyLabel + ' 월별보고 (6개 시트)' : '',
     '',
     '※ 본 메일은 GitHub Actions로 매주 토요일 12시 (한국시간) 자동 발송됩니다.',
     monthlyLabel ? '※ 매달 첫째 주 토요일에는 직전월 보고서가 함께 첨부됩니다.' : '',
-    '※ 동일 데이터 + 첨부 문서는 Google Drive에도 자동 저장됩니다 (Apps Script).'
+    '※ 동일 데이터는 Google Drive에도 자동 저장됩니다 (Apps Script).'
   ].filter(line => line !== '').join('\n');
 
   const transporter = nodemailer.createTransport({

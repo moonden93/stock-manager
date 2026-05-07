@@ -329,8 +329,6 @@ function showHelp() {
     '<p class="text-slate-700 leading-relaxed">현재 재고를 확인하고 직접 수정할 수 있습니다.</p></div>' +
     '<div><h4 class="text-base font-bold text-purple-700 mb-2">📊 통계</h4>' +
     '<p class="text-slate-700 leading-relaxed">팀별/업체별 사용량과 통계를 확인합니다. 기간을 직접 선택하거나 Excel로 다운로드할 수 있습니다.</p></div>' +
-    '<div><h4 class="text-base font-bold text-purple-700 mb-2">📁 문서함</h4>' +
-    '<p class="text-slate-700 leading-relaxed">계약서/주문서/거래명세서 등을 업체별로 관리합니다. PDF/이미지/엑셀/워드 모두 지원 (5MB 이하)</p></div>' +
     '<div><h4 class="text-base font-bold text-slate-700 mb-2">⚙️ 설정</h4>' +
     '<p class="text-slate-700 leading-relaxed">팀, 담당자, 업체, 품목을 추가/수정/삭제할 수 있습니다.</p></div>' +
     '<div class="bg-amber-50 border border-amber-200 rounded-lg p-3">' +

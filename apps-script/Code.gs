@@ -5,8 +5,6 @@
 //   1) Firestore에서 데이터 읽기
 //   2) Google Sheets 3가지 생성 (주차별보고/재난백업용/누적 마스터)
 //   3) Drive의 "재고관리 백업" 폴더에 저장
-//   4) 첨부 문서(PDF/이미지)를 "재고관리 백업/문서" 폴더에 sync
-//      (이름·크기 같으면 건너뜀 → 매일 똑같은 파일 중복 안 됨)
 //   * 같은 이름 파일이 이미 있으면 휴지통으로 옮긴 뒤 새 파일 생성 (중복 방지)
 //   * 파일명에 주차가 들어가므로, 같은 주 내에서 매일 돌면 → 그 주차 파일이 매일 갱신됨
 //
@@ -21,12 +19,10 @@
 //   - 2026년 5월 1주차_재고관리_재난백업용 (Google Sheets, 매주 갱신)
 //   - 2026년 5월 1주차_클로드연동 기존시트 (Google Sheets, 매주 누적 — 직전주 복사 + 새 탭)
 //   - 월별보고_2026년 4월 (Google Sheets, 매월 첫째 토요일만)
-//   - 문서/ (서브폴더, Firestore의 첨부 파일들 sync)
 
 const FIRESTORE_PROJECT = 'moon-dental-stock';
 const FIRESTORE_PATH = 'appData/main';
 const DRIVE_FOLDER_NAME = '재고관리 백업';
-const DOCS_SUBFOLDER_NAME = '문서';
 
 // 마스터 시트 누적 (원본은 절대 건드리지 않음)
 // 시드: 사용자가 "{week}_클로드연동 기존시트" 파일을 폴더에 미리 넣어둠 (원본 전체 탭 복사본)
@@ -43,8 +39,7 @@ function weeklyBackup() {
   const data = fetchFirestore();
   Logger.log('Fetched: inv=' + (data.inventory || []).length +
              ', hist=' + (data.history || []).length +
-             ', req=' + (data.requests || []).length +
-             ', docs=' + (data.documents || []).length);
+             ', req=' + (data.requests || []).length);
 
   // 보호: 데이터 비어있으면 빈 백업 만들지 않음
   if (!Array.isArray(data.inventory) || data.inventory.length === 0) {
@@ -72,10 +67,7 @@ function weeklyBackup() {
     createMonthlyReportSheet(data, prev.year, prev.month, monthlyName, folder);
   }
 
-  // 3. 첨부 문서 sync (변경된 것만)
-  syncDocuments(data, folder);
-
-  // 4. 마스터 시트 누적 — 실패해도 백업은 완료된 상태로 종료
+  // 3. 마스터 시트 누적 — 실패해도 백업은 완료된 상태로 종료
   try {
     appendToMasterSheet(data);
   } catch (e) {
@@ -387,124 +379,6 @@ function sortTabsNewestFirst_(ss) {
 }
 
 // ============================================
-// 문서 sync — Firestore documents의 base64를 Drive 파일로 저장
-// ============================================
-// 매주 동일 파일을 중복 저장하지 않으려고, 이름+크기로 비교.
-// Firestore에서 사라진 파일은 Drive에서도 자동 삭제하지 않음 (보존).
-function syncDocuments(data, parentFolder) {
-  const documents = data.documents || [];
-  if (documents.length === 0) {
-    Logger.log('첨부 문서 없음 — sync 건너뜀');
-    return;
-  }
-
-  // "문서" 서브폴더 가져오기 또는 만들기
-  let docFolder;
-  const subs = parentFolder.getFoldersByName(DOCS_SUBFOLDER_NAME);
-  if (subs.hasNext()) {
-    docFolder = subs.next();
-  } else {
-    docFolder = parentFolder.createFolder(DOCS_SUBFOLDER_NAME);
-  }
-
-  // 월별 서브폴더 캐시 (필요 시 생성)
-  const monthFolderCache = {};
-  function getOrCreateMonthFolder_(monthLabel) {
-    if (monthFolderCache[monthLabel]) return monthFolderCache[monthLabel];
-    const its = docFolder.getFoldersByName(monthLabel);
-    let f;
-    if (its.hasNext()) f = its.next();
-    else f = docFolder.createFolder(monthLabel);
-    monthFolderCache[monthLabel] = f;
-    return f;
-  }
-  // 월별 폴더 안 기존 파일들 (lazy load)
-  const existingByMonth = {};
-  function getExistingInMonth_(monthLabel) {
-    if (existingByMonth[monthLabel]) return existingByMonth[monthLabel];
-    const map = {};
-    const it = getOrCreateMonthFolder_(monthLabel).getFiles();
-    while (it.hasNext()) {
-      const f = it.next();
-      map[f.getName()] = f;
-    }
-    existingByMonth[monthLabel] = map;
-    return map;
-  }
-
-  // 옛 위치(문서 루트) 파일들 — 마이그레이션용
-  const rootExisting = {};
-  const rootIter = docFolder.getFiles();
-  while (rootIter.hasNext()) {
-    const f = rootIter.next();
-    rootExisting[f.getName()] = f;
-  }
-
-  let added = 0, updated = 0, skipped = 0, failed = 0, migrated = 0;
-
-  documents.forEach(function(d) {
-    if (!d.data) { skipped++; return; }  // base64 데이터 없음
-    const fileName = d.name || ('document_' + (d.id || Date.now()));
-    const monthLabel = monthLabelFromDate_(d.uploadedAt);  // "2026.04" or "날짜미상"
-    const monthFolder = getOrCreateMonthFolder_(monthLabel);
-    const existing = getExistingInMonth_(monthLabel);
-
-    // 이미 같은 월에 같은 이름 + 같은 크기 → 건너뜀
-    if (existing[fileName] && existing[fileName].getSize() === (d.size || 0)) {
-      // 옛 위치(루트)에 같은 이름이 남아있으면 정리
-      if (rootExisting[fileName]) {
-        rootExisting[fileName].setTrashed(true);
-        migrated++;
-        delete rootExisting[fileName];
-      }
-      skipped++;
-      return;
-    }
-
-    try {
-      const idx = d.data.indexOf(',');
-      const base64 = (idx >= 0) ? d.data.substring(idx + 1) : d.data;
-      const bytes = Utilities.base64Decode(base64);
-      const blob = Utilities.newBlob(bytes, d.type || 'application/octet-stream', fileName);
-
-      if (existing[fileName]) {
-        // 같은 이름 다른 크기 → 이전 파일 휴지통
-        existing[fileName].setTrashed(true);
-        updated++;
-      } else {
-        added++;
-      }
-      monthFolder.createFile(blob);
-
-      // 옛 위치(루트) 동명 파일 정리
-      if (rootExisting[fileName]) {
-        rootExisting[fileName].setTrashed(true);
-        migrated++;
-        delete rootExisting[fileName];
-      }
-    } catch (e) {
-      failed++;
-      Logger.log('문서 저장 실패: ' + fileName + ' - ' + e);
-    }
-  });
-
-  Logger.log('문서 sync 완료 — 추가:' + added + ', 갱신:' + updated +
-             ', 건너뜀:' + skipped + ', 마이그레이션:' + migrated + ', 실패:' + failed);
-}
-
-// uploadedAt → "yyyy.MM" (KST). null/invalid면 "날짜미상".
-function monthLabelFromDate_(d) {
-  if (!d) return '날짜미상';
-  let dt;
-  if (typeof d === 'string') dt = new Date(d);
-  else if (d instanceof Date) dt = d;
-  else if (typeof d === 'number') dt = new Date(d);
-  else return '날짜미상';
-  if (isNaN(dt.getTime())) return '날짜미상';
-  return Utilities.formatDate(dt, 'Asia/Seoul', 'yyyy.MM');
-}
-
-// ============================================
 // Firestore REST + 타입 파서
 // ============================================
 function fetchFirestore() {
@@ -647,7 +521,6 @@ function createMonthlyReportSheet(data, year, month, name, folder) {
   const history = data.history || [];
   const requests = data.requests || [];
   const teams = data.teams || [];
-  const documents = data.documents || [];
 
   const monthLabel = year + '년 ' + month + '월';
   const monthStart = new Date(year, month - 1, 1);
@@ -694,8 +567,7 @@ function createMonthlyReportSheet(data, year, month, name, folder) {
     ['  · 품절', outOfStock],
     ['  · 부족', lowStock],
     ['재고 평가액(원)', totalCost],
-    ['대기 중 요청', pendingReq],
-    ['업로드 문서 수', documents.length]
+    ['대기 중 요청', pendingReq]
   ]);
 
   // 2. 팀별 통계
@@ -1136,7 +1008,6 @@ function createRecoverySheet(data, name, folder) {
   const requests = data.requests || [];
   const teams = data.teams || [];
   const teamMembers = data.teamMembers || {};
-  const documents = data.documents || [];
 
   // 메타
   const metaSheet = ss.getActiveSheet();
@@ -1154,8 +1025,7 @@ function createRecoverySheet(data, name, folder) {
     ['팀 수', teams.length],
     ['담당자 수', Object.keys(teamMembers).reduce(function(s, k) {
       return s + (Array.isArray(teamMembers[k]) ? teamMembers[k].length : 0);
-    }, 0)],
-    ['문서 수', documents.length]
+    }, 0)]
   ]);
 
   const hiddenSet = buildHiddenSet_(inventory);
@@ -1211,14 +1081,4 @@ function createRecoverySheet(data, name, folder) {
     }
   });
   writeRows(ss.insertSheet('팀_담당자'), teamRows);
-
-  // 문서_메타
-  const docRows = [['ID', '업체', '파일명', '타입', '크기(byte)', '업로드일']];
-  documents.forEach(function(d) {
-    docRows.push([
-      d.id || '', d.vendor || '', d.name || '',
-      d.type || '', d.size || 0, d.uploadedAt || ''
-    ]);
-  });
-  writeRows(ss.insertSheet('문서_메타'), docRows);
 }

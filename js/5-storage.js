@@ -15,7 +15,6 @@ let history = [];        // 입출고 이력
 let requests = [];       // 반출 요청 (대기/완료/반려)
 let teams = [];          // 팀 목록
 let teamMembers = {};    // { '9층 공통': ['김간호사', '박치위생사'], ... }
-let documents = [];      // 첨부 문서 (PDF/이미지/엑셀/워드)
 let currentTab = 'release';
 let cart = [];           // 반출 화면의 장바구니
 
@@ -76,10 +75,6 @@ function loadData() {
     // 팀 멤버
     const tm = localStorage.getItem('mc_team_members');
     teamMembers = tm ? JSON.parse(tm) : {};
-
-    // 문서
-    const docs = localStorage.getItem('mc_documents');
-    documents = docs ? JSON.parse(docs) : [];
 
     // 마이그레이션이 발생했으면 저장
     if (localStorage.getItem('mc_teams_migrated_v2_just_ran') === '1') {
@@ -265,7 +260,7 @@ function detectCloudWipeOnLoad(data, lastSnap) {
 // - inventory/teams: 클라우드가 비어있으면 무시 (옛 정상 데이터 보호)
 // - teamMembers: 클라우드가 비어있고 로컬에 있으면 로컬 유지
 //   (담당자 데이터가 한 번 사라지면 다시 복구하기 번거로워서 특별 보호)
-// - history/requests/documents: 빈 배열도 정상 변경으로 간주 (의도적 삭제 가능)
+// - history/requests: 빈 배열도 정상 변경으로 간주 (의도적 삭제 가능)
 function applyCloudData(data) {
   if (Array.isArray(data.inventory) && data.inventory.length > 0) inventory = data.inventory;
 
@@ -300,8 +295,6 @@ function applyCloudData(data) {
     teamMembers = cloudMembers || {};
   }
   // (cloud 비어있고 local에 있으면) 로컬 유지 → 다음 saveAll 시 자동으로 클라우드에 반영
-
-  if (Array.isArray(data.documents)) documents = data.documents;
 }
 
 // ============================================
@@ -321,10 +314,9 @@ function saveToLocalStorage() {
     localStorage.setItem('mc_requests', JSON.stringify(requests));
     localStorage.setItem('mc_teams', JSON.stringify(teams));
     localStorage.setItem('mc_team_members', JSON.stringify(teamMembers));
-    localStorage.setItem('mc_documents', JSON.stringify(documents));
   } catch (e) {
     if (typeof showToast === 'function') {
-      showToast('저장 실패: 용량 부족 (5MB 이하 파일만 첨부 가능)', 'error');
+      showToast('저장 실패: 용량 부족', 'error');
     } else {
       console.error('저장 실패:', e);
     }
@@ -383,7 +375,6 @@ async function saveToFirebase() {
       inventory: inventory,
       history: history,
       requests: requests,
-      documents: documents,
       lastUpdated: window.firebaseServerTimestamp()
     };
 
@@ -620,8 +611,6 @@ async function mcForceSyncFromCloud() {
     if (data.teamMembers && typeof data.teamMembers === 'object') {
       Object.keys(data.teamMembers).forEach(k => { teamMembers[k] = data.teamMembers[k]; });
     }
-    documents.length = 0;
-    if (Array.isArray(data.documents)) data.documents.forEach(d => documents.push(d));
 
     // localStorage만 갱신 — Firebase는 push 안 함 (한 방향)
     saveToLocalStorage();

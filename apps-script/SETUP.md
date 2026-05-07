@@ -5,7 +5,7 @@
 | 채널 | 도착 위치 | 셋업 시간 |
 |---|---|---|
 | **GitHub Actions** | Gmail 받은편지함 (Excel 첨부) | 5분 |
-| **Apps Script** | Google Drive `재고관리 백업` 폴더 (Sheets + 첨부 문서) | 10분 |
+| **Apps Script** | Google Drive `재고관리 백업` 폴더 (Sheets) | 10분 |
 
 ---
 
@@ -135,9 +135,8 @@
 
 자동으로 코드 실행됨. 하단 **"실행 로그"** 패널에 다음과 같이 떠야 성공:
 ```
-📅 Weekly backup starting at ...
-Fetched: inv=568, hist=1432, req=1, docs=N
-문서 sync 완료 — 추가:N, 갱신:0, 건너뜀:0, 실패:0
+📅 Backup starting at ...
+Fetched: inv=568, hist=1432, req=1
 ✓ 백업 완료 — Drive 폴더: 재고관리 백업
 ```
 
@@ -148,9 +147,7 @@ Fetched: inv=568, hist=1432, req=1, docs=N
 3. 폴더 더블클릭 → 안의 항목들:
    - 📊 `보고용_2026-05-09` (초록색 Sheets)
    - 📊 `재난백업용_2026-05-09` (초록색 Sheets)
-   - 📁 `문서` (첨부파일들 들어있는 폴더)
 4. Sheets 더블클릭하면 그대로 열림. **Excel(.xlsx)로 다운로드**: 파일 → 다운로드 → Microsoft Excel
-5. `문서` 폴더 안에는 사이트에 업로드했던 PDF/이미지/Excel 등이 그대로 들어있음
 
 ## 6단계: 매주 토요일 자동 트리거 등록
 
@@ -179,7 +176,6 @@ Fetched: inv=568, hist=1432, req=1, docs=N
 |---|---|
 | **메일** | Gmail 받은편지함 → `[재고관리] 주간 백업 YYYY-MM-DD` |
 | **Drive Sheets** | `재고관리 백업/보고용_*`, `재고관리 백업/재난백업용_*` |
-| **Drive 첨부 문서** | `재고관리 백업/문서/` 폴더 안의 실제 파일들 |
 
 ---
 
@@ -200,7 +196,6 @@ Fetched: inv=568, hist=1432, req=1, docs=N
 2. 최근 실행 결과 → 빨간 ❌ 항목 클릭
 3. 흔한 원인:
    - **권한 만료** → 다시 ▶ 실행해서 재승인
-   - **"Service Drive: User Rate Limit Exceeded"** → 첨부 문서가 너무 많은 경우. 다음 주에 재시도하면 됨
    - **트리거 미등록** → 6단계 다시 확인
 
 ## 둘 다 안 와도 안전망

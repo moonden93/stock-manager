@@ -94,7 +94,7 @@ function applyFormat(ws, numericCols, headerRowCount) {
 // 1) 재난백업용 Excel — 전체 데이터 덤프
 // ============================================
 // 시스템 복원 목적. 사람이 읽는 게 아니라 데이터를 빠짐없이 보존하는 게 목표.
-// 시트: 메타, 품목, 입출고이력, 반출요청, 팀_담당자, 문서_메타, 원본_JSON
+// 시트: 메타, 품목, 입출고이력, 반출요청, 팀_담당자, 원본_JSON
 function generateRecoveryExcel() {
   if (typeof XLSX === 'undefined') throw new Error('XLSX 라이브러리 로드 안 됨');
 
@@ -115,7 +115,6 @@ function generateRecoveryExcel() {
     ['요청 수', requests.length],
     ['팀 수', teams.length],
     ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (m ? m.length : 0), 0)],
-    ['문서 수', documents.length],
     [],
     ['※ 이 파일은 절대 삭제하지 말고 보관하세요. 데이터 손실 시 복원에 사용됩니다.'],
     ['※ 보고/검토용 자료는 [보고용_*.xlsx] 파일을 사용하세요.']
@@ -167,22 +166,10 @@ function generateRecoveryExcel() {
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(teamRows), '팀_담당자');
 
-  // ─ 문서 메타 (실제 파일은 제외) ─
-  const docRows = [['ID', '업체', '파일명', '타입', '크기(byte)', '업로드일']];
-  documents.forEach(d => docRows.push([
-    d.id || '', d.vendor || '', d.name || '',
-    d.type || '', d.size || 0, d.uploadedAt || ''
-  ]));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(docRows), '문서_메타');
-
   // ─ 원본 JSON (복원용 텍스트 덤프, 32KB 청크 분할) ─
-  const docsLite = documents.map(d => ({
-    id: d.id, vendor: d.vendor, name: d.name,
-    type: d.type, size: d.size, uploadedAt: d.uploadedAt
-  }));
   const fullJson = JSON.stringify({
     version: 1, weekKey, extractedAt: now.toISOString(),
-    inventory, history, requests, teams, teamMembers, documents: docsLite
+    inventory, history, requests, teams, teamMembers
   });
   const CHUNK = 30000;
   const jsonRows = [['JSON 청크 (모두 이어붙여 사용)'], []];
@@ -583,7 +570,6 @@ function generateMonthlyReportExcel(year, month) {
   const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
-  const docCount = documents.length;
 
   const summaryRows = [
     ['문치과병원 재고관리 - 월별 보고서'],
@@ -606,10 +592,7 @@ function generateMonthlyReportExcel(year, month) {
     ['  · 품절', outOfStock, '개'],
     ['  · 부족', lowStock, '개'],
     ['재고 평가액', totalCost, '원'],
-    ['대기 중 요청', pendingReq, '건'],
-    [],
-    ['─── 첨부 문서 ───'],
-    ['업로드 문서 수', docCount, '개']
+    ['대기 중 요청', pendingReq, '건']
   ];
   const wsSum = XLSX.utils.aoa_to_sheet(summaryRows);
   applyFormat(wsSum, [1], 0);
@@ -875,7 +858,7 @@ if (typeof window !== 'undefined') {
   // - inventory: 시트 568개로 교체 (재고/단가 모두)
   // - history: 시트 1481건으로 교체 (테스트 출고 제거)
   // - requests: 비움 + requests/ 컬렉션 docs 모두 삭제
-  // ⚠️ teams/teamMembers/documents 유지 (운영 설정)
+  // ⚠️ teams/teamMembers 유지 (운영 설정)
   //
   // 옵션:
   //   { keepInventory: true } — inventory(재고/단가)는 보존, history+requests만 시트로
@@ -900,7 +883,7 @@ if (typeof window !== 'undefined') {
         : '품목:    ' + inventory.length + '개 → ' + INITIAL_ITEMS.length + '개\n') +
       '이력:    ' + history.length + '건 → ' + PREBUILT_HISTORY.length + '건\n' +
       '요청:    ' + requests.length + '건 → 0건 (단일문서 + 컬렉션 모두)\n\n' +
-      '【 보존됨 】\n팀, 담당자, 문서함' + (keepInventory ? ', 품목' : '') + '\n\n' +
+      '【 보존됨 】\n팀, 담당자' + (keepInventory ? ', 품목' : '') + '\n\n' +
       '⚠️ 다른 기기/탭은 모두 닫혔나요?\n' +
       '안 닫혔으면 옛 데이터가 다시 살아날 수 있음.\n\n계속하시겠습니까?';
     if (!confirm(summary)) {

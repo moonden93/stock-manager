@@ -10,22 +10,23 @@ dental-management/
 ├── README.md           ← 이 문서
 ├── vercel.json         ← Vercel 배포 설정
 ├── .gitignore          ← Git 무시 파일 목록
-└── js/                 ← JavaScript 모듈들 (15개)
-    ├── 1-config.js          (16줄)   초기 팀 설정
-    ├── 2-data-items.js      (16줄)   초기 품목 568개
-    ├── 3-data-history.js    (16줄)   누적 입출고 1,432건
-    ├── 4-utils.js           (54줄)   유틸리티 (금액/이스케이프/주차)
-    ├── 5-storage.js         (113줄)  localStorage 저장/로드
-    ├── 6-utils-file.js      (79줄)   파일 첨부/다운로드 헬퍼
-    ├── 7-release.js         (273줄)  📤 반출 화면
-    ├── 8-manage.js          (135줄)  📋 요청관리 화면
-    ├── 9-inbound.js         (207줄)  📥 입고 화면
-    ├── 10-inventory.js      (154줄)  📦 재고 화면
-    ├── 11-stats.js          (264줄)  📊 통계 화면
-    ├── 12-documents.js      (252줄)  📁 문서함 화면
-    ├── 13-settings.js       (356줄)  ⚙️ 설정 화면
-    ├── 14-export.js         (235줄)  Excel/CSV 내보내기 + 도움말
-    └── 99-main.js           (115줄)  메인 진입점 (탭전환/토스트/모달)
+└── js/                 ← JavaScript 모듈들
+    ├── 1-config.js                초기 팀 설정
+    ├── 2-data-items.js             초기 품목 (시트 26년4월5주차 568개)
+    ├── 3-data-history.js           누적 입출고 1,481건
+    ├── 4-utils.js                  유틸리티 (금액/이스케이프/주차)
+    ├── 5-storage.js                전역 상태 + localStorage/Firebase 저장
+    ├── 7-release.js                📤 반출 요청 화면
+    ├── 8-manage.js                 📋 반출관리 화면
+    ├── 9-inbound.js                📥 입고 화면
+    ├── 10-inventory.js             📦 재고 화면
+    ├── 11-stats.js                 📊 통계 + AI 분석 화면
+    ├── 13-settings.js              ⚙️ 설정 화면
+    ├── 14-export.js                Excel 내보내기 + 도움말
+    ├── 15-backup.js                자동 백업 + mcFullResetToSheet
+    ├── 16-audit-log.js             변경 이력 (Firestore events/)
+    ├── 17-requests-collection.js   Phase 2 요청 컬렉션 listener
+    └── 99-main.js                  메인 진입점 (탭전환/토스트/모달)
 ```
 
 ## 사용 방법
@@ -33,7 +34,7 @@ dental-management/
 ### 1) 로컬에서 테스트
 1. 폴더 전체를 다운로드
 2. `index.html`을 더블클릭해서 브라우저로 엽니다
-3. 7개 탭(반출/요청관리/입고/재고/통계/문서함/설정)이 모두 정상 동작해야 합니다
+3. 6개 탭(요청/통계/반출관리/입고/재고/설정)이 모두 정상 동작해야 합니다
 
 ### 2) GitHub + Vercel 배포
 1. 이 폴더를 GitHub에 새 저장소로 업로드
@@ -49,14 +50,12 @@ dental-management/
 | `2-data-items.js` | 초기 품목 568개 | 처음 사용자에게만 적용 |
 | `3-data-history.js` | 누적 이력 1,432건 | 처음 사용자에게만 적용 |
 | `4-utils.js` | 금액 표시, HTML 이스케이프 | 모든 화면 |
-| `5-storage.js` | localStorage 저장/로드 | 데이터 영속성 |
-| `6-utils-file.js` | 파일 업로드/다운로드 | 입고, 문서함 |
-| `7-release.js` | 반출 처리 | 반출 탭 |
-| `8-manage.js` | 요청 목록/취소 | 요청관리 탭 |
+| `5-storage.js` | localStorage + Firebase 저장/로드 | 데이터 영속성 |
+| `7-release.js` | 반출 요청 (사진 첨부 포함) | 요청 탭 |
+| `8-manage.js` | 반출 처리 | 반출관리 탭 |
 | `9-inbound.js` | 입고 처리 | 입고 탭 |
 | `10-inventory.js` | 재고 조회/수정 | 재고 탭 |
-| `11-stats.js` | 팀별/업체별/주차별 통계 | 통계 탭 |
-| `12-documents.js` | 문서 첨부/조회 | 문서함 탭 |
+| `11-stats.js` | 팀별/업체별/주차별 통계 + AI 분석 | 통계 탭 |
 | `13-settings.js` | 팀/담당자/품목 관리 | 설정 탭 |
 | `14-export.js` | Excel/CSV 내보내기 + 도움말 | 통계, 헤더 도움말 |
 | `99-main.js` | 탭 전환, 모달, 토스트, 시작점 | 모든 화면 |
@@ -83,12 +82,13 @@ GitHub에 올린 후 특정 화면에 문제가 생기면:
 
 ## 화면 안내
 
-- **📤 반출** - 팀별로 자재를 꺼내서 반출하는 화면 (장바구니 방식)
-- **📋 요청관리** - 반출 요청 목록 보기 / 취소
-- **📥 입고** - 자재가 들어왔을 때 재고 추가
-- **📦 재고** - 현재 재고 조회/수정 (검색/필터/페이지네이션)
-- **📊 통계** - 팀별/업체별/주차별 사용량 통계 + Excel 내보내기
-- **📁 문서함** - 거래명세서, 계약서 등 첨부파일 관리
-- **⚙️ 설정** - 팀/담당자 추가, 품목 추가/수정/삭제
+- **📤 요청** - 팀별로 자재를 꺼내달라고 요청 (장바구니 방식)
+- **🔒 반출관리** - 요청 처리 / 취소 / 되돌리기
+- **🔒 입고** - 자재가 들어왔을 때 재고 추가
+- **🔒 재고** - 현재 재고 조회/수정 (검색/필터/페이지네이션)
+- **📊 통계** - 팀별/업체별/주차별 사용량 통계 + AI 분석 + Excel 내보내기
+- **🔒 설정** - 팀/담당자 추가, 품목 추가/수정/삭제
+
+> 첨부 문서(계약서/거래명세서 등)는 PWA 외부 — Google Drive에서 직접 관리합니다.
 
 이 프로젝트는 문치과병원 운영자가 관리합니다.

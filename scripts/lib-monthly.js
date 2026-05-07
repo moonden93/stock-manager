@@ -111,14 +111,13 @@ function applyFormat(ws, numericCols, headerRowCount) {
   ws['!cols'] = cols;
 }
 
-// data: { inventory, history, requests, teams, teamMembers, documents }
+// data: { inventory, history, requests, teams, teamMembers }
 // year: 2026, month: 4 (1-based)
 function generateMonthlyReportExcel(data, year, month) {
   const inventory = data.inventory || [];
   const history = data.history || [];
   const requests = data.requests || [];
   const teams = data.teams || [];
-  const documents = data.documents || [];
 
   const wb = XLSX.utils.book_new();
   const monthStart = new Date(year, month - 1, 1);
@@ -149,7 +148,6 @@ function generateMonthlyReportExcel(data, year, month) {
   const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
-  const docCount = documents.length;
 
   const summaryRows = [
     ['문치과병원 재고관리 - 월별 보고서'],
@@ -171,10 +169,7 @@ function generateMonthlyReportExcel(data, year, month) {
     ['  · 품절', outOfStock, '개'],
     ['  · 부족', lowStock, '개'],
     ['재고 평가액', totalCost, '원'],
-    ['대기 중 요청', pendingReq, '건'],
-    [],
-    ['─── 첨부 문서 ───'],
-    ['업로드 문서 수', docCount, '개']
+    ['대기 중 요청', pendingReq, '건']
   ];
   const wsSum = XLSX.utils.aoa_to_sheet(summaryRows);
   applyFormat(wsSum, [1], 0);

@@ -14,6 +14,16 @@ let releaseSearchTerm = '';
 let releaseShowCustomForm = false;
 // window._pendingCustomItem / window._pendingCustomImages 는 toggleCustomForm 시점에 lazy init
 
+// 이미지 파일 → base64 (직접 요청에서 사진 첨부용)
+function readFileAsBase64(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function() { resolve(reader.result); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 // ============================================
 // 팀 그리드 레이아웃 정의 (3행 × 5열)
 // ============================================

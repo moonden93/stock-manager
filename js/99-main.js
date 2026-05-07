@@ -16,12 +16,11 @@
 async function switchTab(name) {
   // 관리자 전용 탭은 비밀번호 입력 필요 (매번, 틀리면 재입력)
   // - 일반 직원: 요청, 통계만 접근 가능
-  // - 관리자: 비밀번호 입력으로 반출관리/입고/재고/문서함/설정 진입
+  // - 관리자: 비밀번호 입력으로 반출관리/입고/재고/설정 진입
   const protectedLabels = {
     manage: '반출관리',
     inbound: '입고',
     inventory: '재고',
-    documents: '문서함',
     settings: '설정 화면'
   };
   if (protectedLabels[name]) {
@@ -29,7 +28,7 @@ async function switchTab(name) {
     if (!ok) return;  // 취소
   }
   currentTab = name;
-  ['release', 'manage', 'inbound', 'inventory', 'stats', 'documents', 'settings'].forEach(t => {
+  ['release', 'manage', 'inbound', 'inventory', 'stats', 'settings'].forEach(t => {
     const el = document.getElementById('tab-' + t);
     if (el) el.classList.toggle('active', t === name);
   });
@@ -40,7 +39,6 @@ async function switchTab(name) {
   if (name === 'inbound'    && typeof renderInbound    === 'function') renderInbound();
   if (name === 'inventory'  && typeof renderInventory  === 'function') renderInventory();
   if (name === 'stats'      && typeof renderStats      === 'function') renderStats();
-  if (name === 'documents'  && typeof renderDocuments  === 'function') renderDocuments();
   if (name === 'settings'   && typeof renderSettings   === 'function') renderSettings();
 
   // 장바구니 바는 반출 탭에서만
