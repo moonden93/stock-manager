@@ -899,33 +899,53 @@ if (typeof window !== 'undefined') {
     }
     window._allowMassDecrease = true;
 
-    // 0. Phase 2 리스너 / 폴링 / 병렬 쓰기 일시 중단 (echo로 옛 데이터 부활 방지)
-    const wasListenerActive = window._requestsCollectionListenerActive;
-    const savedPollTimer = window._phase2PollTimer;
-    if (savedPollTimer) {
-      clearInterval(savedPollTimer);
-      window._phase2PollTimer = null;
-      console.log('⏸️ Phase 2 폴링 중단');
-    }
-    window._requestsCollectionListenerActive = false;  // _applyRequestsSync 차단 플래그로 활용 (아래 saveAll hook 가드)
+    // 0. Phase 2/3 리스너 / 폴링 / 병렬 쓰기 모두 일시 중단 (echo로 옛 데이터 부활 방지)
+    const wasReqListenerActive = window._requestsCollectionListenerActive;
+    const wasHistListenerActive = window._historyCollectionListenerActive;
+    const wasInvListenerActive = window._inventoryCollectionListenerActive;
+    if (window._phase2PollTimer) { clearInterval(window._phase2PollTimer); window._phase2PollTimer = null; }
+    if (window._phase3HistoryPollTimer) { clearInterval(window._phase3HistoryPollTimer); window._phase3HistoryPollTimer = null; }
+    if (window._phase3InventoryPollTimer) { clearInterval(window._phase3InventoryPollTimer); window._phase3InventoryPollTimer = null; }
+    console.log('⏸️ Phase 2/3 폴링 중단');
+    window._requestsCollectionListenerActive = false;
+    window._historyCollectionListenerActive = false;
+    window._inventoryCollectionListenerActive = false;
     window._resetInProgress = true;
 
-    // 1. requests/ 컬렉션의 모든 doc 삭제 (안 하면 listener가 다시 가져옴)
-    if (window.firebaseReady && window.firebaseGetDocs && window.firebaseDeleteDoc) {
+    // 1. 컬렉션 일괄 삭제 — writeBatch (한 번에 ~450개씩)
+    async function _deleteCollection(name, useBatch) {
+      if (!window.firebaseReady || !window.firebaseGetDocs || !window.firebaseDeleteDoc) return;
       try {
-        const col = window.firebaseCollection(window.firebaseDB, 'requests');
+        const col = window.firebaseCollection(window.firebaseDB, name);
         const snap = await window.firebaseGetDocs(col);
-        console.log('🗑️ requests/ 컬렉션 ' + snap.size + '개 삭제 중...');
-        let done = 0;
-        for (const docSnap of snap.docs) {
-          await window.firebaseDeleteDoc(docSnap.ref);
-          done++;
-          if (done % 5 === 0 || done === snap.size) console.log('  ' + done + '/' + snap.size);
+        if (snap.size === 0) return;
+        console.log('🗑️ ' + name + '/ ' + snap.size + '개 삭제 중...');
+        if (useBatch && window.firebaseWriteBatch) {
+          const docs = snap.docs;
+          const CHUNK = 450;
+          for (let i = 0; i < docs.length; i += CHUNK) {
+            const batch = window.firebaseWriteBatch(window.firebaseDB);
+            docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+            await batch.commit();
+            console.log('  ' + Math.min(i + CHUNK, docs.length) + '/' + docs.length);
+          }
+        } else {
+          let done = 0;
+          for (const docSnap of snap.docs) {
+            await window.firebaseDeleteDoc(docSnap.ref);
+            done++;
+            if (done % 5 === 0 || done === snap.size) console.log('  ' + done + '/' + snap.size);
+          }
         }
-        console.log('✓ 컬렉션 정리 완료');
+        console.log('✓ ' + name + '/ 정리 완료');
       } catch (err) {
-        console.error('컬렉션 삭제 실패 (수동 정리 필요):', err.message);
+        console.error(name + '/ 삭제 실패:', err.message);
       }
+    }
+    await _deleteCollection('requests', false);  // 작은 컬렉션 — 1개씩
+    await _deleteCollection('history', true);    // 큰 컬렉션 (1481+) — writeBatch
+    if (!keepInventory) {
+      await _deleteCollection('inventory', true); // 568개 — writeBatch
     }
 
     // 2. 로컬 데이터 reset
@@ -937,43 +957,84 @@ if (typeof window !== 'undefined') {
     PREBUILT_HISTORY.forEach(h => history.push(h));
     requests.length = 0;
 
-    // 3. saveAll로 단일 문서에도 반영 (requests 빈 배열도 push되도록 _allowMassDecrease 유지)
+    // hash 캐시 초기화 (Phase 3 — 다음 변경분 추적 기준선 재설정)
+    if (window._historyHashes) window._historyHashes.clear();
+    if (window._inventoryHashes && !keepInventory) window._inventoryHashes.clear();
+
+    // 3. saveAll로 단일 문서에도 반영
     window._allowMassDecrease = true;
     saveAll();
+
+    // 3.5. 컬렉션에도 새 데이터 백필 (단일 문서만 채우면 listener 재개 시 빈 컬렉션 보고
+    //      메모리 보호 가드가 작동 — 백필을 명시적으로 해줘야 컬렉션이 source of truth로서 정상)
+    if (window.firebaseReady && window.firebaseWriteBatch) {
+      try {
+        if (typeof upsertHistoryBatch === 'function') {
+          console.log('📤 history 컬렉션 백필 (' + history.length + '건)...');
+          await upsertHistoryBatch(history);
+          window._historyHashes && window._historyHashes.clear();
+          history.forEach(h => { if (h && h.id) window._historyHashes.set(h.id, JSON.stringify(h)); });
+        }
+        if (!keepInventory && typeof upsertInventoryBatch === 'function') {
+          console.log('📤 inventory 컬렉션 백필 (' + inventory.length + '개)...');
+          await upsertInventoryBatch(inventory);
+          window._inventoryHashes && window._inventoryHashes.clear();
+          inventory.forEach(it => { if (it && it.id) window._inventoryHashes.set(it.id, JSON.stringify(it)); });
+        }
+      } catch (err) {
+        console.error('컬렉션 백필 실패:', err.message);
+      }
+    }
 
     // 4. 잠시 대기 (Firestore writes 완료 + 다른 기기 listener echo 정리)
     await new Promise(r => setTimeout(r, 2500));
 
-    // 5. 한 번 더 컬렉션 비었는지 확인 + 잔여 doc 정리 (다른 기기가 그 사이 push 했을 수도)
-    if (window.firebaseReady && window.firebaseGetDocs && window.firebaseDeleteDoc) {
+    // 5. 잔여 확인 (다른 기기가 그 사이 push 했을 수도)
+    async function _checkResidual(name, expectedSize) {
+      if (!window.firebaseReady || !window.firebaseGetDocs) return;
       try {
-        const col = window.firebaseCollection(window.firebaseDB, 'requests');
+        const col = window.firebaseCollection(window.firebaseDB, name);
         const snap = await window.firebaseGetDocs(col);
-        if (snap.size > 0) {
-          console.warn('⚠️ 다른 기기가 ' + snap.size + '건 다시 push함 — 재삭제');
-          for (const docSnap of snap.docs) {
-            await window.firebaseDeleteDoc(docSnap.ref);
-          }
-          console.log('✓ 잔여 ' + snap.size + '건 정리됨');
+        if (snap.size > expectedSize + 5) {  // 약간의 여유 (다른 기기가 1~2건 더 만들었을 수도)
+          console.warn('⚠️ ' + name + '/ 다른 기기가 push한 잔여 doc 있음 (현재 ' + snap.size + ', 예상 ' + expectedSize + ')');
         } else {
-          console.log('✓ 컬렉션 깨끗함 확인');
+          console.log('✓ ' + name + '/ 잔여 확인 OK (' + snap.size + ')');
         }
       } catch (err) {
-        console.error('잔여 확인 실패:', err.message);
+        console.error(name + '/ 잔여 확인 실패:', err.message);
       }
     }
+    await _checkResidual('requests', 0);
+    await _checkResidual('history', history.length);
+    if (!keepInventory) await _checkResidual('inventory', inventory.length);
 
-    // 6. Phase 2 listener / 폴링 재개
+    // 6. listener / 폴링 재개
     window._resetInProgress = false;
-    window._requestsCollectionListenerActive = wasListenerActive;
+    window._requestsCollectionListenerActive = wasReqListenerActive;
+    window._historyCollectionListenerActive = wasHistListenerActive;
+    window._inventoryCollectionListenerActive = wasInvListenerActive;
     if (!window._phase2PollTimer) {
       window._phase2PollTimer = setInterval(() => {
         if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive && typeof forceFetchRequestsCollection === 'function') {
           forceFetchRequestsCollection();
         }
       }, 30000);
-      console.log('▶️ Phase 2 폴링 재개');
     }
+    if (!window._phase3HistoryPollTimer) {
+      window._phase3HistoryPollTimer = setInterval(() => {
+        if (document.visibilityState === 'visible' && window._historyCollectionListenerActive && typeof forceFetchHistoryCollection === 'function') {
+          forceFetchHistoryCollection();
+        }
+      }, 60000);
+    }
+    if (!window._phase3InventoryPollTimer) {
+      window._phase3InventoryPollTimer = setInterval(() => {
+        if (document.visibilityState === 'visible' && window._inventoryCollectionListenerActive && typeof forceFetchInventoryCollection === 'function') {
+          forceFetchInventoryCollection();
+        }
+      }, 45000);
+    }
+    console.log('▶️ Phase 2/3 폴링 재개');
 
     if (typeof updateHeaderStats === 'function') updateHeaderStats();
     if (typeof switchTab === 'function') switchTab(currentTab);

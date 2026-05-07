@@ -262,16 +262,19 @@ function detectCloudWipeOnLoad(data, lastSnap) {
 //   (담당자 데이터가 한 번 사라지면 다시 복구하기 번거로워서 특별 보호)
 // - history/requests: 빈 배열도 정상 변경으로 간주 (의도적 삭제 가능)
 function applyCloudData(data) {
-  if (Array.isArray(data.inventory) && data.inventory.length > 0) inventory = data.inventory;
+  // Phase 3 cutover (inventory): 컬렉션 listener가 활성화됐으면 단일 문서의 inventory 무시
+  // (단일 문서는 backup으로 계속 쓰기는 함 — 안전망)
+  if (Array.isArray(data.inventory) && data.inventory.length > 0 && !window._inventoryCollectionListenerActive) {
+    inventory = data.inventory;
+  }
 
   // Phase 2 cutover: requests는 더 이상 단일 문서에서 안 읽음.
   // js/17-requests-collection.js의 컬렉션 listener가 source of truth.
-  // (단일 문서는 backup으로 계속 쓰기는 함 — 안전망)
-  // 옛 코드 호환: data.requests가 있고 컬렉션 listener가 아직 활성화 안 됐으면 임시 사용
   if (Array.isArray(data.requests) && !window._requestsCollectionListenerActive) {
     requests = mergeByIdPreserveLocal(requests, data.requests);
   }
-  if (Array.isArray(data.history)) {
+  // Phase 3 cutover (history): 컬렉션 listener가 활성화됐으면 단일 문서의 history 무시
+  if (Array.isArray(data.history) && !window._historyCollectionListenerActive) {
     history = mergeByIdPreserveLocal(history, data.history);
   }
 
@@ -372,11 +375,19 @@ async function saveToFirebase() {
     // 아예 payload에서 빼면 클라우드의 기존 값이 보존됨.
     // 이전 구현(setDoc 통째로)은 한 기기의 빈 teamMembers가 클라우드를 덮어쓰는 사고를 냈음.
     const payload = {
-      inventory: inventory,
-      history: history,
       requests: requests,
       lastUpdated: window.firebaseServerTimestamp()
     };
+
+    // Phase 3: 단일 문서 쓰기 토글 — 컬렉션 백필+검증 후 활성화하면 1MB 한도 영구 해소.
+    // 토글 OFF (기본): 단일 문서에도 계속 쓰기 (안전망 + 옛 클라이언트 호환).
+    // 토글 ON: 컬렉션이 source of truth. 단일 문서의 기존 필드는 그대로 유지됨 (덮어쓰지 않음).
+    if (!window._disableSingleDocInventorySync) {
+      payload.inventory = inventory;
+    }
+    if (!window._disableSingleDocHistorySync) {
+      payload.history = history;
+    }
 
     // teams는 비어있을 때만 제외 (PREBUILT가 있어서 정상 상태에선 절대 비지 않음)
     if (Array.isArray(teams) && teams.length > 0) {
