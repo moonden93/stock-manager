@@ -141,14 +141,14 @@ function setupRequestsCollectionListener() {
 
 function _applyRequestsSync(newReqs) {
   // 전역 requests 배열을 교체 (in-place로 다른 모듈의 참조 유지)
-  if (typeof window.requests === 'undefined') return;
+  if (typeof requests === 'undefined') return;
   // 리셋 중이면 listener echo 무시 (중간 상태가 화면에 깜빡이는 것 방지)
   if (window._resetInProgress) {
     console.log('⏸️ reset 중 — listener echo 무시');
     return;
   }
-  window.requests.length = 0;
-  newReqs.forEach(r => window.requests.push(r));
+  requests.length = 0;
+  newReqs.forEach(r => requests.push(r));
   // localStorage 갱신 (오프라인 대비)
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   // 헤더 + 현재 탭 재렌더링
@@ -255,8 +255,8 @@ if (typeof window !== 'undefined') {
           console.log('⏸️ reset 중 — Phase 2 push 건너뜀');
           return;
         }
-        if (Array.isArray(window.requests) && window.requests.length > 0) {
-          upsertRequestsBatch(window.requests);
+        if (Array.isArray(requests) && requests.length > 0) {
+          upsertRequestsBatch(requests);
         }
       }, 300);
       return r;
@@ -278,7 +278,7 @@ window.mcCheckPhase2Status = function() {
   console.log('Firebase 준비:', window.firebaseReady);
   console.log('컬렉션 listener 활성:', window._requestsCollectionListenerActive);
   console.log('병렬 쓰기 hook:', !!(window.saveAll && window.saveAll._phase2Patched));
-  console.log('현재 requests 수:', (window.requests || []).length);
+  console.log('현재 requests 수:', (requests || []).length);
   console.log('---');
   console.log('만약 listener 비활성이면: setupRequestsCollectionListener() 직접 호출 시도');
   console.log('또는 페이지 하드 리로드 (Ctrl+Shift+R)');

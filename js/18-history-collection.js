@@ -21,8 +21,8 @@ window._historyHashes = window._historyHashes || new Map();
 
 function _findChangedHistory() {
   const changed = [];
-  if (!Array.isArray(window.history)) return changed;
-  for (const h of window.history) {
+  if (!Array.isArray(history)) return changed;
+  for (const h of history) {
     if (!h || !h.id) continue;
     const key = JSON.stringify(h);
     if (window._historyHashes.get(h.id) !== key) {
@@ -96,7 +96,7 @@ function setupHistoryCollectionListener() {
     const col = window.firebaseCollection(window.firebaseDB, 'history');
     window.firebaseOnSnapshot(col, (snap) => {
       // 빈 컬렉션 + 메모리에 데이터 있음 = 아직 백필 전 → 무시 (메모리 보호)
-      if (snap.size === 0 && Array.isArray(window.history) && window.history.length > 0) {
+      if (snap.size === 0 && Array.isArray(history) && history.length > 0) {
         console.log('⏸️ history 컬렉션 비어있음 — 메모리 보호 (mcBackfillHistoryCollection() 권장)');
         return;
       }
@@ -134,7 +134,7 @@ function setupHistoryCollectionListener() {
 }
 
 function _applyHistorySync(newHist) {
-  if (typeof window.history === 'undefined' || !Array.isArray(window.history)) return;
+  if (typeof history === 'undefined' || !Array.isArray(history)) return;
   if (window._resetInProgress) {
     console.log('⏸️ reset 중 — history listener echo 무시');
     return;
@@ -145,8 +145,8 @@ function _applyHistorySync(newHist) {
     if (h && h.id) window._historyHashes.set(h.id, JSON.stringify(h));
   });
   // in-place 교체 (다른 모듈의 참조 유지)
-  window.history.length = 0;
-  newHist.forEach(h => window.history.push(h));
+  history.length = 0;
+  newHist.forEach(h => history.push(h));
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   if (typeof currentTab !== 'undefined') {
@@ -178,7 +178,7 @@ async function forceFetchHistoryCollection() {
     }
     const col = window.firebaseCollection(window.firebaseDB, 'history');
     const snap = await window.firebaseGetDocs(col);
-    if (snap.size === 0 && Array.isArray(window.history) && window.history.length > 0) return;
+    if (snap.size === 0 && Array.isArray(history) && history.length > 0) return;
     const newHist = [];
     snap.forEach(doc => {
       const d = doc.data();
@@ -204,7 +204,7 @@ window.mcBackfillHistoryCollection = async function() {
     console.error('Firebase 준비 안 됨');
     return;
   }
-  const total = (window.history || []).length;
+  const total = (history || []).length;
   if (total === 0) {
     console.log('백필할 history 없음');
     return;
@@ -217,9 +217,9 @@ window.mcBackfillHistoryCollection = async function() {
   // 백필 중 listener가 부분 데이터로 메모리를 덮지 않도록 차단 (각 batch commit마다 listener가 fire)
   window._resetInProgress = true;
   try {
-    await upsertHistoryBatch(window.history);
+    await upsertHistoryBatch(history);
     window._historyHashes.clear();
-    window.history.forEach(h => {
+    history.forEach(h => {
       if (h && h.id) window._historyHashes.set(h.id, JSON.stringify(h));
     });
   } finally {
@@ -240,8 +240,8 @@ window.mcCheckHistoryCollection = async function() {
   const col = window.firebaseCollection(window.firebaseDB, 'history');
   const snap = await window.firebaseGetDocs(col);
   console.log('history/ 컬렉션 문서 수:', snap.size);
-  console.log('메모리 history 배열 수:', (window.history || []).length);
-  if (snap.size !== (window.history || []).length) {
+  console.log('메모리 history 배열 수:', (history || []).length);
+  if (snap.size !== (history || []).length) {
     console.warn('⚠️ 차이 있음 — mcBackfillHistoryCollection() 으로 동기화 권장');
   } else {
     console.log('✓ 동기화 상태 일치');

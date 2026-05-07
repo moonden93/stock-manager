@@ -21,8 +21,8 @@ window._inventoryHashes = window._inventoryHashes || new Map();
 
 function _findChangedInventory() {
   const changed = [];
-  if (!Array.isArray(window.inventory)) return changed;
-  for (const it of window.inventory) {
+  if (!Array.isArray(inventory)) return changed;
+  for (const it of inventory) {
     if (!it || !it.id) continue;
     const key = JSON.stringify(it);
     if (window._inventoryHashes.get(it.id) !== key) {
@@ -35,8 +35,8 @@ function _findChangedInventory() {
 
 // 메모리에서 사라진 품목 (사용자가 설정에서 삭제) — 컬렉션에서도 제거 필요
 function _findRemovedInventoryIds() {
-  if (!Array.isArray(window.inventory)) return [];
-  const live = new Set(window.inventory.map(it => it && it.id).filter(Boolean));
+  if (!Array.isArray(inventory)) return [];
+  const live = new Set(inventory.map(it => it && it.id).filter(Boolean));
   const removed = [];
   for (const id of window._inventoryHashes.keys()) {
     if (!live.has(id)) removed.push(id);
@@ -131,7 +131,7 @@ function setupInventoryCollectionListener() {
   try {
     const col = window.firebaseCollection(window.firebaseDB, 'inventory');
     window.firebaseOnSnapshot(col, (snap) => {
-      if (snap.size === 0 && Array.isArray(window.inventory) && window.inventory.length > 0) {
+      if (snap.size === 0 && Array.isArray(inventory) && inventory.length > 0) {
         console.log('⏸️ inventory 컬렉션 비어있음 — 메모리 보호 (mcBackfillInventoryCollection() 권장)');
         return;
       }
@@ -169,7 +169,7 @@ function setupInventoryCollectionListener() {
 }
 
 function _applyInventorySync(newInv) {
-  if (typeof window.inventory === 'undefined' || !Array.isArray(window.inventory)) return;
+  if (typeof inventory === 'undefined' || !Array.isArray(inventory)) return;
   if (window._resetInProgress) {
     console.log('⏸️ reset 중 — inventory listener echo 무시');
     return;
@@ -178,8 +178,8 @@ function _applyInventorySync(newInv) {
   newInv.forEach(it => {
     if (it && it.id) window._inventoryHashes.set(it.id, JSON.stringify(it));
   });
-  window.inventory.length = 0;
-  newInv.forEach(it => window.inventory.push(it));
+  inventory.length = 0;
+  newInv.forEach(it => inventory.push(it));
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   if (typeof currentTab !== 'undefined') {
@@ -211,7 +211,7 @@ async function forceFetchInventoryCollection() {
     }
     const col = window.firebaseCollection(window.firebaseDB, 'inventory');
     const snap = await window.firebaseGetDocs(col);
-    if (snap.size === 0 && Array.isArray(window.inventory) && window.inventory.length > 0) return;
+    if (snap.size === 0 && Array.isArray(inventory) && inventory.length > 0) return;
     const newInv = [];
     snap.forEach(doc => {
       const d = doc.data();
@@ -235,7 +235,7 @@ window.mcBackfillInventoryCollection = async function() {
     console.error('Firebase 준비 안 됨');
     return;
   }
-  const total = (window.inventory || []).length;
+  const total = (inventory || []).length;
   if (total === 0) {
     console.log('백필할 inventory 없음');
     return;
@@ -247,9 +247,9 @@ window.mcBackfillInventoryCollection = async function() {
   const t0 = Date.now();
   window._resetInProgress = true;
   try {
-    await upsertInventoryBatch(window.inventory);
+    await upsertInventoryBatch(inventory);
     window._inventoryHashes.clear();
-    window.inventory.forEach(it => {
+    inventory.forEach(it => {
       if (it && it.id) window._inventoryHashes.set(it.id, JSON.stringify(it));
     });
   } finally {
@@ -269,8 +269,8 @@ window.mcCheckInventoryCollection = async function() {
   const col = window.firebaseCollection(window.firebaseDB, 'inventory');
   const snap = await window.firebaseGetDocs(col);
   console.log('inventory/ 컬렉션 문서 수:', snap.size);
-  console.log('메모리 inventory 배열 수:', (window.inventory || []).length);
-  if (snap.size !== (window.inventory || []).length) {
+  console.log('메모리 inventory 배열 수:', (inventory || []).length);
+  if (snap.size !== (inventory || []).length) {
     console.warn('⚠️ 차이 있음 — mcBackfillInventoryCollection() 으로 동기화 권장');
   } else {
     console.log('✓ 동기화 상태 일치');
@@ -382,12 +382,12 @@ window.mcCheckPhase3Status = function() {
   console.log('history listener 활성:', !!window._historyCollectionListenerActive);
   console.log('history 변경분 hook:', !!(window.saveAll && window.saveAll._phase3HistoryPatched));
   console.log('history 단일문서 쓰기 중단:', !!window._disableSingleDocHistorySync);
-  console.log('현재 history 수:', (window.history || []).length);
+  console.log('현재 history 수:', (typeof history !== 'undefined' && Array.isArray(history) ? history.length : 'N/A'));
   console.log('---');
   console.log('inventory listener 활성:', !!window._inventoryCollectionListenerActive);
   console.log('inventory 변경분 hook:', !!(window.saveAll && window.saveAll._phase3InventoryPatched));
   console.log('inventory 단일문서 쓰기 중단:', !!window._disableSingleDocInventorySync);
-  console.log('현재 inventory 수:', (window.inventory || []).length);
+  console.log('현재 inventory 수:', (inventory || []).length);
   console.log('---');
   console.log('마이그레이션 순서 권장:');
   console.log('  1) mcBackfillHistoryCollection()  — 1481건 컬렉션화');
