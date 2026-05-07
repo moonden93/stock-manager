@@ -101,15 +101,20 @@ function renderInbound() {
       entries.forEach(e => {
         const dt = new Date(e.date);
         const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
-        inHistHtml += '<div class="px-4 py-3 hover:bg-slate-50">' +
+        const isReverted = !!e.cancelled;
+        const rowCls = isReverted ? 'px-4 py-3 bg-slate-50 opacity-70' : 'px-4 py-3 hover:bg-slate-50';
+        inHistHtml += '<div class="' + rowCls + '">' +
           '<div class="flex items-center gap-3">' +
           '<div class="text-xs text-slate-500 w-12 flex-shrink-0">' + dateStr + '</div>' +
           '<div class="flex-1 min-w-0">' +
-          '<p class="text-xs text-slate-500">' + escapeHtml(e.vendor || '') + '</p>' +
-          '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(e.name || '') + '</p>' +
+          '<p class="text-xs text-slate-500">' + escapeHtml(e.vendor || '') + (isReverted ? ' · <span class="text-slate-400 font-bold">❌ 되돌림</span>' : '') + '</p>' +
+          '<p class="text-sm font-medium text-slate-900 truncate ' + (isReverted ? 'line-through text-slate-500' : '') + '">' + escapeHtml(e.name || '') + '</p>' +
           '</div>' +
-          '<div class="text-right flex-shrink-0">' +
-          '<span class="text-base font-bold text-emerald-700">+' + (e.qty || 0) + '</span>' +
+          '<div class="text-right flex-shrink-0 flex items-center gap-2">' +
+          '<span class="text-base font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">+' + (e.qty || 0) + '</span>' +
+          (isReverted
+            ? ''
+            : '<button onclick="revertInboundEntry(\'' + escapeJs(e.id) + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 입고를 되돌립니다 (재고 차감, 기록 보존)">↩ 되돌리기</button>') +
           '</div></div></div>';
       });
 
@@ -149,6 +154,70 @@ function renderInbound() {
 
   html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// ============================================
+// 입고 되돌리기 (반출 되돌리기와 동일 패턴)
+// ============================================
+// - inventory.stock에서 입고분 차감
+// - history entry는 삭제 X, cancelled=true 플래그만 (기록 보존)
+// - 통계/주간보고에서 자동 제외
+function revertInboundEntry(historyId) {
+  const h = (history || []).find(x => x.id === historyId);
+  if (!h) { showToast('입고 내역을 찾을 수 없습니다', 'error'); return; }
+  if (h.cancelled) { showToast('이미 되돌려진 입고입니다', 'info'); return; }
+  if (h.type !== 'in') { showToast('입고 내역이 아닙니다', 'error'); return; }
+
+  const item = inventory.find(i => i.id === h.itemId);
+  const itemName = h.name || (item ? item.name : '품목');
+  const currentStock = item ? item.stock : '?';
+
+  askConfirm('입고 되돌리기',
+    itemName + ' +' + h.qty + ' 입고를 되돌립니다.\n\n' +
+    '· 재고 ' + currentStock + ' → ' + (item ? Math.max(0, currentStock - h.qty) : '?') + '\n' +
+    '· 입고 기록은 삭제되지 않고 [❌ 되돌림] 표시로 보존\n' +
+    '· 통계/주간보고에서 자동 제외\n\n계속하시겠습니까?',
+    function() {
+      const at = new Date().toISOString();
+      const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+      // 1. 재고 차감 (atomic 사용 가능하면 atomic, 없으면 직접 대입)
+      if (item) {
+        if (typeof adjustInventoryStock === 'function') {
+          adjustInventoryStock(item.id, -h.qty);
+        } else {
+          item.stock = Math.max(0, item.stock - h.qty);
+          if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
+        }
+      }
+
+      // 2. history cancelled 플래그
+      h.cancelled = true;
+      h.cancelledDate = at;
+      h.cancelledBy = by;
+      // 즉시 upsert (race 차단)
+      if (typeof upsertHistoryDoc === 'function') {
+        upsertHistoryDoc(h).catch(err => console.warn('inbound revert hist upsert 실패:', err));
+        if (window._historyHashes) window._historyHashes.set(h.id, JSON.stringify(h));
+      }
+
+      // 3. audit log
+      if (typeof logEvent === 'function') {
+        logEvent('inbound', 'revert', {
+          summary: '입고 되돌림: ' + itemName + ' (-' + h.qty + ')',
+          historyId: h.id,
+          itemId: h.itemId,
+          item: itemName,
+          qty: h.qty,
+          actionBy: by
+        });
+      }
+
+      saveAll();
+      updateHeaderStats();
+      showToast('입고 되돌림 — 재고 ' + h.qty + '개 차감', 'success');
+      renderInbound();
+    }, '예, 되돌리기', 'amber');
 }
 
 // 입고 내역 전체 섹션 토글 (헤더 클릭 시 주차 list 펼침/접힘)

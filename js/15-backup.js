@@ -226,7 +226,7 @@ function generateReportExcel() {
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
-  const thisInHist  = history.filter(h => h.type === 'in'  && h.weekKey === weekKey);
+  const thisInHist  = history.filter(h => h.type === 'in'  && !h.cancelled && h.weekKey === weekKey);
   const thisOutQty = thisOutHist.reduce((s, h) => s + (h.qty || 0), 0);
   const thisOutCost = thisOutHist.reduce((s, h) => s + (h.qty || 0) * (h.price || 0), 0);
   const thisInQty = thisInHist.reduce((s, h) => s + (h.qty || 0), 0);
