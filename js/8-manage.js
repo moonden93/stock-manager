@@ -267,13 +267,19 @@ function renderManage() {
       if (isCancelled) {
         const byList = [...new Set(g.items.map(it => it.cancelledBy).filter(Boolean))];
         const dateList = [...new Set(g.items.map(it => (it.cancelledDate || '').slice(0, 10)).filter(Boolean))];
-        cancelledInfoHtml = '<div class="text-xs px-3 py-2 mb-2 bg-slate-100 border border-slate-300 rounded-lg flex items-center gap-2 flex-wrap text-slate-600">' +
+        const reasonList = [...new Set(g.items.map(it => it.cancelReason).filter(Boolean))];
+        cancelledInfoHtml = '<div class="text-xs px-3 py-2 mb-2 bg-slate-100 border border-slate-300 rounded-lg text-slate-600">' +
+          '<div class="flex items-center gap-2 flex-wrap">' +
           '<span>❌</span>' +
           '<span class="font-bold">' + (byList.length > 0 ? byList.map(escapeHtml).join(', ') + '님이 취소' : '취소됨') + '</span>' +
           (dateList.length > 0 ? '<span>· ' + dateList.map(d => {
             const dt = new Date(d + 'T00:00:00');
             return (dt.getMonth() + 1) + '/' + dt.getDate();
           }).join(', ') + '</span>' : '') +
+          '</div>' +
+          (reasonList.length > 0
+            ? '<div class="mt-1 text-slate-500">📝 ' + reasonList.map(escapeHtml).join(' / ') + '</div>'
+            : '') +
           '</div>';
       }
 
@@ -814,7 +820,8 @@ function cancelRequestGroup(groupId) {
     ? '이 대기 요청을 취소합니다.\n\n총 ' + targetItems.length + '종 ' + totalQty + '개\n\n[취소] 탭으로 이동되며 기록은 영구 보존됩니다.'
     : '이 반출 완료를 취소합니다.\n\n· 재고가 복원됩니다\n· 요청은 [대기] 상태로 되돌아갑니다\n· 입출고 이력은 통계에서 제외 (기록은 보존)\n\n총 ' + targetItems.length + '종 ' + totalQty + '개';
 
-  askConfirm(title, message, function() {
+  const placeholder = isPending ? '예: 중복 요청, 잘못 입력' : '예: 잘못 처리됨, 수량 오류';
+  askConfirmWithReason(title, message, placeholder, function(reason) {
     const actionAt = new Date().toISOString();
     const actionBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
     const groupRequestIds = new Set(targetItems.map(it => it.requestId).filter(Boolean));
@@ -826,6 +833,7 @@ function cancelRequestGroup(groupId) {
         it.status = 'cancelled';
         it.cancelledDate = actionAt;
         it.cancelledBy = actionBy;
+        if (reason) it.cancelReason = reason;
         // 🔒 즉시 컬렉션 push (debounce 우회) — listener echo가 옛 pending 상태로
         //    덮어 cancel이 사라지는 race 차단. fire-and-forget.
         if (typeof upsertRequestDoc === 'function') {
@@ -844,6 +852,12 @@ function cancelRequestGroup(groupId) {
           h.cancelled = true;
           h.cancelledDate = actionAt;
           h.cancelledBy = actionBy;
+          if (reason) h.cancelReason = reason;
+          // 🔒 history도 즉시 upsert (race 차단)
+          if (typeof upsertHistoryDoc === 'function') {
+            upsertHistoryDoc(h).catch(err => console.warn('revert hist upsert 실패:', err));
+            if (window._historyHashes) window._historyHashes.set(h.id, JSON.stringify(h));
+          }
         }
       });
       // 요청 status를 pending으로 되돌리고, 처리 정보는 statusHistory에 보존
@@ -854,6 +868,7 @@ function cancelRequestGroup(groupId) {
           from: 'completed',
           to: 'pending',
           by: actionBy,
+          reason: reason || '',
           previousCompletedDate: it.completedDate,
           previousReleasedBy: it.releasedBy,
           previousReleasedDate: it.releasedDate
@@ -874,11 +889,13 @@ function cancelRequestGroup(groupId) {
       logEvent('request', isPending ? 'cancel_pending' : 'revert_completed_to_pending', {
         summary: (isPending ? '대기 → 취소' : '완료 → 대기 복귀') +
                  ': [' + targetItems[0].team + '] ' + (targetItems[0].requester || targetItems[0].member) +
-                 ' ' + targetItems.length + '종 ' + totalQty + '개',
+                 ' ' + targetItems.length + '종 ' + totalQty + '개' +
+                 (reason ? ' — ' + reason : ''),
         team: targetItems[0].team,
         requester: targetItems[0].requester || targetItems[0].member,
         wasStatus: isPending ? 'pending' : 'completed',
         nowStatus: isPending ? 'cancelled' : 'pending',
+        reason: reason || '',
         actionBy: actionBy,
         items: targetItems.map(it => ({
           id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,

@@ -109,6 +109,7 @@ function renderInbound() {
           '<div class="flex-1 min-w-0">' +
           '<p class="text-xs text-slate-500">' + escapeHtml(e.vendor || '') + (isReverted ? ' · <span class="text-slate-400 font-bold">❌ 되돌림</span>' : '') + '</p>' +
           '<p class="text-sm font-medium text-slate-900 truncate ' + (isReverted ? 'line-through text-slate-500' : '') + '">' + escapeHtml(e.name || '') + '</p>' +
+          (isReverted && e.cancelReason ? '<p class="text-[11px] text-slate-500 mt-0.5">📝 ' + escapeHtml(e.cancelReason) + '</p>' : '') +
           '</div>' +
           '<div class="text-right flex-shrink-0 flex items-center gap-2">' +
           '<span class="text-base font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">+' + (e.qty || 0) + '</span>' +
@@ -172,12 +173,13 @@ function revertInboundEntry(historyId) {
   const itemName = h.name || (item ? item.name : '품목');
   const currentStock = item ? item.stock : '?';
 
-  askConfirm('입고 되돌리기',
+  askConfirmWithReason('입고 되돌리기',
     itemName + ' +' + h.qty + ' 입고를 되돌립니다.\n\n' +
     '· 재고 ' + currentStock + ' → ' + (item ? Math.max(0, currentStock - h.qty) : '?') + '\n' +
     '· 입고 기록은 삭제되지 않고 [❌ 되돌림] 표시로 보존\n' +
-    '· 통계/주간보고에서 자동 제외\n\n계속하시겠습니까?',
-    function() {
+    '· 통계/주간보고에서 자동 제외',
+    '예: 잘못 입고, 수량 오류, 반품',
+    function(reason) {
       const at = new Date().toISOString();
       const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
 
@@ -195,6 +197,7 @@ function revertInboundEntry(historyId) {
       h.cancelled = true;
       h.cancelledDate = at;
       h.cancelledBy = by;
+      if (reason) h.cancelReason = reason;
       // 즉시 upsert (race 차단)
       if (typeof upsertHistoryDoc === 'function') {
         upsertHistoryDoc(h).catch(err => console.warn('inbound revert hist upsert 실패:', err));
@@ -204,11 +207,13 @@ function revertInboundEntry(historyId) {
       // 3. audit log
       if (typeof logEvent === 'function') {
         logEvent('inbound', 'revert', {
-          summary: '입고 되돌림: ' + itemName + ' (-' + h.qty + ')',
+          summary: '입고 되돌림: ' + itemName + ' (-' + h.qty + ')' +
+                   (reason ? ' — ' + reason : ''),
           historyId: h.id,
           itemId: h.itemId,
           item: itemName,
           qty: h.qty,
+          reason: reason || '',
           actionBy: by
         });
       }

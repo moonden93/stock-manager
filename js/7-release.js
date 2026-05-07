@@ -894,10 +894,11 @@ function cancelMyRequest(groupId) {
   if (items.length === 0) return;
   const totalQty = items.reduce((s, it) => s + (it.qty || 0), 0);
 
-  askConfirm('요청 취소',
+  askConfirmWithReason('요청 취소',
     items[0].requester + '님의 대기 요청을 취소합니다.\n\n' +
-    items.length + '종 ' + totalQty + '개\n\n취소된 요청은 반출관리에서 기록으로 남습니다.\n계속하시겠습니까?',
-    function() {
+    items.length + '종 ' + totalQty + '개\n\n취소된 요청은 반출관리에서 기록으로 남습니다.',
+    '예: 중복 요청, 잘못 입력',
+    function(reason) {
       // 소프트 취소: 데이터 보존, status만 변경
       const cancelledAt = new Date().toISOString();
       const cancelledBy = items[0].requester || items[0].member || '본인';
@@ -905,6 +906,7 @@ function cancelMyRequest(groupId) {
         it.status = 'cancelled';
         it.cancelledDate = cancelledAt;
         it.cancelledBy = cancelledBy;
+        if (reason) it.cancelReason = reason;
         // 🔒 즉시 컬렉션 push (요청자 본인 취소도 race 위험 동일)
         if (typeof upsertRequestDoc === 'function') {
           upsertRequestDoc(it).catch(err => console.warn('self-cancel immediate upsert 실패:', err));
@@ -914,9 +916,11 @@ function cancelMyRequest(groupId) {
       if (typeof logEvent === 'function') {
         logEvent('request', 'cancel_by_requester', {
           summary: '요청자 본인 취소: [' + items[0].team + '] ' + (items[0].requester || '') +
-                   ' ' + items.length + '종 ' + totalQty + '개',
+                   ' ' + items.length + '종 ' + totalQty + '개' +
+                   (reason ? ' — ' + reason : ''),
           team: items[0].team,
           requester: items[0].requester || '',
+          reason: reason || '',
           items: items.map(it => ({
             id: it.id, requestId: it.requestId, item: it.name, qty: it.qty,
             vendor: it.vendor, unit: it.unit, date: it.date, memo: it.memo || ''

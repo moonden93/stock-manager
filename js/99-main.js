@@ -100,6 +100,49 @@ function executeConfirm() {
   window._pendingConfirm = null;
 }
 
+// ============================================
+// 사유 입력란 포함 confirm 모달 (취소/되돌리기 등 실수 방지용)
+// ============================================
+// onYes(reason) — reason은 trim된 string. 비워두면 ''.
+function askConfirmWithReason(title, message, placeholder, onYes, btnText, btnColor) {
+  btnText = btnText || '예, 확인';
+  btnColor = btnColor || 'amber';
+  window._pendingConfirm = onYes;
+  const colors = {
+    amber: { bg: 'bg-amber-50', border: 'border-amber-200', btn: 'bg-amber-600 hover:bg-amber-700' },
+    red:   { bg: 'bg-red-50',   border: 'border-red-200',   btn: 'bg-red-600 hover:bg-red-700' },
+    teal:    { bg: 'bg-teal-50',    border: 'border-teal-200',    btn: 'bg-teal-600 hover:bg-teal-700' },
+    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', btn: 'bg-emerald-600 hover:bg-emerald-700' }
+  };
+  const c = colors[btnColor];
+  const ph = placeholder || '예: 잘못 입력됨';
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 ' + c.bg + ' border-b ' + c.border + '">' +
+    '<h3 class="text-base font-bold text-slate-900">' + title + '</h3></div>' +
+    '<div class="px-5 py-5">' +
+    '<p class="text-sm text-slate-700 whitespace-pre-line leading-relaxed mb-3">' + message + '</p>' +
+    '<label class="text-xs font-bold text-slate-600 mb-1 block">사유 <span class="font-normal text-slate-400">(선택 — 비워두셔도 됩니다)</span></label>' +
+    '<textarea id="confirm-reason" placeholder="' + ph + '" rows="2" ' +
+    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-slate-400 resize-none"></textarea>' +
+    '</div>' +
+    '<div class="px-5 py-4 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700 hover:bg-slate-100">아니오</button>' +
+    '<button onclick="executeConfirmWithReason()" class="flex-1 py-3 ' + c.btn + ' text-white rounded-lg font-bold">' + btnText + '</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  setTimeout(() => { const el = document.getElementById('confirm-reason'); if (el) el.focus(); }, 100);
+}
+
+function executeConfirmWithReason() {
+  const cb = window._pendingConfirm;
+  const el = document.getElementById('confirm-reason');
+  const reason = el ? (el.value || '').trim() : '';
+  closeModal();
+  if (typeof cb === 'function') cb(reason);
+  window._pendingConfirm = null;
+}
+
 function closeModal() {
   const c = document.getElementById('modal-container');
   if (c) c.innerHTML = '';
