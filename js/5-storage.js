@@ -493,11 +493,18 @@ function _applySyncData(data) {
   const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
   if (typeof renderFn === 'function') renderFn();
   // Phase 1 안전망: 클라우드 카운트 기준선 갱신
-  window._lastCloudSnapshot = {
-    inventoryCount: (data.inventory || []).length,
-    historyCount: (data.history || []).length,
-    requestsCount: (data.requests || []).length
-  };
+  // ⚠️ 컬렉션 listener가 활성인 필드는 단일 문서 카운트로 덮어쓰지 않음
+  // (옛 단일 문서가 컬렉션보다 N건 많을 때 다음 save가 false alarm 나는 버그 방지)
+  if (!window._lastCloudSnapshot) window._lastCloudSnapshot = { inventoryCount: 0, historyCount: 0, requestsCount: 0 };
+  if (!window._inventoryCollectionListenerActive) {
+    window._lastCloudSnapshot.inventoryCount = (data.inventory || []).length;
+  }
+  if (!window._historyCollectionListenerActive) {
+    window._lastCloudSnapshot.historyCount = (data.history || []).length;
+  }
+  if (!window._requestsCollectionListenerActive) {
+    window._lastCloudSnapshot.requestsCount = (data.requests || []).length;
+  }
   console.log('🔄 동기화 완료');
 }
 
