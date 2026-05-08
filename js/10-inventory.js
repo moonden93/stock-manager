@@ -33,8 +33,11 @@ function getInventoryFilteredItems() {
   if (invSearchTerm) {
     filtered = filtered.filter(i => matchesSearch(i.name, invSearchTerm) || matchesSearch(i.vendor, invSearchTerm));
   }
-  // 이름 자연 정렬 (H File 21mm #08 → #10 → #15 → ... → #80 순)
+  // 정렬: 1) 숨김 항목 하단 / 2) vendor 가나다순 / 3) name 자연 정렬
   filtered.sort((a, b) => {
+    const ha = a.hidden ? 1 : 0;
+    const hb = b.hidden ? 1 : 0;
+    if (ha !== hb) return ha - hb;
     const va = (a.vendor || ''), vb = (b.vendor || '');
     if (va !== vb) return va.localeCompare(vb, 'ko');
     return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
@@ -44,12 +47,16 @@ function getInventoryFilteredItems() {
 
 function _inventoryItemRowHtml(item) {
   const status = item.stock === 0 ? 'out' : item.stock < item.minStock ? 'low' : 'normal';
-  const colors = { out: 'bg-red-50', low: 'bg-amber-50/50', normal: '' };
+  // 배경색: 숨김 우선 (회색), 그 외 stock 상태별
+  const bgClass = item.hidden ? 'bg-slate-100'
+    : status === 'out' ? 'bg-red-50'
+    : status === 'low' ? 'bg-amber-50'
+    : 'bg-emerald-50';
   const icons = { out: '🔴', low: '🟡', normal: '🟢' };
   const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
-  const hiddenClass = item.hidden ? ' opacity-40' : '';
+  const hiddenClass = item.hidden ? ' opacity-60' : '';
   const hiddenBadge = item.hidden ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">숨김</span>' : '';
-  return '<button onclick="openInventoryItemEdit(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:bg-slate-100 ' + colors[status] + hiddenClass + '">' +
+  return '<button onclick="openInventoryItemEdit(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:opacity-90 ' + bgClass + hiddenClass + '">' +
     '<div class="flex items-center gap-3">' +
     '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
     '<div class="flex-1 min-w-0">' +
