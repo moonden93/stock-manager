@@ -7,18 +7,27 @@
 // 화면 4: 재고 현황
 // ============================================================
 let invSearchTerm = '';
-let invFilter = 'all';
+let invFilter = 'all';   // 'all' / 'low' / 'out' / 'hidden'
 let invVendorFilter = '';
 let invCategoryFilter = '';  // 분류 필터 (예: '치과재료', '구강위생용품')
-let invShowHidden = false;  // 숨김 항목 보기 토글 (OFF = 안 보임, ON = 흐리게 보임)
 
 function getInventoryFilteredItems() {
   let filtered = inventory;
-  // 숨김 처리: 토글 OFF면 제외
-  if (!invShowHidden) filtered = filtered.filter(i => !i.hidden);
-  if (invFilter === 'out') filtered = filtered.filter(i => i.stock === 0);
-  if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock <= i.minStock);
-  if (invFilter === 'normal') filtered = filtered.filter(i => i.stock > i.minStock);
+
+  // KPI 필터 (mutually exclusive)
+  if (invFilter === 'hidden') {
+    // 숨김 only
+    filtered = filtered.filter(i => i.hidden);
+  } else if (invFilter === 'all') {
+    // 전체 = visible + hidden 같이 (hidden은 화면에서 회색으로 표시됨)
+    // 추가 필터 없음
+  } else {
+    // 부족 / 품절 — visible only
+    filtered = filtered.filter(i => !i.hidden);
+    if (invFilter === 'out') filtered = filtered.filter(i => i.stock === 0);
+    if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock <= i.minStock);
+  }
+
   if (invVendorFilter) filtered = filtered.filter(i => i.vendor === invVendorFilter);
   if (invCategoryFilter) filtered = filtered.filter(i => (i.category || '') === invCategoryFilter);
   if (invSearchTerm) {
@@ -82,16 +91,19 @@ function renderInventory() {
     '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel 다운로드</button>' +
     '</div></div>' +
 
-    '<div class="grid grid-cols-3 gap-2">' +
+    '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2">' +
     '<button onclick="invFilter = \'all\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'all' ? 'border-slate-700' : 'border-slate-200') + '">' +
-    '<p class="text-xs text-slate-500">전체</p><p class="text-2xl font-bold text-slate-900">' + visibleInv.length + '</p></button>' +
+    '<p class="text-xs text-slate-500">전체</p><p class="text-2xl font-bold text-slate-900">' + inventory.length + '</p></button>' +
     '<button onclick="invFilter = \'low\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'low' ? 'border-amber-500' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">🟡 부족</p><p class="text-2xl font-bold text-amber-600">' + low + '</p></button>' +
     '<button onclick="invFilter = \'out\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'out' ? 'border-red-500' : 'border-slate-200') + '">' +
     '<p class="text-xs text-slate-500">🔴 품절</p><p class="text-2xl font-bold text-red-600">' + out + '</p></button>' +
+    '<button onclick="invFilter = \'hidden\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
+    (invFilter === 'hidden' ? 'border-slate-500' : 'border-slate-200') + '">' +
+    '<p class="text-xs text-slate-500">🙈 숨김</p><p class="text-2xl font-bold text-slate-500">' + hiddenCount + '</p></button>' +
     '</div>' +
 
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
@@ -100,11 +112,6 @@ function renderInventory() {
     '<input type="text" value="' + escapeHtml(invSearchTerm) + '" ' +
     'oninput="invSearchTerm = this.value; renderInventoryItems();" ' +
     'placeholder="🔍 검색" class="flex-1 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" />' +
-    (hiddenCount > 0
-      ? '<button onclick="toggleInvShowHidden()" class="px-3 py-3 text-sm rounded-xl border-2 ' +
-        (invShowHidden ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200') + '" title="숨김 항목 보기 토글">' +
-        (invShowHidden ? '👁️ 숨김 ' + hiddenCount : '🙈 숨김 ' + hiddenCount) + '</button>'
-      : '') +
     '</div></div>' +
     '<div class="px-3 py-3 border-b border-slate-100"><div class="flex flex-wrap gap-1">' +
     '<button onclick="invVendorFilter = \'\'; renderInventory();" class="px-3 py-1.5 text-sm rounded-full ' +
@@ -139,12 +146,6 @@ function renderInventory() {
 
   html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
-}
-
-// 숨김 항목 보기 토글 (function declaration이라 window에 자동 등록됨 — 인라인 onclick 안전)
-function toggleInvShowHidden() {
-  invShowHidden = !invShowHidden;
-  renderInventory();
 }
 
 function openEditDialog(itemId) {
