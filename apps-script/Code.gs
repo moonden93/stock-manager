@@ -120,8 +120,8 @@ function runMasterSheetNow() {
   appendToMasterSheet(data);
 }
 
-// 트리거를 매일 12시(KST)로 재설정 — 1회 실행
-// 같은 이름 파일이 자동 휴지통 되므로 매일 돌아도 폴더가 깨끗하게 유지됨
+// 트리거를 매주 토요일 9시(KST)로 재설정 — 1회 실행
+// 같은 이름 파일이 자동 휴지통 되므로 같은 주에 재실행해도 폴더가 깨끗하게 유지됨
 // 실행: Apps Script 편집기 → 함수 선택 → setupDailyTrigger → ▶ 실행
 function setupDailyTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
@@ -133,13 +133,14 @@ function setupDailyTrigger() {
       removed++;
     }
   });
+  // 매주 토요일 9시 (KST 기준) — Asia/Seoul timezone 설정 필수
   ScriptApp.newTrigger('weeklyBackup')
     .timeBased()
-    .everyDays(1)
-    .atHour(12)
+    .onWeekDay(ScriptApp.WeekDay.SATURDAY)
+    .atHour(9)
     .create();
   Logger.log('✓ 트리거 재설정 완료');
-  Logger.log('   기존 ' + removed + '개 삭제 → 매일 12시 weeklyBackup');
+  Logger.log('   기존 ' + removed + '개 삭제 → 매주 토요일 9시 weeklyBackup');
   Logger.log('   ※ 시간은 스크립트 기본 시간대 기준. Project Settings에서 Asia/Seoul 확인할 것');
 }
 
