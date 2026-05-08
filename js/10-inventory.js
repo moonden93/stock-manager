@@ -101,7 +101,7 @@ function renderInventory() {
     'oninput="invSearchTerm = this.value; renderInventoryItems();" ' +
     'placeholder="🔍 검색" class="flex-1 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" />' +
     (hiddenCount > 0
-      ? '<button onclick="invShowHidden = !invShowHidden; renderInventory();" class="px-3 py-3 text-sm rounded-xl border-2 ' +
+      ? '<button onclick="toggleInvShowHidden()" class="px-3 py-3 text-sm rounded-xl border-2 ' +
         (invShowHidden ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-600 border-slate-200') + '" title="숨김 항목 보기 토글">' +
         (invShowHidden ? '👁️ 숨김 ' + hiddenCount : '🙈 숨김 ' + hiddenCount) + '</button>'
       : '') +
@@ -139,6 +139,12 @@ function renderInventory() {
 
   html += '</div></div></div>';
   document.getElementById('page-content').innerHTML = html;
+}
+
+// 숨김 항목 보기 토글 (function declaration이라 window에 자동 등록됨 — 인라인 onclick 안전)
+function toggleInvShowHidden() {
+  invShowHidden = !invShowHidden;
+  renderInventory();
 }
 
 function openEditDialog(itemId) {
