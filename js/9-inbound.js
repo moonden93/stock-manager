@@ -9,13 +9,20 @@ let inboundSearchTerm = '';
 let inboundSelectedVendor = '';
 
 function getInboundFilteredItems() {
-  return inventory.filter(i => {
+  const filtered = inventory.filter(i => {
     if (inboundSelectedVendor && i.vendor !== inboundSelectedVendor) return false;
     if (inboundSearchTerm) {
       if (!matchesSearch(i.name, inboundSearchTerm) && !matchesSearch(i.vendor, inboundSearchTerm)) return false;
     }
     return true;
   });
+  // 이름 자연 정렬 (H File 21mm #08 → #10 → #15 → ... → #80 순)
+  filtered.sort((a, b) => {
+    const va = (a.vendor || ''), vb = (b.vendor || '');
+    if (va !== vb) return va.localeCompare(vb, 'ko');
+    return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  });
+  return filtered;
 }
 
 function _inboundItemRowHtml(item) {

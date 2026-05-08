@@ -43,9 +43,9 @@ function getStandardTeams() {
   return flat;
 }
 
-// 현재 검색/벤더 필터를 적용한 inventory 반환
+// 현재 검색/벤더 필터를 적용한 inventory 반환 (이름순 정렬 — H/K 등 자연스럽게)
 function getReleaseFilteredItems() {
-  return inventory.filter(i => {
+  const filtered = inventory.filter(i => {
     if (releaseSelectedVendor && i.vendor !== releaseSelectedVendor) return false;
     if (releaseSelectedCategory && (i.category || '') !== releaseSelectedCategory) return false;
     if (releaseSearchTerm) {
@@ -53,6 +53,15 @@ function getReleaseFilteredItems() {
     }
     return true;
   });
+  // 이름 자연 정렬 — '#08'을 '#80'보다 먼저 (numeric: true)
+  // 예: H File 21mm (#08), (#10), ..., (#80), H File 25mm (#08), ..., K File 21mm (#08) ...
+  filtered.sort((a, b) => {
+    const va = (a.vendor || '');
+    const vb = (b.vendor || '');
+    if (va !== vb) return va.localeCompare(vb, 'ko');
+    return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  });
+  return filtered;
 }
 
 // 한 품목 행 HTML (renderRelease, renderReleaseItems 양쪽에서 사용)

@@ -33,6 +33,12 @@ function getInventoryFilteredItems() {
   if (invSearchTerm) {
     filtered = filtered.filter(i => matchesSearch(i.name, invSearchTerm) || matchesSearch(i.vendor, invSearchTerm));
   }
+  // 이름 자연 정렬 (H File 21mm #08 → #10 → #15 → ... → #80 순)
+  filtered.sort((a, b) => {
+    const va = (a.vendor || ''), vb = (b.vendor || '');
+    if (va !== vb) return va.localeCompare(vb, 'ko');
+    return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  });
   return filtered;
 }
 
