@@ -236,7 +236,7 @@ function updateHeaderStats() {
   const visibleInv = inventory.filter(i => !i.hidden);
   const total = visibleInv.length;
   const out = visibleInv.filter(i => i.stock === 0).length;
-  const low = visibleInv.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+  const low = visibleInv.filter(i => i.stock > 0 && i.stock < i.minStock).length;
   const pending = requests.filter(r => r.status === 'pending').length;
   let html = '품목 <strong>' + total + '</strong>개';
   if (out > 0) html += ' · <span class="text-red-600 font-medium">품절 ' + out + '</span>';

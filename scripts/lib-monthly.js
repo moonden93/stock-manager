@@ -145,7 +145,7 @@ function generateMonthlyReportExcel(data, year, month) {
 
   // 1. 요약
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
 

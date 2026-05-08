@@ -222,7 +222,7 @@ function generateReportExcel() {
 
   // 공통 카운트
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
@@ -293,8 +293,8 @@ function generateReportExcel() {
   invWithChange.sort((a, b) => {
     if (a.change.rank !== b.change.rank) return a.change.rank - b.change.rank;
     // 동일 rank 안에선 상태(품절/부족/정상) 우선
-    const sA = a.it.stock === 0 ? 0 : (a.it.stock <= a.it.minStock ? 1 : 2);
-    const sB = b.it.stock === 0 ? 0 : (b.it.stock <= b.it.minStock ? 1 : 2);
+    const sA = a.it.stock === 0 ? 0 : (a.it.stock < a.it.minStock ? 1 : 2);
+    const sB = b.it.stock === 0 ? 0 : (b.it.stock < b.it.minStock ? 1 : 2);
     if (sA !== sB) return sA - sB;
     return (a.it.vendor || '').localeCompare(b.it.vendor || '') ||
            (a.it.name || '').localeCompare(b.it.name || '');
@@ -303,7 +303,7 @@ function generateReportExcel() {
   const invRows = [['변화', '상태', '업체', '품명', '단위', '단가(원)', '현재 재고', '전주 재고', '부족기준']];
   invWithChange.forEach(({ it, change }) => {
     const status = it.stock === 0 ? '품절'
-                 : (it.stock <= it.minStock ? '부족' : '정상');
+                 : (it.stock < it.minStock ? '부족' : '정상');
     const prevStock = prevSnap ? (prevSnap.snapshot[it.id] !== undefined ? prevSnap.snapshot[it.id] : '-') : '-';
     invRows.push([
       change.marker, status, it.vendor || '', it.name || '', it.unit || '',
@@ -481,7 +481,7 @@ async function tryWeeklyBackup(force) {
 
 async function sendBackupEmail(weekKey) {
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
@@ -567,7 +567,7 @@ function generateMonthlyReportExcel(year, month) {
 
   // ─── 시트 1: 요약 ───
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
 

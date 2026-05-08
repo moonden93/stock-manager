@@ -25,7 +25,7 @@ function getInventoryFilteredItems() {
     // 부족 / 품절 — visible only
     filtered = filtered.filter(i => !i.hidden);
     if (invFilter === 'out') filtered = filtered.filter(i => i.stock === 0);
-    if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock <= i.minStock);
+    if (invFilter === 'low') filtered = filtered.filter(i => i.stock > 0 && i.stock < i.minStock);
   }
 
   if (invVendorFilter) filtered = filtered.filter(i => i.vendor === invVendorFilter);
@@ -37,7 +37,7 @@ function getInventoryFilteredItems() {
 }
 
 function _inventoryItemRowHtml(item) {
-  const status = item.stock === 0 ? 'out' : item.stock <= item.minStock ? 'low' : 'normal';
+  const status = item.stock === 0 ? 'out' : item.stock < item.minStock ? 'low' : 'normal';
   const colors = { out: 'bg-red-50', low: 'bg-amber-50/50', normal: '' };
   const icons = { out: '🔴', low: '🟡', normal: '🟢' };
   const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
@@ -76,7 +76,7 @@ function renderInventory() {
   // KPI는 숨김 항목 제외 — 사용자가 행동해야 할 진짜 부족/품절만 카운트
   const visibleInv = inventory.filter(i => !i.hidden);
   const out = visibleInv.filter(i => i.stock === 0).length;
-  const low = visibleInv.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+  const low = visibleInv.filter(i => i.stock > 0 && i.stock < i.minStock).length;
   const hiddenCount = inventory.length - visibleInv.length;
   const vendors = [...new Set(visibleInv.map(i => i.vendor))].sort();
   const categories = [...new Set(visibleInv.map(i => i.category || '').filter(Boolean))].sort();

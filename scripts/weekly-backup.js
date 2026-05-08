@@ -290,7 +290,7 @@ function generateReportExcel(data) {
   const today = todayKstStr();
 
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);
@@ -329,15 +329,15 @@ function generateReportExcel(data) {
   // 2. 품목 (상태순 정렬, 숨김은 맨 뒤)
   const invSorted = inventory.slice().sort((a, b) => {
     if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;
-    const sA = a.stock === 0 ? 0 : (a.stock <= a.minStock ? 1 : 2);
-    const sB = b.stock === 0 ? 0 : (b.stock <= b.minStock ? 1 : 2);
+    const sA = a.stock === 0 ? 0 : (a.stock < a.minStock ? 1 : 2);
+    const sB = b.stock === 0 ? 0 : (b.stock < b.minStock ? 1 : 2);
     if (sA !== sB) return sA - sB;
     return (a.vendor || '').localeCompare(b.vendor || '') || (a.name || '').localeCompare(b.name || '');
   });
   const invRows = [['상태', '숨김', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
   invSorted.forEach(it => {
     const status = it.stock === 0 ? '품절'
-                 : (it.stock <= it.minStock ? '부족' : '정상');
+                 : (it.stock < it.minStock ? '부족' : '정상');
     invRows.push([status, it.hidden ? '🙈' : '', it.vendor || '', it.name || '', it.unit || '',
                   it.price || 0, it.stock || 0, it.minStock || 0]);
   });
@@ -518,7 +518,7 @@ async function sendEmail(data, today, weekLabel, attachments, monthlyLabel) {
   const weekKey = getIsoWeek(new Date());
 
   const totalCost = inventory.reduce((s, it) => s + (it.stock || 0) * (it.price || 0), 0);
-  const lowStock = inventory.filter(it => it.stock > 0 && it.stock <= it.minStock).length;
+  const lowStock = inventory.filter(it => it.stock > 0 && it.stock < it.minStock).length;
   const outOfStock = inventory.filter(it => it.stock === 0).length;
   const pendingReq = requests.filter(r => r.status === 'pending').length;
   const thisOutHist = history.filter(h => h.type === 'out' && !h.cancelled && h.weekKey === weekKey);

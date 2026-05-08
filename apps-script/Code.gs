@@ -546,7 +546,7 @@ function createMonthlyReportSheet(data, year, month, name, folder) {
   sumSheet.setName('요약');
   const totalCost = inventory.reduce(function(s, it) { return s + (it.stock || 0) * (it.price || 0); }, 0);
   const outOfStock = inventory.filter(function(it) { return it.stock === 0; }).length;
-  const lowStock = inventory.filter(function(it) { return it.stock > 0 && it.stock <= it.minStock; }).length;
+  const lowStock = inventory.filter(function(it) { return it.stock > 0 && it.stock < it.minStock; }).length;
   const pendingReq = requests.filter(function(r) { return r.status === 'pending'; }).length;
   writeRows(sumSheet, [
     ['문치과병원 재고관리 - 월별 보고서'],
@@ -786,7 +786,7 @@ function createReportSheet(data, name, folder) {
 
   const totalCost = inventory.reduce(function(s, it) { return s + (it.stock || 0) * (it.price || 0); }, 0);
   const outOfStock = inventory.filter(function(it) { return it.stock === 0; }).length;
-  const lowStock = inventory.filter(function(it) { return it.stock > 0 && it.stock <= it.minStock; }).length;
+  const lowStock = inventory.filter(function(it) { return it.stock > 0 && it.stock < it.minStock; }).length;
   const pendingReq = requests.filter(function(r) { return r.status === 'pending'; }).length;
   const thisOutHist = history.filter(function(h) { return h.type === 'out' && !h.cancelled && h.weekKey === weekKey; });
   const thisInHist = history.filter(function(h) { return h.type === 'in' && h.weekKey === weekKey; });
@@ -824,15 +824,15 @@ function createReportSheet(data, name, folder) {
   const invSorted = inventory.slice().sort(function(a, b) {
     // 숨김은 항상 뒤로
     if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;
-    const sA = a.stock === 0 ? 0 : (a.stock <= a.minStock ? 1 : 2);
-    const sB = b.stock === 0 ? 0 : (b.stock <= b.minStock ? 1 : 2);
+    const sA = a.stock === 0 ? 0 : (a.stock < a.minStock ? 1 : 2);
+    const sB = b.stock === 0 ? 0 : (b.stock < b.minStock ? 1 : 2);
     if (sA !== sB) return sA - sB;
     return (a.vendor || '').localeCompare(b.vendor || '') ||
            (a.name || '').localeCompare(b.name || '');
   });
   const invRows = [['상태', '숨김', '업체', '품명', '단위', '단가(원)', '현재 재고', '부족기준']];
   invSorted.forEach(function(it) {
-    const status = it.stock === 0 ? '품절' : (it.stock <= it.minStock ? '부족' : '정상');
+    const status = it.stock === 0 ? '품절' : (it.stock < it.minStock ? '부족' : '정상');
     invRows.push([status, it.hidden ? '🙈' : '', it.vendor || '', it.name || '', it.unit || '',
                   it.price || 0, it.stock || 0, it.minStock || 0]);
   });

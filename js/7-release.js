@@ -59,7 +59,7 @@ function getReleaseFilteredItems() {
 function _releaseItemRowHtml(item) {
   const inCart = cart.find(c => c.itemId === item.id);
   const cartQty = inCart ? inCart.qty : 0;
-  const stockColor = item.stock === 0 ? 'text-red-600' : item.stock <= item.minStock ? 'text-amber-600' : 'text-slate-700';
+  const stockColor = item.stock === 0 ? 'text-red-600' : item.stock < item.minStock ? 'text-amber-600' : 'text-slate-700';
   const insufficient = cartQty > item.stock;
 
   let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
@@ -68,7 +68,7 @@ function _releaseItemRowHtml(item) {
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
-    (item.stock === 0 ? ' · 🔴 품절' : item.stock <= item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
+    (item.stock === 0 ? ' · 🔴 품절' : item.stock < item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
     '<div class="flex items-center gap-2">';
 
   if (cartQty > 0) {
