@@ -270,7 +270,9 @@ function renderStatsByWeekly(baseHistory) {
   // 주차별 그룹핑
   const weekStats = {};
   baseHistory.forEach(h => {
-    const weekKey = h.weekKey || getWeekKey(h.date);
+    // h.weekKey는 PREBUILT 시점의 ISO format이라 현 month-week format과 다름.
+    // 항상 date에서 다시 계산해서 일관성 유지.
+    const weekKey = getWeekKey(h.date);
     const lineCost = h.qty * (h.price || 0);
     if (!weekStats[weekKey]) weekStats[weekKey] = { weekKey, total: 0, totalCost: 0, teams: {}, items: {} };
     weekStats[weekKey].total += h.qty;

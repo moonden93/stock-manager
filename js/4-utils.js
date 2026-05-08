@@ -42,14 +42,26 @@ function formatWonShort(n) {
   return n.toLocaleString('ko-KR') + '원';
 }
 
-// 날짜 → 주차 키 (예: "2025-11-07" → "2025-11-W1")
+// 날짜 → 주차 키 (예: "2026-05-09" → "2026-05-W2")
+// 주차 기준: 토요일~다음 금요일 (반출이 금요일이라 토요일에 새 주차 시작)
+// 예: 2026-05-01(금) → 2026-04-W4 / 2026-05-02(토) → 2026-05-W1 /
+//     2026-05-08(금) → 2026-05-W1 / 2026-05-09(토) → 2026-05-W2
 function getWeekKey(dateStr) {
   const d = new Date(dateStr);
-  const year = d.getFullYear();
-  const month = d.getMonth() + 1;
-  const day = d.getDate();
-  const week = Math.ceil(day / 7);
-  return year + '-' + String(month).padStart(2, '0') + '-W' + week;
+  const dow = d.getDay();  // 0=Sun ... 6=Sat
+  // 가장 최근 토요일까지 며칠 뒤로 가야 하나 (Sat→0, Sun→1, ..., Fri→6)
+  const daysBack = (dow + 1) % 7;
+  const sat = new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysBack);
+  const year = sat.getFullYear();
+  const month = sat.getMonth() + 1;
+  const day = sat.getDate();
+  // 해당 달의 첫 토요일 날짜
+  const firstOfMonth = new Date(year, month - 1, 1);
+  const firstDow = firstOfMonth.getDay();
+  const daysToFirstSat = (6 - firstDow + 7) % 7;
+  const firstSatDate = 1 + daysToFirstSat;
+  const weekNum = Math.floor((day - firstSatDate) / 7) + 1;
+  return year + '-' + String(month).padStart(2, '0') + '-W' + weekNum;
 }
 
 // 주차 키 → 라벨 (예: "2025-11-W1" → "25년 11월 1주차")
