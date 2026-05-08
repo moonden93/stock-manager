@@ -74,6 +74,17 @@ function renderInventory() {
   const filtered = getInventoryFilteredItems();
 
   let html = '<div class="space-y-4">' +
+    // 품목 관리 버튼 영역 (설정에서 이전됨)
+    '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm p-3">' +
+    '<div class="flex items-center gap-2 flex-wrap">' +
+    '<span class="text-xs font-bold text-slate-700 mr-1">📦 품목 관리:</span>' +
+    '<button onclick="openAddItemDialog()" class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700">+ 품목 추가</button>' +
+    '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel 다운로드</button>' +
+    '<label class="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 cursor-pointer">' +
+    '📤 Excel 업로드<input type="file" accept=".xlsx,.xls" onchange="handleExcelUpload(event)" class="hidden" />' +
+    '</label>' +
+    '</div></div>' +
+
     '<div class="grid grid-cols-3 gap-2">' +
     '<button onclick="invFilter = \'all\'; renderInventory();" class="bg-white rounded-xl p-3 border-2 ' +
     (invFilter === 'all' ? 'border-slate-700' : 'border-slate-200') + '">' +
@@ -153,11 +164,15 @@ function openEditDialog(itemId) {
     '<input type="number" id="edit-stock" value="' + item.stock + '" class="w-full px-4 py-3 text-xl font-bold text-center bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" onfocus="this.select()" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-2 block">기준 재고 (이 수량 이하시 알람)</label>' +
     '<input type="number" id="edit-min" value="' + item.minStock + '" min="0" class="w-full px-4 py-3 text-xl font-bold text-center bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-orange-500" onfocus="this.select()" /></div>' +
-    '<div class="pt-2 border-t border-slate-100">' +
+    '<div class="pt-2 border-t border-slate-100 space-y-2">' +
     '<button onclick="toggleItemHidden(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border ' +
     (item.hidden ? 'border-slate-300 bg-slate-50 text-slate-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50') + '">' +
     hideBtnLabel + '</button>' +
-    '<p class="text-xs text-slate-500 mt-1.5 text-center">' + hideBtnHint + '</p>' +
+    '<p class="text-xs text-slate-500 text-center">' + hideBtnHint + '</p>' +
+    // 전체 정보 수정 (업체/품명/단위/단가 등)
+    '<button onclick="closeModal(); openEditItemDialog(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100">📝 전체 정보 수정 (업체·품명·단위·단가)</button>' +
+    // 삭제 (품목 자체 제거 — 이력은 보존)
+    '<button onclick="closeModal(); removeItem(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">🗑️ 품목 삭제 (이력은 보존)</button>' +
     '</div>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +

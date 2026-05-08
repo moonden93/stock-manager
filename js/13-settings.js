@@ -36,6 +36,23 @@ function restoreSettingsSnapshot() {
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
 }
 
+// 헬퍼: 품목 변경 후 처리 (현재 탭 컨텍스트에 따라 다르게)
+// - settings: 기존 batched 플로우 (markSettingsDirty + renderSettings)
+// - inventory: 즉시 saveAll + renderInventory
+// - 기타: 즉시 saveAll만
+function _applyItemChangeAndRender() {
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+  if (currentTab === 'settings') {
+    markSettingsDirty();
+    renderSettings();
+  } else {
+    saveAll();
+    if (currentTab === 'inventory' && typeof renderInventory === 'function') {
+      renderInventory();
+    }
+  }
+}
+
 function markSettingsDirty() {
   if (!settingsSnapshot) takeSettingsSnapshot();
   settingsDirty = true;
@@ -89,21 +106,12 @@ function renderSettings() {
   html +=
     '<div class="bg-slate-100 border border-slate-200 rounded-2xl p-4">' +
     '<h2 class="text-lg font-bold text-slate-900 mb-1">⚙️ 설정</h2>' +
-    '<p class="text-sm text-slate-600">팀, 담당자, 품목, 업체를 관리합니다 (변경 후 [저장] 버튼을 눌러야 반영됩니다)</p></div>' +
-    
-    '<div class="flex bg-slate-100 rounded-xl p-1">' +
-    '<button onclick="settingsTab = \'teams\'; renderSettings();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
-    (settingsTab === 'teams' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">👥 팀/담당자</button>' +
-    '<button onclick="settingsTab = \'items\'; renderSettings();" class="flex-1 py-2 rounded-lg font-bold text-sm transition ' +
-    (settingsTab === 'items' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600') + '">📦 품목/업체</button>' +
-    '</div>';
-  
-  if (settingsTab === 'teams') {
-    html += renderTeamsSettings();
-  } else {
-    html += renderItemsSettings();
-  }
-  
+    '<p class="text-sm text-slate-600">팀, 담당자를 관리합니다 (변경 후 [저장] 버튼을 눌러야 반영됩니다)</p>' +
+    '<p class="text-xs text-slate-500 mt-2">📦 품목/업체 관리는 <strong>재고 탭</strong>에서 합니다</p></div>';
+
+  // 항상 팀/담당자만 표시 (품목 탭 제거됨 — 재고 탭으로 통합)
+  html += renderTeamsSettings();
+
   html += '</div>';
   document.getElementById('page-content').innerHTML = html;
 }
@@ -440,11 +448,9 @@ function addItem() {
     vendor, name, unit, price, stock, minStock, category: '치과재료'
   };
   inventory.push(newItem);
-  markSettingsDirty();
-  updateHeaderStats();
   closeModal();
   showToast('"' + name + '" 추가됨');
-  renderSettings();
+  _applyItemChangeAndRender();
 }
 
 // ============================================
@@ -524,11 +530,9 @@ function saveItem(itemId) {
   item.price = price;
   item.stock = stock;
   item.minStock = minStock;
-  markSettingsDirty();
-  updateHeaderStats();
   closeModal();
   showToast('수정 완료');
-  renderSettings();
+  _applyItemChangeAndRender();
 }
 
 function removeItem(itemId) {
@@ -536,10 +540,8 @@ function removeItem(itemId) {
   if (!item) return;
   askConfirm('품목 삭제', '"' + item.name + '"을(를) 삭제하시겠습니까?\n\n※ 기존 반출 이력은 유지됩니다', function() {
     inventory = inventory.filter(i => i.id !== itemId);
-    markSettingsDirty();
-    updateHeaderStats();
     showToast('삭제됨');
-    renderSettings();
+    _applyItemChangeAndRender();
   }, '삭제', 'red');
 }
 
@@ -895,12 +897,10 @@ function applyExcelChanges() {
   const deleteIds = new Set(c.toDelete.map(it => it.id));
   inventory = inventory.filter(it => !deleteIds.has(it.id));
   
-  markSettingsDirty();
-  updateHeaderStats();
   pendingExcelChanges = null;
   closeModal();
-  
+
   const msg = '적용 완료! 추가 ' + c.toAdd.length + ' / 수정 ' + c.toUpdate.length + ' / 삭제 ' + c.toDelete.length;
   showToast(msg, 'success');
-  renderSettings();
+  _applyItemChangeAndRender();
 }
