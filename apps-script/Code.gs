@@ -120,9 +120,12 @@ function runMasterSheetNow() {
   appendToMasterSheet(data);
 }
 
-// 트리거를 매주 토요일 9시(KST)로 재설정 — 1회 실행
+// 트리거를 매주 토요일 18시(KST)로 재설정 — 1회 실행
 // 같은 이름 파일이 자동 휴지통 되므로 같은 주에 재실행해도 폴더가 깨끗하게 유지됨
 // 실행: Apps Script 편집기 → 함수 선택 → setupDailyTrigger → ▶ 실행
+//
+// 18시 선택 이유: Firestore Spark(무료) 일일 quota는 매일 자정 PT (≈17시 KST) 리셋
+// → 그 이후 시간으로 잡아야 quota exceeded 에러 안 남
 function setupDailyTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   let removed = 0;
@@ -133,14 +136,14 @@ function setupDailyTrigger() {
       removed++;
     }
   });
-  // 매주 토요일 9시 (KST 기준) — Asia/Seoul timezone 설정 필수
+  // 매주 토요일 18시 (KST 기준) — Asia/Seoul timezone 설정 필수
   ScriptApp.newTrigger('weeklyBackup')
     .timeBased()
     .onWeekDay(ScriptApp.WeekDay.SATURDAY)
-    .atHour(9)
+    .atHour(18)
     .create();
   Logger.log('✓ 트리거 재설정 완료');
-  Logger.log('   기존 ' + removed + '개 삭제 → 매주 토요일 9시 weeklyBackup');
+  Logger.log('   기존 ' + removed + '개 삭제 → 매주 토요일 18시 weeklyBackup');
   Logger.log('   ※ 시간은 스크립트 기본 시간대 기준. Project Settings에서 Asia/Seoul 확인할 것');
 }
 

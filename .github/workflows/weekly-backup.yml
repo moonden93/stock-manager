@@ -2,9 +2,11 @@ name: Weekly Backup
 
 on:
   schedule:
-    # 매주 토요일 00:00 UTC = 매주 토요일 09:00 한국시간 (KST = UTC+9)
+    # 매주 토요일 09:00 UTC = 매주 토요일 18:00 한국시간 (KST = UTC+9)
     # cron 요일: 0=일, 1=월, ..., 6=토
-    - cron: '0 0 * * 6'
+    # 18시 선택 이유: Firestore Spark 일일 quota는 매일 자정 PT (≈17시 KST)에 리셋되므로,
+    # 17시 이후로 잡아야 그 날 누적된 read 한도와 충돌 안 함
+    - cron: '0 9 * * 6'
   workflow_dispatch:  # 수동 실행 버튼 (테스트용)
 
 jobs:
