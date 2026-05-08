@@ -516,3 +516,112 @@ mcEnableSingleDocInventorySync()
 ---
 
 _마지막 갱신: 2026-05-07 (Phase 3 — inventory + history 컬렉션화 완료, 5등분 탭 정리)_
+
+---
+
+## 14. 2026-05-08 작업: 대규모 안정화 + UX 정리 (한 세션)
+
+15+ commits에 걸친 대규모 세션. Phase 3 후속 안전 강화 + 운영 기능 추가 + UI 통합.
+
+### 14.1 Phase 3 후속 안전 (race condition 영구 차단)
+
+**버그 1: window.X 침묵 실패** (큰 hidden 버그였음)
+- `let history = []` 등은 script-scoped — `window.history`는 브라우저 내장 History API
+- 모든 `window.history` / `window.inventory` / `window.requests` 참조가 침묵 실패
+- `Array.isArray(window.history)` → false → 가드/forEach/listener 모두 무력화
+- Phase 2 컬렉션화도 사실 cutover 미실효 상태였음 (단일 doc listener fallback 덕분에 사용자 체감은 정상)
+- 수정: 모든 `window.X` → bare `X` (script-scoped lexical binding)
+
+**버그 2: snapshot 덮어쓰기**
+- 단일 문서 listener의 `_applySyncData`가 snapshot.requestsCount 등을 단일 문서 카운트로 덮음
+- 컬렉션 listener가 갱신해놓은 값 무효화 → 다음 saveToFirebase에서 false alarm "대량 감소 감지"
+- 수정: 컬렉션 listener 활성인 필드는 snapshot 보존
+
+**버그 3: 쓰기 경로의 listener echo race**
+- cancel 등이 status='cancelled' 메모리 적용 → saveAll → Phase 2 hook 300ms debounce
+- 그 사이 listener echo가 옛 collection 상태로 메모리 덮음 → cancel 사라짐
+- 수정: 6개 쓰기 경로에 **즉시 upsert** 추가 (debounce 우회)
+  - cancelRequestGroup (반출관리 취소/되돌리기)
+  - cancelMyRequest (요청 본인 취소)
+  - editRequest (요청 수정)
+  - executeCompleteRequest (반출 완료): inventory + history + request 3종
+  - confirmInbound (입고): inventory + history
+  - revertInboundEntry (입고 되돌리기): inventory + history
+
+### 14.2 1MB 한도 영구 해소 토글 ON
+- `mcDisableSingleDocHistorySync()` + `mcDisableSingleDocInventorySync()` 활성화
+- 이제 단일 문서 `appData/main`에 history/inventory 안 쓰여 몇 년 누적 안전
+- 단일 문서 기존 필드는 백업으로 유지 (덮어쓰지 않음)
+
+### 14.3 운영 기능 추가
+- **입고 내역 주차별 collapsible** (`9-inbound.js`)
+  - 전체 섹션 collapsible (기본 접힘) + 주차별 collapsible 이중 구조
+  - 단위(unit) 표시 제거 — 수량만 (+12 같은 식)
+- **3종 되돌리기 버튼** (반출 되돌리기와 동일 1단계 패턴)
+  - 입고 되돌리기 (`revertInboundEntry`) — 재고 차감 + history.cancelled=true
+  - 요청 수정 되돌리기 (`revertLastEditMyRequest`) — editHistory 마지막 entry pop
+  - 반출 완료 되돌리기 (기존)
+- **취소/되돌리기 사유 입력** (`askConfirmWithReason`)
+  - 99-main.js에 새 모달 함수 (textarea + auto-focus, 비워두기 OK)
+  - 4개 경로 적용: cancelRequestGroup / cancelMyRequest / removeMyRequestItem / revertInboundEntry
+  - audit log + 화면 표시 (취소 그룹 카드 / 입고 entry 아래)
+- **요청 수정 모달 항목별 ❌ 취소** — 수량 0 막혀있어 항목 자체 빼는 방법 없던 문제 해결
+  - `removeMyRequestItem(itemId, groupId)` — soft cancel + 즉시 upsert + 모달 재오픈
+
+### 14.4 UI 통합 (설정 탭 제거)
+- **하단 설정 탭 행 제거** — 5탭 단일 행 (요청·통계·반출관리·입고·재고)
+- **팀/담당자 관리는 요청 탭** ⚙️ 관리 버튼 → 모달
+  - openTeamMemberModal / closeTeamMemberModal / `_inTeamMemberModal` 플래그
+  - sub-dialog 닫힘 시 closeModal이 자동 모달 복귀
+  - `_afterTeamMemberChange` 헬퍼 — 모달 모드는 즉시 saveAll + 모달 재렌더, settings 탭은 legacy batched
+- **품목 관리는 재고 탭으로**
+  - 재고 탭 상단에 + 품목 추가 / 📥 Excel 다운로드 버튼
+  - **빠른 수정 + 전체 수정 통합** — 행 클릭 한 번에 업체/품명/단위/단가/재고/기준 + 🙈 숨김 + 🗑️ 삭제 다 됨
+  - **Excel 업로드 제거** (실수 위험성)
+  - `_applyItemChangeAndRender` 헬퍼 — 재고 탭은 즉시 저장 + renderInventory, settings는 legacy
+
+### 14.5 토요일~금요일 주차 기준 (4-utils.js getWeekKey)
+- 반출일이 금요일이라 토요일이 새 주차 시작
+- 5/1(금) → 4월 마지막주, 5/2(토)~5/8(금) → 5월 1주차, 5/9(토)~5/15(금) → 5월 2주차
+- 그 주의 토요일이 속한 달의 N번째 토요일이 W1, W2, ...
+- stats.js에서 PREBUILT의 옛 ISO format weekKey 무시하고 항상 date에서 재계산
+
+### 14.6 데이터 정리
+- **9층 공통 5월 orphan history 2건** — 5/3 wipe 사고 잔재 (request 사라지고 history만 남음)
+  - h.cancelled=true 마킹으로 통계 제외 + 데이터 보존
+- **inventory 중복 18개 정리** — Excel 업로드 시 update 안 하고 새로 추가됐던 사고
+  - 11그룹 (Denture bur 6종, Apron 2종, F02/F10 A3.5)
+  - 사용자 reference 이미지 기반 정확한 항목 keep + reference 값으로 stock/min override
+  - 코니컬튜브는 raw 자체 중복이라 사용자 직접 처리 (스크립트 건너뜀)
+
+### 14.7 cancelled IN history 자동 제외
+- js/15-backup.js + scripts/weekly-backup.js의 `thisInHist` 필터에 `!h.cancelled` 추가
+- Apps Script (apps-script/Code.gs)는 사용자 수동 복붙 필요 (GitHub auto sync 안 됨)
+
+### 14.8 Phase 3.1 atomic stock increment (인프라만 추가, wiring 미완료)
+- index.html에 firebase `increment` 임포트 + `window.firebaseIncrement` 노출
+- `adjustInventoryStock(itemId, delta)` 함수 (`19-inventory-collection.js`)
+  - 메모리 낙관적 업데이트 + hash 캐시 즉시 갱신 (hook 중복 push 차단)
+  - Firestore `setDoc(merge:true, {stock: increment(delta)})` 원자 가산
+- 다음 세션에서 wiring 필요:
+  - 8-manage.js executeCompleteRequest: `item.stock -= releaseQty` → `adjustInventoryStock(item.id, -releaseQty)`
+  - 8-manage.js cancelRequestGroup (revert): `item.stock += it.qty` → `adjustInventoryStock(item.id, it.qty)`
+  - 9-inbound.js confirmInbound: `item.stock += qty` → `adjustInventoryStock(item.id, qty)`
+  - Phase 3 inventory hook: stock 필드 제외 (atomic 결과를 절대값으로 덮지 않게)
+
+### 14.9 사용자 액션 (다음 세션에서 안내)
+- **Apps Script 코드 복붙** — [apps-script/Code.gs](apps-script/Code.gs) raw → script.google.com (cancelled IN 제외 등 새 코드 적용)
+- **5/9 토요일 자동백업 결과 확인** — Gmail + Drive
+- **Phase 4 Google 로그인** ⭐ (1일) — 50명 운영 강력 권장
+- **Phase 3.1 wiring 마무리** (반나절) — 같은 품목 동시변경 완벽 처리
+- **덴트웹 통합** — 환자 데이터 받으면
+
+### 14.10 다음 세션이 알아야 할 것
+- 모든 쓰기 경로가 즉시 upsert + race-proof — 새 기능 추가 시 같은 패턴 적용
+- 1MB 토글 ON 상태 — 단일 문서 history/inventory에 안 써짐 (`_disableSingleDoc*Sync` localStorage)
+- 설정 탭은 코드만 남고 UI 진입점 없음 — switchTab('settings') 직접 호출 시에만
+- script-scoped 변수(`history`, `inventory`, `requests`)는 `window.X` 절대 X — 항상 bare 식별자
+
+---
+
+_마지막 갱신: 2026-05-08 (대규모 안정화 + UX 정리 — Phase 3 race 차단 + 사유 입력 + 설정 통합 + 토요일 주차)_
