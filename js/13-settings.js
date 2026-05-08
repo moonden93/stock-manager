@@ -37,9 +37,6 @@ function restoreSettingsSnapshot() {
 }
 
 // 헬퍼: 품목 변경 후 처리 (현재 탭 컨텍스트에 따라 다르게)
-// - settings: 기존 batched 플로우 (markSettingsDirty + renderSettings)
-// - inventory: 즉시 saveAll + renderInventory
-// - 기타: 즉시 saveAll만
 function _applyItemChangeAndRender() {
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
   if (currentTab === 'settings') {
@@ -50,6 +47,61 @@ function _applyItemChangeAndRender() {
     if (currentTab === 'inventory' && typeof renderInventory === 'function') {
       renderInventory();
     }
+  }
+}
+
+// 헬퍼: 팀/담당자 변경 후 처리
+// - 모달 모드: 즉시 saveAll + 모달 재렌더
+// - settings 탭: 기존 batched (markSettingsDirty + renderSettings)
+// - 기타: 즉시 saveAll
+function _afterTeamMemberChange() {
+  if (typeof updateHeaderStats === 'function') updateHeaderStats();
+  if (window._inTeamMemberModal) {
+    saveAll();
+    _renderTeamMemberModal();
+  } else if (currentTab === 'settings') {
+    markSettingsDirty();
+    renderSettings();
+  } else {
+    saveAll();
+    if (currentTab === 'release' && typeof renderRelease === 'function') {
+      renderRelease();
+    }
+  }
+}
+
+// ============================================
+// 팀/담당자 관리 모달 (요청 탭 ⚙️ 관리 버튼에서 호출)
+// ============================================
+function openTeamMemberModal() {
+  window._inTeamMemberModal = true;
+  _renderTeamMemberModal();
+}
+
+function _renderTeamMemberModal() {
+  // renderTeamsSettings의 HTML을 모달 안에 넣음
+  const inner = renderTeamsSettings();
+  const modalHtml =
+    '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeTeamMemberModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">' +
+    '<h3 class="text-base font-bold text-slate-900">⚙️ 팀/담당자 관리</h3>' +
+    '<button onclick="closeTeamMemberModal()" class="text-slate-400 hover:text-slate-600 text-2xl leading-none px-2">×</button>' +
+    '</div>' +
+    '<div class="overflow-y-auto p-4 flex-1">' +
+    inner +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex justify-end">' +
+    '<button onclick="closeTeamMemberModal()" class="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg font-bold">닫기</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = modalHtml;
+}
+
+function closeTeamMemberModal() {
+  window._inTeamMemberModal = false;
+  closeModal();
+  if (currentTab === 'release' && typeof renderRelease === 'function') {
+    renderRelease();  // 팀 추가/삭제 시 요청 탭 그리드 갱신
   }
 }
 
@@ -171,8 +223,7 @@ function moveTeamUp(idx) {
   const tmp = teams[idx];
   teams[idx] = teams[idx - 1];
   teams[idx - 1] = tmp;
-  markSettingsDirty();
-  renderSettings();
+  _afterTeamMemberChange();
 }
 
 function moveTeamDown(idx) {
@@ -180,8 +231,7 @@ function moveTeamDown(idx) {
   const tmp = teams[idx];
   teams[idx] = teams[idx + 1];
   teams[idx + 1] = tmp;
-  markSettingsDirty();
-  renderSettings();
+  _afterTeamMemberChange();
 }
 
 function renderItemsSettings() {
@@ -272,10 +322,9 @@ function addTeam() {
     return;
   }
   teams.push(name);
-  markSettingsDirty();
   closeModal();
   showToast('"' + name + '" 추가됨');
-  renderSettings();
+  _afterTeamMemberChange();
 }
 
 function openEditTeamNameDialog(idx) {
@@ -313,10 +362,9 @@ function saveTeamName(idx) {
     teamMembers[newName] = teamMembers[oldName];
     delete teamMembers[oldName];
   }
-  markSettingsDirty();
   closeModal();
   showToast('수정 완료');
-  renderSettings();
+  _afterTeamMemberChange();
 }
 
 function removeTeam(idx) {
@@ -324,9 +372,8 @@ function removeTeam(idx) {
   askConfirm('팀 삭제', '"' + name + '" 팀을 삭제하시겠습니까?\n\n※ 기존 반출 이력은 유지됩니다', function() {
     teams.splice(idx, 1);
     delete teamMembers[name];
-    markSettingsDirty();
     showToast('삭제됨');
-    renderSettings();
+    _afterTeamMemberChange();
   }, '삭제', 'red');
 }
 
@@ -361,10 +408,9 @@ function addMember(team) {
     return;
   }
   teamMembers[team].push(name);
-  markSettingsDirty();
   closeModal();
   showToast('"' + name + '" 추가됨');
-  renderSettings();
+  _afterTeamMemberChange();
 }
 
 function removeMember(team, member) {
@@ -373,9 +419,8 @@ function removeMember(team, member) {
       teamMembers[team] = teamMembers[team].filter(m => m !== member);
       if (teamMembers[team].length === 0) delete teamMembers[team];
     }
-    markSettingsDirty();
     showToast('제외됨');
-    renderSettings();
+    _afterTeamMemberChange();
   }, '제외', 'red');
 }
 
@@ -459,11 +504,13 @@ function addItem() {
 function openEditItemDialog(itemId) {
   const item = inventory.find(i => i.id === itemId);
   if (!item) return;
-  
+
+  const hideBtnLabel = item.hidden ? '👁️ 다시 보이기 (재고 탭)' : '🙈 재고 탭에서 숨기기';
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
-    '<h3 class="text-base font-bold text-slate-900">품목 수정</h3></div>' +
+    '<h3 class="text-base font-bold text-slate-900">📦 품목 수정</h3></div>' +
     '<div class="px-5 py-5 space-y-3 overflow-y-auto">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">업체</label>' +
     '<input type="text" id="edit-item-vendor" value="' + escapeHtml(item.vendor) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
@@ -482,12 +529,23 @@ function openEditItemDialog(itemId) {
     '<input type="number" id="edit-item-min" value="' + (item.minStock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '</div>' +
     '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
+    // 보조 액션: 숨김 토글 + 삭제 (재고 수정 모달에서 이전됨)
+    '<div class="pt-3 mt-2 border-t border-slate-100 space-y-2">' +
+    '<button onclick="toggleItemHidden(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">' +
+    hideBtnLabel + '</button>' +
+    '<button onclick="closeModal(); removeItem(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">🗑️ 품목 삭제 (이력은 보존)</button>' +
+    '</div>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
     '<button onclick="saveItem(\'' + item.id + '\')" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold">저장</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+}
+
+// 재고 탭 행 클릭 진입점 — 통합 품목 수정 모달
+function openInventoryItemEdit(itemId) {
+  openEditItemDialog(itemId);
 }
 
 function saveItem(itemId) {

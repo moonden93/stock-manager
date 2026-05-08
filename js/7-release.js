@@ -115,7 +115,9 @@ function renderRelease() {
     '<div class="px-4 py-3 ' + (releaseSelectedTeam ? 'bg-emerald-50' : 'bg-teal-50') + ' flex items-center gap-2">' +
     '<span class="w-7 h-7 ' + (releaseSelectedTeam ? 'bg-emerald-500' : 'bg-teal-500') + ' text-white rounded-full flex items-center justify-center font-bold">' + (releaseSelectedTeam ? '✓' : '1') + '</span>' +
     '<h3 class="font-bold text-slate-900">팀 선택</h3>' +
-    (releaseSelectedTeam ? '<span class="ml-auto text-sm text-emerald-700 font-bold">' + escapeHtml(releaseSelectedTeam) + '</span>' : '') +
+    (releaseSelectedTeam
+      ? '<span class="ml-auto text-sm text-emerald-700 font-bold">' + escapeHtml(releaseSelectedTeam) + '</span>'
+      : '<button onclick="openTeamMemberModal()" class="ml-auto text-[11px] px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 rounded font-bold text-slate-700" title="팀/담당자 추가/수정/삭제">⚙️ 관리</button>') +
     '</div>' +
     '<div class="p-3 space-y-2">';
   

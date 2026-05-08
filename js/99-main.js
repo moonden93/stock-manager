@@ -146,6 +146,11 @@ function executeConfirmWithReason() {
 function closeModal() {
   const c = document.getElementById('modal-container');
   if (c) c.innerHTML = '';
+  // 팀/담당자 관리 모달 모드면 sub-dialog 닫힘 시 자동 복귀
+  // (closeTeamMemberModal에서 명시적으로 닫을 땐 _inTeamMemberModal=false 먼저 세팅)
+  if (window._inTeamMemberModal && typeof _renderTeamMemberModal === 'function') {
+    setTimeout(() => { if (window._inTeamMemberModal) _renderTeamMemberModal(); }, 0);
+  }
 }
 
 

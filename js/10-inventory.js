@@ -34,7 +34,7 @@ function _inventoryItemRowHtml(item) {
   const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
   const hiddenClass = item.hidden ? ' opacity-40' : '';
   const hiddenBadge = item.hidden ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">숨김</span>' : '';
-  return '<button onclick="openEditDialog(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:bg-slate-100 ' + colors[status] + hiddenClass + '">' +
+  return '<button onclick="openInventoryItemEdit(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:bg-slate-100 ' + colors[status] + hiddenClass + '">' +
     '<div class="flex items-center gap-3">' +
     '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
     '<div class="flex-1 min-w-0">' +
@@ -80,9 +80,6 @@ function renderInventory() {
     '<span class="text-xs font-bold text-slate-700 mr-1">📦 품목 관리:</span>' +
     '<button onclick="openAddItemDialog()" class="px-3 py-1.5 bg-teal-600 text-white text-xs font-bold rounded-lg hover:bg-teal-700">+ 품목 추가</button>' +
     '<button onclick="exportItemsToExcel()" class="px-3 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700">📥 Excel 다운로드</button>' +
-    '<label class="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 cursor-pointer">' +
-    '📤 Excel 업로드<input type="file" accept=".xlsx,.xls" onchange="handleExcelUpload(event)" class="hidden" />' +
-    '</label>' +
     '</div></div>' +
 
     '<div class="grid grid-cols-3 gap-2">' +
