@@ -65,12 +65,23 @@ function renderInbound() {
   }
   const sectionExpanded = window._inboundHistoryExpanded;
 
+  // 가격 lookup — h.price 없으면 inventory에서 찾기 (옛 entry 보정)
+  const priceLookup = function(h) {
+    if (h.price > 0) return h.price;
+    const item = inventory.find(i => i.id === h.itemId);
+    return (item && item.price) || 0;
+  };
+  // 전체 합계 (cancelled 제외)
+  const grandTotalCost = inHistory.filter(h => !h.cancelled)
+    .reduce((s, h) => s + (h.qty || 0) * priceLookup(h), 0);
+  const grandTotalCostStr = grandTotalCost > 0 ? ' · ' + grandTotalCost.toLocaleString() + '원' : '';
+
   let inHistHtml = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<button onclick="toggleInboundHistorySection()" ' +
     'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center gap-2 text-left">' +
     '<span class="text-slate-500 text-sm">' + (sectionExpanded ? '▼' : '▶') + '</span>' +
     '<h3 class="text-base font-bold text-slate-900">📋 입고 내역</h3>' +
-    '<span class="ml-auto text-xs text-slate-500">총 ' + inHistory.length + '건</span>' +
+    '<span class="ml-auto text-xs text-slate-500">총 ' + inHistory.length + '건' + grandTotalCostStr + '</span>' +
     '</button>';
 
   if (sectionExpanded && inHistory.length === 0) {
@@ -93,6 +104,9 @@ function renderInbound() {
       const entries = weekItems[wk];
       const wkLabel = (typeof formatWeekLabel === 'function') ? formatWeekLabel(wk) : wk;
       const totalQty = entries.reduce((s, e) => s + (e.qty || 0), 0);
+      const weekCost = entries.filter(e => !e.cancelled)
+        .reduce((s, e) => s + (e.qty || 0) * priceLookup(e), 0);
+      const weekCostStr = weekCost > 0 ? ' · ' + weekCost.toLocaleString() + '원' : '';
       const isAutoOpen = (wk === currentWeek) || (currentWeek === '' && wi === 0);
       const expanded = (window._inboundExpandedWeeks[wk] === undefined) ? isAutoOpen : window._inboundExpandedWeeks[wk];
 
@@ -101,7 +115,7 @@ function renderInbound() {
         'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center gap-2 text-left">' +
         '<span class="text-slate-500 text-xs">' + (expanded ? '▼' : '▶') + '</span>' +
         '<span class="font-bold text-slate-800 text-sm">📅 ' + escapeHtml(wkLabel) + '</span>' +
-        '<span class="ml-auto text-xs text-slate-600">' + entries.length + '건 · ' + totalQty + '개</span>' +
+        '<span class="ml-auto text-xs text-slate-600">' + entries.length + '건 · ' + totalQty + '개' + weekCostStr + '</span>' +
         '</button>' +
         '<div class="' + (expanded ? '' : 'hidden') + ' divide-y divide-slate-100">';
 
@@ -110,6 +124,9 @@ function renderInbound() {
         const dateStr = (dt.getMonth() + 1) + '/' + dt.getDate();
         const isReverted = !!e.cancelled;
         const rowCls = isReverted ? 'px-4 py-3 bg-slate-50 opacity-70' : 'px-4 py-3 hover:bg-slate-50';
+        const entryPrice = priceLookup(e);
+        const entryCost = (e.qty || 0) * entryPrice;
+        const costStr = entryCost > 0 ? entryCost.toLocaleString() + '원' : '';
         inHistHtml += '<div class="' + rowCls + '">' +
           '<div class="flex items-center gap-3">' +
           '<div class="text-xs text-slate-500 w-12 flex-shrink-0">' + dateStr + '</div>' +
@@ -119,7 +136,10 @@ function renderInbound() {
           (isReverted && e.cancelReason ? '<p class="text-[11px] text-slate-500 mt-0.5">📝 ' + escapeHtml(e.cancelReason) + '</p>' : '') +
           '</div>' +
           '<div class="text-right flex-shrink-0 flex items-center gap-2">' +
+          '<div class="flex flex-col items-end leading-tight">' +
           '<span class="text-base font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">+' + (e.qty || 0) + '</span>' +
+          (costStr ? '<span class="text-[11px] ' + (isReverted ? 'text-slate-400 line-through' : 'text-slate-500') + '">' + costStr + '</span>' : '') +
+          '</div>' +
           (isReverted
             ? ''
             : '<button onclick="revertInboundEntry(\'' + escapeJs(e.id) + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 입고를 되돌립니다 (재고 차감, 기록 보존)">↩ 되돌리기</button>') +
