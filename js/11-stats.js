@@ -356,6 +356,10 @@ function renderStatsItemList() {
       .map(([t, d]) => ({ team: t, qty: d.qty, cost: d.cost, count: d.count }))
       .sort((a, b) => b.cost - a.cost);
 
+    // 개당 단가 (가중평균) — cost / qty
+    const unitPrice = it.qty > 0 ? Math.round(it.cost / it.qty) : 0;
+    const unitStr = unitPrice > 0 ? unitPrice.toLocaleString() + '원/' + (it.unit || '개') + ' · ' : '';
+
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
       '<div class="flex items-start justify-between mb-2 gap-2">' +
       '<div class="flex-1 min-w-0">' +
@@ -364,7 +368,7 @@ function renderStatsItemList() {
       '</div>' +
       '<div class="text-right shrink-0">' +
       '<div class="text-base font-bold text-purple-700">' + formatWon(it.cost) + '</div>' +
-      '<div class="text-xs text-slate-500">' + it.count + '건 · ' + it.qty + (it.unit || '개') + '</div>' +
+      '<div class="text-xs text-slate-500">' + unitStr + it.count + '건 · ' + it.qty + (it.unit || '개') + '</div>' +
       '</div></div>' +
       '<div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">' +
       '<div class="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all" style="width:' + pct + '%"></div>' +
