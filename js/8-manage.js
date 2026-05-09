@@ -692,7 +692,10 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
   if (selectedItems.length === 0) { showAlert('선택된 품목이 없습니다', '완료 처리할 품목을 먼저 선택해주세요.'); return; }
 
   const selectedTotalQty = selectedItems.reduce((s, it) => s + sel[it.id].qty, 0);
-  const completeDate = new Date().toISOString();
+  // history의 date에는 사용자가 입력한 반출일자(releasedDate) 사용 — 통계 주차 매칭
+  // 처리 시각은 별도로 보존
+  const completeDate = releasedDate || new Date().toISOString();
+  const processedAt = new Date().toISOString();
 
   selectedItems.forEach(it => {
     const item = inventory.find(i => i.id === it.itemId);
@@ -756,9 +759,9 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     if (releaseQty === it.qty) {
       // 전량 반출: 요청 status 변경
       it.status = 'completed';
-      it.completedDate = completeDate;
+      it.completedDate = processedAt;  // 실제 처리 시점 (오늘)
       it.releasedBy = releasedBy;
-      it.releasedDate = releasedDate;
+      it.releasedDate = releasedDate;  // 사용자 입력 반출일자
       // 🔒 즉시 컬렉션 push
       if (typeof upsertRequestDoc === 'function') {
         upsertRequestDoc(it).catch(err => console.warn('complete upsert 실패:', err));
@@ -771,7 +774,7 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
         requestId: it.requestId,
         status: 'completed',
         date: it.date,
-        completedDate: completeDate,
+        completedDate: processedAt,
         itemId: it.itemId,
         vendor: it.vendor,
         name: it.name,
