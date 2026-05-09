@@ -130,9 +130,6 @@ function renderInbound() {
       inHistHtml += '<option value="' + m + '"' + (filterMonth === String(m) ? ' selected' : '') + '>' + m + '월</option>';
     }
     inHistHtml += '</select>';
-    if (filterYear || filterMonth) {
-      inHistHtml += '<button onclick="clearInboundFilter()" class="ml-auto text-[11px] px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded">초기화</button>';
-    }
     inHistHtml += '</div>';
   }
 
