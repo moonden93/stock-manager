@@ -708,6 +708,7 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
     }
 
     // 이력 기록은 항상 (직접 요청 포함). isCustom일 때 설명/사진 보존.
+    // ⭐ price 포함 — 시점의 단가를 frozen해서 통계/보고서에 정확히 잡히도록
     const histRec = {
       id: 'H' + Date.now() + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 6),
       type: 'out',
@@ -717,6 +718,8 @@ function executeCompleteRequest(groupId, releasedBy, releasedDate) {
       name: it.name,
       qty: releaseQty,
       unit: it.unit,
+      price: (item && item.price) || 0,  // ← 추가: 처리 시점 inventory 단가 (직접요청은 0)
+      weekKey: (typeof getWeekKey === 'function') ? getWeekKey(completeDate) : '',
       team: it.team,
       requester: it.requester,
       requestId: it.requestId,

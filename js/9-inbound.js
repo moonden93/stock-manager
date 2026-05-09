@@ -322,11 +322,14 @@ function confirmInbound(itemId) {
     : new Date().toISOString();
 
   item.stock += qty;
+  // ⭐ price + weekKey 포함 — 통계/보고서에 정확히 잡히도록
   const histRec = {
     id: 'H' + Date.now() + '_' + itemId,
     type: 'in',
     date: inboundDate,
-    itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit
+    itemId, vendor: item.vendor, name: item.name, qty, unit: item.unit,
+    price: item.price || 0,
+    weekKey: (typeof getWeekKey === 'function') ? getWeekKey(inboundDate) : ''
   };
   history.push(histRec);
 
