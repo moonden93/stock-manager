@@ -17,8 +17,13 @@ let anomalyMonth = '';
 function renderStats() {
   // 기간 필터링
   let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled);
-  
-  if (statsPeriod === 'month') {
+
+  if (statsPeriod === 'all') {
+    // 'all' = 이번 년도 (1/1 ~ 오늘)
+    const yearStart = new Date(new Date().getFullYear(), 0, 1);
+    yearStart.setHours(0, 0, 0, 0);
+    baseHistory = baseHistory.filter(h => new Date(h.date) >= yearStart);
+  } else if (statsPeriod === 'month') {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
@@ -40,7 +45,7 @@ function renderStats() {
   const totalCost = baseHistory.reduce((s, h) => s + h.qty * (h.price || 0), 0);
   
   // 기간 라벨
-  let periodLabel = '전체 기간';
+  let periodLabel = new Date().getFullYear() + '년';
   if (statsPeriod === 'month') {
     const m = new Date();
     periodLabel = m.getFullYear() + '년 ' + (m.getMonth() + 1) + '월';
@@ -67,7 +72,7 @@ function renderStats() {
     '<p class="text-xs text-slate-500 mb-2">기간:</p>' +
     '<div class="flex gap-1 mb-3">' +
     '<button onclick="setStatsPeriod(\'all\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
-    (statsPeriod === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">전체</button>' +
+    (statsPeriod === 'all' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">이번 년도</button>' +
     '<button onclick="setStatsPeriod(\'month\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
     (statsPeriod === 'month' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-700') + '">이번 달</button>' +
     '<button onclick="setStatsPeriod(\'week\')" class="flex-1 py-2 text-xs font-bold rounded-lg transition ' +
@@ -356,7 +361,11 @@ function renderStatsByWeekly(baseHistory) {
 function openTeamStatsDetail(teamName) {
   let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled && h.team === teamName);
 
-  if (statsPeriod === 'month') {
+  if (statsPeriod === 'all') {
+    const yearStart = new Date(new Date().getFullYear(), 0, 1);
+    yearStart.setHours(0, 0, 0, 0);
+    baseHistory = baseHistory.filter(h => new Date(h.date) >= yearStart);
+  } else if (statsPeriod === 'month') {
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
