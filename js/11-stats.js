@@ -271,16 +271,47 @@ function renderStatsByVendor(baseHistory) {
 }
 
 // 항목별 통계 — 각 품목별로 어느 팀이 얼마나 사용했는지
-// 검색창으로 특정 품목 빠르게 조회 가능
+// 검색창은 통계 전체 재렌더 안 하고 list 영역만 부분 갱신 (한글 IME 안전)
 function renderStatsByItem(baseHistory) {
-  // 품목별 집계
+  // 1차 집계는 함수 호출 시점에 한 번만 — baseHistory를 캐시에 저장해 검색 시 재집계만 빠르게
+  // (실제로는 검색 input이 자기만 갱신해서 baseHistory는 같은 시점)
+  window._statsItemBaseHistory = baseHistory;
+
+  if (typeof window._statsItemSearch === 'undefined') window._statsItemSearch = '';
+  const searchTerm = window._statsItemSearch || '';
+
+  let html = '<div class="space-y-2">';
+
+  // 검색창 — 이 컨테이너는 재렌더 시에도 보존됨 (IME 안전)
+  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-3">' +
+    '<input type="text" id="stats-item-search" value="' + escapeHtml(searchTerm) + '" ' +
+    'oninput="window._statsItemSearch = this.value; renderStatsItemList();" ' +
+    'placeholder="🔍 품목/업체 검색" ' +
+    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-purple-500" />' +
+    '<p id="stats-item-count" class="text-[11px] text-slate-500 mt-1.5"></p>' +
+    '</div>';
+
+  // 카드 list 컨테이너 — 검색 시 이 안만 부분 갱신
+  html += '<div id="stats-item-list" class="space-y-2"></div>';
+  html += '</div>';
+
+  // 초기 렌더 후 list 채움
+  setTimeout(renderStatsItemList, 0);
+  return html;
+}
+
+// 항목별 list 부분 갱신 (검색 input은 destroy 안 됨 → IME 안전)
+function renderStatsItemList() {
+  const baseHistory = window._statsItemBaseHistory || [];
+  const searchTerm = window._statsItemSearch || '';
+
+  // 집계
   const itemStats = {};
   baseHistory.forEach(h => {
     const k = (h.vendor || '') + '::' + (h.name || '');
     if (!itemStats[k]) itemStats[k] = {
       vendor: h.vendor, name: h.name, unit: h.unit,
-      qty: 0, cost: 0, count: 0,
-      teams: {}  // teams[teamName] = { qty, cost, count }
+      qty: 0, cost: 0, count: 0, teams: {}
     };
     const s = itemStats[k];
     const lineCost = (h.qty || 0) * (h.price || 0);
@@ -294,10 +325,6 @@ function renderStatsByItem(baseHistory) {
     s.teams[t].count++;
   });
 
-  // 검색어 필터
-  if (typeof window._statsItemSearch === 'undefined') window._statsItemSearch = '';
-  const searchTerm = window._statsItemSearch || '';
-
   let itemList = Object.values(itemStats);
   if (searchTerm) {
     const lo = searchTerm.toLowerCase();
@@ -306,68 +333,60 @@ function renderStatsByItem(baseHistory) {
       (it.vendor || '').toLowerCase().includes(lo)
     );
   }
-  // 금액순 정렬
   itemList.sort((a, b) => b.cost - a.cost);
 
-  const maxCost = Math.max(1, ...itemList.map(it => it.cost));
+  const countEl = document.getElementById('stats-item-count');
+  if (countEl) countEl.textContent = itemList.length + '개 품목 (금액 큰 순)';
 
-  let html = '<div class="space-y-2">';
-
-  // 검색창
-  html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-3">' +
-    '<input type="text" value="' + escapeHtml(searchTerm) + '" ' +
-    'oninput="window._statsItemSearch = this.value; renderStats();" ' +
-    'placeholder="🔍 품목/업체 검색" ' +
-    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-purple-500" />' +
-    '<p class="text-[11px] text-slate-500 mt-1.5">' + itemList.length + '개 품목 (금액 큰 순)</p>' +
-    '</div>';
+  const listEl = document.getElementById('stats-item-list');
+  if (!listEl) return;
 
   if (itemList.length === 0) {
-    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
+    listEl.innerHTML = '<div class="bg-white rounded-2xl border-2 border-slate-200 py-12 text-center">' +
       '<p class="text-4xl mb-2">📦</p>' +
       '<p class="text-sm text-slate-400">' + (searchTerm ? '검색 결과 없음' : '항목별 데이터가 없습니다') + '</p></div>';
-  } else {
-    itemList.forEach(it => {
-      const pct = (it.cost / maxCost) * 100;
-      // 팀별 사용 분포 — 금액순
-      const teamRows = Object.entries(it.teams)
-        .map(([t, d]) => ({ team: t, qty: d.qty, cost: d.cost, count: d.count }))
-        .sort((a, b) => b.cost - a.cost);
-
-      html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
-        '<div class="flex items-start justify-between mb-2 gap-2">' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-[11px] text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
-        '<h3 class="text-sm font-bold text-slate-900 truncate">' + escapeHtml(it.name || '') + '</h3>' +
-        '</div>' +
-        '<div class="text-right shrink-0">' +
-        '<div class="text-base font-bold text-purple-700">' + formatWon(it.cost) + '</div>' +
-        '<div class="text-xs text-slate-500">' + it.count + '건 · ' + it.qty + (it.unit || '개') + '</div>' +
-        '</div></div>' +
-        '<div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">' +
-        '<div class="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all" style="width:' + pct + '%"></div>' +
-        '</div>' +
-        '<div class="space-y-1 pt-2 border-t border-slate-100">' +
-        '<p class="text-[10px] text-slate-500 mb-1">팀별 사용:</p>';
-
-      teamRows.forEach(t => {
-        const teamPct = it.cost > 0 ? (t.cost / it.cost) * 100 : 0;
-        html += '<div class="flex items-center text-xs gap-2">' +
-          '<span class="text-slate-700 w-24 truncate shrink-0">' + escapeHtml(t.team) + '</span>' +
-          '<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">' +
-          '<div class="h-full ' + (t.team.includes('층') ? 'bg-cyan-500' : 'bg-blue-500') + '" style="width:' + teamPct + '%"></div>' +
-          '</div>' +
-          '<span class="text-slate-600 shrink-0">' + t.qty + '</span>' +
-          '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(t.cost) + '</span>' +
-          '</div>';
-      });
-
-      html += '</div></div>';
-    });
+    return;
   }
 
-  html += '</div>';
-  return html;
+  const maxCost = Math.max(1, ...itemList.map(it => it.cost));
+  let html = '';
+  itemList.forEach(it => {
+    const pct = (it.cost / maxCost) * 100;
+    const teamRows = Object.entries(it.teams)
+      .map(([t, d]) => ({ team: t, qty: d.qty, cost: d.cost, count: d.count }))
+      .sort((a, b) => b.cost - a.cost);
+
+    html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
+      '<div class="flex items-start justify-between mb-2 gap-2">' +
+      '<div class="flex-1 min-w-0">' +
+      '<p class="text-[11px] text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
+      '<h3 class="text-sm font-bold text-slate-900 truncate">' + escapeHtml(it.name || '') + '</h3>' +
+      '</div>' +
+      '<div class="text-right shrink-0">' +
+      '<div class="text-base font-bold text-purple-700">' + formatWon(it.cost) + '</div>' +
+      '<div class="text-xs text-slate-500">' + it.count + '건 · ' + it.qty + (it.unit || '개') + '</div>' +
+      '</div></div>' +
+      '<div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">' +
+      '<div class="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all" style="width:' + pct + '%"></div>' +
+      '</div>' +
+      '<div class="space-y-1 pt-2 border-t border-slate-100">' +
+      '<p class="text-[10px] text-slate-500 mb-1">팀별 사용:</p>';
+
+    teamRows.forEach(t => {
+      const teamPct = it.cost > 0 ? (t.cost / it.cost) * 100 : 0;
+      html += '<div class="flex items-center text-xs gap-2">' +
+        '<span class="text-slate-700 w-24 truncate shrink-0">' + escapeHtml(t.team) + '</span>' +
+        '<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">' +
+        '<div class="h-full ' + (t.team.includes('층') ? 'bg-cyan-500' : 'bg-blue-500') + '" style="width:' + teamPct + '%"></div>' +
+        '</div>' +
+        '<span class="text-slate-600 shrink-0">' + t.qty + '</span>' +
+        '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(t.cost) + '</span>' +
+        '</div>';
+    });
+
+    html += '</div></div>';
+  });
+  listEl.innerHTML = html;
 }
 
 // 주차별 통계 - 각 주차별로 팀별 사용량 (deprecated — 항목별로 대체됨)
