@@ -864,10 +864,18 @@ function renderStatsByAnomaly() {
   }
 
   // ─── 분류별 비교 + 자동 코멘트 ───
-  // 분류는 inventory.category에서 lookup (history엔 category 없음)
+  // 분류 lookup 우선순위:
+  //   1. h.category (history entry에 직접 박힌 값 — 수동 보정용)
+  //   2. inventory의 vendor+name 정확 매칭 category
+  //   3. inventory 대소문자/공백 무시 매칭 category (옛 표기 차이 흡수)
+  //   4. '(분류 없음)'
   function catOfHistory_(h) {
+    if (h.category) return h.category;
     const inv = inventory.find(i => i.vendor === h.vendor && i.name === h.name);
-    return (inv && inv.category) || '(분류 없음)';
+    if (inv && inv.category) return inv.category;
+    const norm = (s) => (s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const ci = inventory.find(i => i.vendor === h.vendor && norm(i.name) === norm(h.name));
+    return (ci && ci.category) || '(분류 없음)';
   }
   const catThis = {}, catPast = {};
   thisMonth.forEach(h => {
