@@ -125,8 +125,11 @@ function renderInbound() {
         const isReverted = !!e.cancelled;
         const rowCls = isReverted ? 'px-4 py-3 bg-slate-50 opacity-70' : 'px-4 py-3 hover:bg-slate-50';
         const entryPrice = priceLookup(e);
-        const entryCost = (e.qty || 0) * entryPrice;
+        const entryQty = e.qty || 0;
+        const entryCost = entryQty * entryPrice;
+        const priceStr = entryPrice > 0 ? entryPrice.toLocaleString() + '원' : '';
         const costStr = entryCost > 0 ? entryCost.toLocaleString() + '원' : '';
+        const lineThru = isReverted ? 'text-slate-400 line-through' : '';
         inHistHtml += '<div class="' + rowCls + '">' +
           '<div class="flex items-center gap-3">' +
           '<div class="text-xs text-slate-500 w-12 flex-shrink-0">' + dateStr + '</div>' +
@@ -137,8 +140,12 @@ function renderInbound() {
           '</div>' +
           '<div class="text-right flex-shrink-0 flex items-center gap-2">' +
           '<div class="flex flex-col items-end leading-tight">' +
-          '<span class="text-base font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">+' + (e.qty || 0) + '</span>' +
-          (costStr ? '<span class="text-[11px] ' + (isReverted ? 'text-slate-400 line-through' : 'text-slate-500') + '">' + costStr + '</span>' : '') +
+          // 1줄: +수량 × 단가
+          '<span class="text-base font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">+' + entryQty +
+          (priceStr ? ' <span class="text-[11px] font-normal ' + (isReverted ? 'text-slate-400' : 'text-slate-500') + '">× ' + priceStr + '</span>' : '') +
+          '</span>' +
+          // 2줄: = 총액
+          (costStr ? '<span class="text-xs font-bold ' + (isReverted ? 'text-slate-400 line-through' : 'text-emerald-700') + '">= ' + costStr + '</span>' : '') +
           '</div>' +
           (isReverted
             ? ''
