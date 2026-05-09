@@ -56,8 +56,28 @@ function renderInbound() {
   // ============================================
   // 📋 입고 내역 HTML 빌드 (먼저 만들어 둠 — 품목 위에 배치)
   // ============================================
-  const inHistory = (history || []).filter(h => h.type === 'in')
-    .sort((a, b) => new Date(b.date) - new Date(a.date));  // 최신순
+  const allIn = (history || []).filter(h => h.type === 'in');
+
+  // 년도/월 필터 (기본 전체)
+  if (typeof window._inboundFilterYear === 'undefined') window._inboundFilterYear = '';
+  if (typeof window._inboundFilterMonth === 'undefined') window._inboundFilterMonth = '';
+  const filterYear = window._inboundFilterYear;
+  const filterMonth = window._inboundFilterMonth;
+
+  // 사용 가능한 년도 목록 (history 기반)
+  const availableYears = [...new Set(allIn.map(h => {
+    const d = new Date(h.date);
+    return isNaN(d.getTime()) ? null : d.getFullYear();
+  }).filter(Boolean))].sort((a, b) => b - a);  // 내림차순
+
+  const inHistory = allIn.filter(h => {
+    if (!filterYear && !filterMonth) return true;
+    const d = new Date(h.date);
+    if (isNaN(d.getTime())) return false;
+    if (filterYear && d.getFullYear() !== parseInt(filterYear, 10)) return false;
+    if (filterMonth && (d.getMonth() + 1) !== parseInt(filterMonth, 10)) return false;
+    return true;
+  }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
   // 전체 섹션 collapsible — 기본 접힘 (너무 길어서)
   if (typeof window._inboundHistoryExpanded === 'undefined') {
@@ -65,24 +85,52 @@ function renderInbound() {
   }
   const sectionExpanded = window._inboundHistoryExpanded;
 
-  // 가격 lookup — h.price 없으면 inventory에서 찾기 (옛 entry 보정)
+  // 가격 lookup
   const priceLookup = function(h) {
     if (h.price > 0) return h.price;
     const item = inventory.find(i => i.id === h.itemId);
     return (item && item.price) || 0;
   };
-  // 전체 합계 (cancelled 제외)
-  const grandTotalCost = inHistory.filter(h => !h.cancelled)
+  // 합계 (필터된 + cancelled 제외)
+  const filteredTotalCost = inHistory.filter(h => !h.cancelled)
     .reduce((s, h) => s + (h.qty || 0) * priceLookup(h), 0);
-  const grandTotalCostStr = grandTotalCost > 0 ? ' · ' + grandTotalCost.toLocaleString() + '원' : '';
+  const filteredTotalCostStr = filteredTotalCost > 0 ? ' · ' + filteredTotalCost.toLocaleString() + '원' : '';
+
+  // 헤더 라벨
+  const filterLabel = (filterYear || filterMonth)
+    ? ' (' + (filterYear || '전체') + (filterMonth ? ' ' + parseInt(filterMonth, 10) + '월' : '') + ')'
+    : '';
 
   let inHistHtml = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<button onclick="toggleInboundHistorySection()" ' +
     'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 border-b border-slate-200 flex items-center gap-2 text-left">' +
     '<span class="text-slate-500 text-sm">' + (sectionExpanded ? '▼' : '▶') + '</span>' +
     '<h3 class="text-base font-bold text-slate-900">📋 입고 내역</h3>' +
-    '<span class="ml-auto text-xs text-slate-500">총 ' + inHistory.length + '건' + grandTotalCostStr + '</span>' +
+    '<span class="ml-auto text-xs text-slate-500">총 ' + inHistory.length + '건' + filteredTotalCostStr + filterLabel + '</span>' +
     '</button>';
+
+  // 펼친 상태에서 년도/월 필터 표시
+  if (sectionExpanded) {
+    inHistHtml += '<div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center gap-2 flex-wrap">' +
+      '<span class="text-xs text-slate-600">년도:</span>' +
+      '<select onchange="setInboundFilterYear(this.value)" class="text-xs px-2 py-1 border border-slate-300 rounded-lg bg-white">' +
+      '<option value=""' + (!filterYear ? ' selected' : '') + '>전체</option>';
+    availableYears.forEach(y => {
+      inHistHtml += '<option value="' + y + '"' + (filterYear === String(y) ? ' selected' : '') + '>' + y + '</option>';
+    });
+    inHistHtml += '</select>' +
+      '<span class="text-xs text-slate-600 ml-2">월:</span>' +
+      '<select onchange="setInboundFilterMonth(this.value)" class="text-xs px-2 py-1 border border-slate-300 rounded-lg bg-white">' +
+      '<option value=""' + (!filterMonth ? ' selected' : '') + '>전체</option>';
+    for (let m = 1; m <= 12; m++) {
+      inHistHtml += '<option value="' + m + '"' + (filterMonth === String(m) ? ' selected' : '') + '>' + m + '월</option>';
+    }
+    inHistHtml += '</select>';
+    if (filterYear || filterMonth) {
+      inHistHtml += '<button onclick="clearInboundFilter()" class="ml-auto text-[11px] px-2 py-1 bg-slate-200 hover:bg-slate-300 rounded">초기화</button>';
+    }
+    inHistHtml += '</div>';
+  }
 
   if (sectionExpanded && inHistory.length === 0) {
     inHistHtml += '<div class="py-12 text-center text-slate-400">' +
@@ -257,6 +305,21 @@ function revertInboundEntry(historyId) {
       showToast('입고 되돌림 — 재고 ' + h.qty + '개 차감', 'success');
       renderInbound();
     }, '예, 되돌리기', 'amber');
+}
+
+// 입고 내역 년도/월 필터 setter
+function setInboundFilterYear(v) {
+  window._inboundFilterYear = v || '';
+  renderInbound();
+}
+function setInboundFilterMonth(v) {
+  window._inboundFilterMonth = v || '';
+  renderInbound();
+}
+function clearInboundFilter() {
+  window._inboundFilterYear = '';
+  window._inboundFilterMonth = '';
+  renderInbound();
 }
 
 // 입고 내역 전체 섹션 토글 (헤더 클릭 시 주차 list 펼침/접힘)
