@@ -684,3 +684,66 @@ _마지막 갱신: 2026-05-08 (대규모 안정화 + UX 정리 — Phase 3 race 
 ---
 
 _마지막 갱신: 2026-05-08 (인벤토리 정비 + UX 폴리싱 — 중복 정리, reference import, KPI 4-button, 배경색, 부족 기준 변경, 자연 정렬)_
+
+---
+
+## 16. 2026-05-09 작업 (백업 시간 + 통계/입고 UX + 가격 버그 + 분류 정리)
+
+### 16.1 자동 백업 일정 변경
+- GitHub Actions + Apps Script 둘 다 토요일 18:00 KST로 통일
+- 18시 선택 이유: Firestore Spark 일일 quota는 자정 PT (≈17시 KST) 리셋 → 그 이후로 잡아야 quota exceeded 안 남
+- Apps Script setupDailyTrigger 1회 재실행 필수 (사용자 액션)
+
+### 16.2 가격 데이터 버그 (큰 발견)
+**증상**: 어제/오늘 처리한 78건 출고가 통계에 모두 0원.
+**원인**: executeCompleteRequest / confirmInbound가 history record 만들 때 `price` 필드 누락. stats는 `h.qty * (h.price || 0)`로 계산 → 0원.
+**수정**:
+- 8-manage.js / 9-inbound.js: histRec에 `price = item.price || 0` + `weekKey = getWeekKey(date)` 추가
+- 콘솔 마이그레이션 스크립트: 기존 entries 118건에 inventory의 현재 price 일괄 보정
+
+### 16.3 history.date 사용자 입력일자 우선
+**증상**: 5/8 반출일자로 처리했는데 통계에 5/9(처리 시각)로 잡힘.
+**원인**: 반출 완료 시 `completeDate = new Date()` 사용 → 사용자 입력 releasedDate 무시.
+**수정**: `completeDate = releasedDate || new Date()` — 입력값 우선. 처리 시각은 `processedAt` 별도 보존.
+- 입고는 원래부터 사용자 입력 일자 사용 → 두 채널 일관성 확보
+
+### 16.4 입고 내역 금액 표시 + 단가 + 년도/월 필터
+- 각 entry: `+20 × 25,000원 = 500,000원` 3단 표시
+- 주차 헤더: `4건 · 27개 · 500,000원`
+- 전체 헤더: `총 568건 · 75,056,370원 (2026 5월)`
+- 년도/월 dropdown 필터 — default: 현재 년도+월
+- 가격 lookup: `h.price` 있으면 사용, 없으면 inventory에서
+
+### 16.5 통계 — 주차별 → 항목별 + 검색
+- 주차별 탭 제거 (renderStatsByWeekly는 코드만 남김)
+- 새 **항목별 탭**: 각 품목별 vendor + 품명 + 총금액 + 개당단가 + 팀별 사용 분포
+- 검색창 (품목/업체) — 부분 갱신으로 한글 IME 안전 (`renderStatsItemList()`)
+- 개당 단가는 가중평균 (cost / qty)
+
+### 16.6 통계 '전체' → '이번 년도'
+- `statsPeriod === 'all'` 의미 변경: 모든 history → 올해 1/1 ~ 오늘
+- 라벨 '전체' → '이번 년도'
+- openTeamStatsDetail (팀 상세 모달)도 같이 변경
+
+### 16.7 분류 lookup 강화 + AI 분석 분류 섹션 제거
+- catOfHistory_ 우선순위: `h.category` → inventory 정확매칭 → inventory 대소문자/공백 무시 매칭 → '(분류 없음)'
+- 'k File' vs 'K File' 같은 표기 차이 자동 흡수
+- 사용자 요청으로 **AI 분석 탭의 '분류별 변동' 섹션 UI 제거** (catThis/catPast 집계 + 카드 UI 모두 삭제)
+- 과거 분류 없음 history는 콘솔 스크립트로 `h.category='치과재료'` 일괄 마킹 (사용자 1회 실행)
+
+### 16.8 단일 문서 backup 필드 영구 삭제
+**증상**: 1MB 토글 ON 했는데 클라우드 저장 실패 (1.05MB exceeds limit).
+**원인**: 토글은 앞으로 안 쓰기만 했고, 단일 문서의 옛 inventory/history backup 필드(stale)가 그대로 남아있어 doc 크기 ~1MB.
+**수정**: 콘솔 스크립트로 `updateDoc(deleteField())` — inventory/history/documents 3개 필드 영구 삭제. 단일 doc 크기 1MB → ~50KB. 클라우드 저장 정상화.
+
+### 16.9 다음 세션이 알아야 할 것
+- 모든 history record는 이제 price + weekKey + (반출의 경우 사용자 입력 date) 자동 포함 — 새 처리분은 항상 정상
+- 분류별 변동 섹션은 완전 제거 (코드 + UI). AI 분석에는 팀별만 남음
+- 통계 '이번 년도' = YTD (올해 한정)
+- 자동 백업: 매주 토요일 18시 KST (GitHub Actions + Apps Script 둘 다)
+- 단일 문서엔 history/inventory/documents 필드 없음 (다 삭제됨). 컬렉션이 유일한 source
+- 입고 내역 default 필터: 현재 년도+월 (전체 보려면 dropdown에서 '전체' 선택)
+
+---
+
+_마지막 갱신: 2026-05-09 (백업 시간 + 가격 버그 + 통계 항목별 + 분류 섹션 제거 + 단일문서 backup 정리)_
