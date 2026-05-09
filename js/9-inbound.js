@@ -58,9 +58,13 @@ function renderInbound() {
   // ============================================
   const allIn = (history || []).filter(h => h.type === 'in');
 
-  // 년도/월 필터 (기본 전체)
-  if (typeof window._inboundFilterYear === 'undefined') window._inboundFilterYear = '';
-  if (typeof window._inboundFilterMonth === 'undefined') window._inboundFilterMonth = '';
+  // 년도/월 필터 (기본 — 현재 년도 + 현재 월)
+  if (typeof window._inboundFilterYear === 'undefined') {
+    window._inboundFilterYear = String(new Date().getFullYear());
+  }
+  if (typeof window._inboundFilterMonth === 'undefined') {
+    window._inboundFilterMonth = String(new Date().getMonth() + 1);
+  }
   const filterYear = window._inboundFilterYear;
   const filterMonth = window._inboundFilterMonth;
 
