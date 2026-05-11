@@ -747,3 +747,48 @@ _마지막 갱신: 2026-05-08 (인벤토리 정비 + UX 폴리싱 — 중복 정
 ---
 
 _마지막 갱신: 2026-05-09 (백업 시간 + 가격 버그 + 통계 항목별 + 분류 섹션 제거 + 단일문서 backup 정리)_
+
+---
+
+## 17. 다음 세션 예정 작업: 입고 주문 기능 (2026-05-09 합의)
+
+### 17.1 설계 확정
+입고 탭에 "주문 → 입고 완료" 흐름 추가 (현 요청 → 반출 패턴과 동일):
+- **주문 등록**: 장바구니 방식, 항목당 수량+단가+메모
+- **입고 완료**: 실제 수량+단가+도착일자 입력해서 처리, history.in 생성 + inventory.stock 증가
+- **수정/취소/되돌리기**: 기존 요청 패턴 그대로
+- **부분 입고**: 10 주문 7 도착 → 분할 (반출 부분처리와 동일)
+
+### 17.2 구현 계획
+- 새 파일: `js/20-orders-collection.js` (Phase 2 패턴 — per-doc collection + listener + immediate upsert)
+- 수정: `js/9-inbound.js` (UI 재구성), `js/5-storage.js` (orders 배열), `index.html` (스크립트 로드)
+- 적용 패턴: 즉시 upsert / 사유 입력 / 자연 정렬 / collapsible / audit log
+
+### 17.3 🛡️ 데이터 안전 프로토콜 (사용자 강력 요구)
+
+**시작 전 안전망**:
+1. `mcDownloadRecoveryNow()` 실행 → Excel 백업 받기
+2. BEFORE 스냅샷 기록 (inventory/history/requests 카운트)
+3. `mcCheckPhase3Status()` 정상 확인
+
+**구현 중 격리**:
+- 새 `orders/` 컬렉션만 추가, 기존 4개 (inventory/history/requests/events) 안 건드림
+- 5-storage.js의 기존 변수/saveAll 로직 안 바꿈
+- 단일 문서 1MB 토글 상태 유지
+
+**구현 후 검증**:
+- AFTER 스냅샷 == BEFORE 스냅샷 (카운트 1:1 일치)
+- 차이 발견 시 즉시 중단
+
+**사고 발생 시 복구**:
+- Excel 백업 (PC에 받아둔 것)
+- Firestore 컬렉션 (직접 안 건드린 4개 그대로)
+- 단일 문서 (requests/teams/teamMembers 여전히 보존)
+- Git revert
+
+### 17.4 다음 세션 시작 명령
+> "어제 디자인 합의한 입고 주문 기능 구현 시작해줘. CLAUDE.md 17번 섹션 참고. 먼저 데이터 안전 프로토콜 (Excel 백업 + BEFORE 스냅샷) 부터."
+
+---
+
+_마지막 갱신: 2026-05-09 (다음 세션 입고 주문 기능 합의 + 데이터 안전 프로토콜 17번 섹션 추가)_
