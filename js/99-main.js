@@ -153,6 +153,18 @@ function closeModal() {
   }
 }
 
+// 모바일 ghost tap-through 가드: 모달 연 직후 300ms 동안 backdrop 클릭은 무시
+// (탭이 버튼에 들어간 후 모달이 열리면, touchend 시각에 그 위치가 backdrop이라 즉시 닫힘 사고)
+function closeModalFromBackdrop() {
+  if (window._lastModalOpenTime && Date.now() - window._lastModalOpenTime < 300) {
+    return; // ghost tap 가능성 → 무시
+  }
+  closeModal();
+}
+function markModalOpened() {
+  window._lastModalOpenTime = Date.now();
+}
+
 
 // ============================================
 // 안내/경고 모달 (확인 버튼 1개)

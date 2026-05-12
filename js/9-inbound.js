@@ -449,7 +449,7 @@ function openInboundDialog(itemId) {
     String(now.getMonth() + 1).padStart(2, '0') + '-' +
     String(now.getDate()).padStart(2, '0');
 
-  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
     '<h3 class="text-base font-bold text-slate-900">📥 입고 수량 입력</h3></div>' +
@@ -477,6 +477,7 @@ function openInboundDialog(itemId) {
     '<button onclick="confirmInbound(\'' + item.id + '\')" class="flex-1 py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">✅ 입고 등록</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
 
   const input = document.getElementById('inbound-qty');
   const after = document.getElementById('after-stock');
@@ -549,6 +550,15 @@ function _renderOrderCard(o) {
   if (status === 'cancelled' && o.cancelReason) {
     html += '<p class="text-[11px] text-slate-500 mb-2">❌ ' + escapeHtml(o.cancelReason) + '</p>';
   }
+  // 부분 입고 이력 (대기 상태에서 일부만 받은 경우)
+  if (status === 'pending' && Array.isArray(o.partialReceiveHistory) && o.partialReceiveHistory.length > 0) {
+    const totalRecv = o.partialReceiveHistory.reduce((s, p) => s + (p.receivedQty || 0), 0);
+    html += '<p class="text-[11px] text-emerald-700 mb-2">🟢 부분 입고됨: ' + o.partialReceiveHistory.length + '회 · 총 ' + totalRecv + '개 (잔여 표시 중)</p>';
+  }
+  // 부모 주문 링크 (부분 입고로 생성된 완료 주문)
+  if (status === 'received' && o.parentOrderId) {
+    html += '<p class="text-[11px] text-slate-500 mb-2">🔗 부분 입고분 (원 주문 분리)</p>';
+  }
 
   // 액션 버튼
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
@@ -576,7 +586,7 @@ function openOrderItemDialog(itemId) {
   const defaultPrice = existing ? existing.price : (item.price || 0);
   const defaultMemo = existing ? (existing.memo || '') : '';
 
-  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<h3 class="text-base font-bold text-slate-900">🛒 ' + (existing ? '장바구니 수정' : '장바구니 담기') + '</h3></div>' +
@@ -609,6 +619,7 @@ function openOrderItemDialog(itemId) {
     '<button onclick="saveOrderCartItem(\'' + escapeJs(itemId) + '\')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold">' + (existing ? '저장' : '담기') + '</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
 
   // 합계 실시간 업데이트
   const updateLineCost = function() {
@@ -715,7 +726,7 @@ function confirmOrder() {
   });
   itemsHtml += '</div>';
 
-  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<h3 class="text-base font-bold text-slate-900">📋 주문 등록 확인</h3></div>' +
@@ -748,6 +759,7 @@ function confirmOrder() {
     '<button id="order-confirm-btn" onclick="submitOrder()" disabled class="flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold">주문 담당자 선택 필요</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
   window._pendingOrderer = null;
 }
 
@@ -893,11 +905,11 @@ function openReceiveOrderModal(orderId) {
       '</div>';
   });
 
-  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
     '<h3 class="text-base font-bold text-slate-900">✅ 입고 완료 처리</h3>' +
-    '<p class="text-xs text-slate-600 mt-1">실제 수량/단가가 다르면 수정하세요. 0으로 두면 해당 항목 제외</p></div>' +
+    '<p class="text-xs text-slate-600 mt-1">받은 만큼만 수량을 줄여서 처리하세요. 안 받은 분량은 자동으로 [주문 대기]에 남습니다.</p></div>' +
     '<div class="px-5 py-4 overflow-y-auto">' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
     '<input type="date" id="recv-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
@@ -908,8 +920,13 @@ function openReceiveOrderModal(orderId) {
     '<button onclick="confirmReceiveOrder(\'' + escapeJs(orderId) + '\')" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold">✅ 입고 완료</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
 }
 
+// 부분 입고: 받은 만큼만 처리 + 잔여는 주문대기 유지 (반출 부분처리와 동일 패턴)
+//   - actualQty == it.qty: 전량 입고
+//   - 0 < actualQty < it.qty: 부분 입고 → 받은 분량은 새 [완료] 주문에, 잔여는 원래 [대기]에 남김
+//   - actualQty == 0: 안 받음 → 원래 주문에 그대로
 function confirmReceiveOrder(orderId) {
   const o = (orders || []).find(x => x.id === orderId);
   if (!o) return;
@@ -923,29 +940,46 @@ function confirmReceiveOrder(orderId) {
 
   const receivedBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
 
-  // 각 항목 처리
-  let receivedItemCount = 0;
-  let receivedTotalQty = 0;
-  let receivedTotalCost = 0;
-  const updatedItems = [];
-
-  o.items.forEach((it, idx) => {
+  // Step 1: 입력값 파싱
+  const inputs = o.items.map((it, idx) => {
     const qtyEl = document.getElementById('recv-qty-' + idx);
     const priceEl = document.getElementById('recv-price-' + idx);
     const actualQty = parseInt(qtyEl && qtyEl.value) || 0;
-    const actualPrice = parseInt(priceEl && priceEl.value) || 0;
+    const actualPrice = parseInt(priceEl && priceEl.value) || (it.price || 0);
+    return { it: it, actualQty: actualQty, actualPrice: actualPrice };
+  });
 
+  // Step 2: 최소 1개라도 받은 게 있는지
+  const anyReceived = inputs.some(i => i.actualQty > 0);
+  if (!anyReceived) {
+    showAlert('입고할 항목이 없습니다',
+      '하나 이상 항목의 실제 입고 수량을 1 이상으로 입력해주세요.\n' +
+      '전부 입고 안 받으려면 [취소] 버튼으로 닫고\n' +
+      '주문 자체를 취소하려면 ❌ 취소 버튼을 쓰세요.');
+    return;
+  }
+
+  // Step 3: 분리 — 받은 분량 (received) / 잔여 (remaining)
+  const receivedItemsForCompleted = [];
+  const remainingItemsForPending = [];
+  let totalReceivedQty = 0;
+  let totalReceivedCost = 0;
+
+  inputs.forEach((inp, idx) => {
+    const it = inp.it;
+    const ordered = it.qty || 0;
+    let actualQty = inp.actualQty;
+    const actualPrice = inp.actualPrice;
+
+    // 주문보다 더 받았으면 actualQty까지 처리 (사용자 의도 존중 — 실제 단가 사용)
+    // 단, "잔여"는 음수 안 되도록 max(0, ...)
     if (actualQty <= 0) {
-      // 입고 안 함 (skipped) — items에는 보존, 표시는 0
-      updatedItems.push(Object.assign({}, it, {
-        actualQty: 0,
-        actualPrice: actualPrice,
-        skipped: true
-      }));
+      // 안 받음 → 잔여만
+      remainingItemsForPending.push(Object.assign({}, it));
       return;
     }
 
-    // 재고 증가 (atomic 우선)
+    // 받은 분량 → 재고 증가
     const item = inventory.find(i => i.id === it.itemId);
     if (item) {
       if (typeof adjustInventoryStock === 'function') {
@@ -954,15 +988,14 @@ function confirmReceiveOrder(orderId) {
         item.stock += actualQty;
         if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
       }
-      // 단가가 바뀌었으면 inventory 단가도 갱신 (정확한 단가 추적)
       if (actualPrice > 0 && actualPrice !== item.price) {
         item.price = actualPrice;
         if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
       }
     }
 
-    // history 'in' record (orderId 링크)
-    const histId = 'H' + Date.now() + '_' + idx + '_' + it.itemId;
+    // history 'in' 기록 (orderId 링크)
+    const histId = 'H' + Date.now() + '_' + idx + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 5);
     const histRec = {
       id: histId,
       type: 'in',
@@ -982,35 +1015,81 @@ function confirmReceiveOrder(orderId) {
       if (window._historyHashes) window._historyHashes.set(histRec.id, JSON.stringify(histRec));
     }
 
-    updatedItems.push(Object.assign({}, it, {
+    // 받은 분량은 완료 주문에 포함
+    receivedItemsForCompleted.push(Object.assign({}, it, {
+      qty: actualQty,
+      price: actualPrice,
       actualQty: actualQty,
       actualPrice: actualPrice,
       historyId: histId
     }));
 
-    receivedItemCount++;
-    receivedTotalQty += actualQty;
-    receivedTotalCost += actualQty * actualPrice;
+    // 잔여: 주문 수량 - 실제 수량 > 0이면 대기에 남김
+    const leftover = ordered - actualQty;
+    if (leftover > 0) {
+      remainingItemsForPending.push(Object.assign({}, it, { qty: leftover }));
+    }
+
+    totalReceivedQty += actualQty;
+    totalReceivedCost += actualQty * actualPrice;
   });
 
-  // 주문 상태 갱신
-  o.status = 'received';
-  o.receivedDate = receivedDate;
-  o.receivedBy = receivedBy;
-  o.items = updatedItems;
+  // Step 4: 주문 문서 업데이트 (분리 or 전체 완료)
+  if (remainingItemsForPending.length === 0) {
+    // 전량 입고 → 원래 주문을 완료로 promote
+    o.status = 'received';
+    o.receivedDate = receivedDate;
+    o.receivedBy = receivedBy;
+    o.items = receivedItemsForCompleted;
+    if (typeof upsertOrderDoc === 'function') {
+      upsertOrderDoc(o).catch(err => console.warn('order receive upsert 실패:', err));
+    }
+  } else {
+    // 부분 입고 → 분리: 받은 분량은 새 완료 주문, 잔여는 원래 주문에
+    const newRecvOrderId = orderId + '_recv_' + Date.now();
+    const newRecvOrder = {
+      id: newRecvOrderId,
+      date: o.date,
+      parentOrderId: orderId,
+      status: 'received',
+      orderedBy: o.orderedBy,
+      memo: o.memo,
+      items: receivedItemsForCompleted,
+      receivedDate: receivedDate,
+      receivedBy: receivedBy
+    };
+    orders.push(newRecvOrder);
+    if (typeof upsertOrderDoc === 'function') {
+      upsertOrderDoc(newRecvOrder).catch(err => console.warn('partial recv upsert 실패:', err));
+    }
 
-  // 즉시 upsert
-  if (typeof upsertOrderDoc === 'function') {
-    upsertOrderDoc(o).catch(err => console.warn('order receive upsert 실패:', err));
+    // 원래 주문은 잔여만 남김
+    o.items = remainingItemsForPending;
+    o.partialReceiveHistory = o.partialReceiveHistory || [];
+    o.partialReceiveHistory.push({
+      at: receivedDate,
+      by: receivedBy,
+      receivedOrderId: newRecvOrderId,
+      receivedItemCount: receivedItemsForCompleted.length,
+      receivedQty: totalReceivedQty
+    });
+    if (typeof upsertOrderDoc === 'function') {
+      upsertOrderDoc(o).catch(err => console.warn('partial pending upsert 실패:', err));
+    }
   }
 
+  // Step 5: audit
   if (typeof logEvent === 'function') {
+    const partial = remainingItemsForPending.length > 0;
     logEvent('order', 'receive', {
-      summary: '입고 완료: ' + receivedItemCount + '종 · ' + receivedTotalQty + '개 · ' + receivedTotalCost.toLocaleString() + '원',
+      summary: '입고 완료: ' + receivedItemsForCompleted.length + '종 · ' + totalReceivedQty + '개 · ' + totalReceivedCost.toLocaleString() + '원' +
+        (partial ? ' (부분 입고 — 잔여 ' + remainingItemsForPending.length + '종)' : ''),
       orderId: orderId,
-      itemCount: receivedItemCount,
-      totalQty: receivedTotalQty,
-      totalCost: receivedTotalCost,
+      itemCount: receivedItemsForCompleted.length,
+      totalQty: totalReceivedQty,
+      totalCost: totalReceivedCost,
+      partial: partial,
+      remainingItemCount: remainingItemsForPending.length,
       receivedBy: receivedBy
     });
   }
@@ -1018,8 +1097,13 @@ function confirmReceiveOrder(orderId) {
   saveAll();
   updateHeaderStats();
   closeModal();
-  showToast('입고 완료! ' + receivedItemCount + '종 ' + receivedTotalQty + '개 (' + receivedTotalCost.toLocaleString() + '원)', 'success');
-  window._orderStatusTab = 'received';
+  const msg = '입고 완료! ' + receivedItemsForCompleted.length + '종 ' + totalReceivedQty + '개' +
+    (remainingItemsForPending.length > 0
+      ? ' (잔여 ' + remainingItemsForPending.length + '종 주문대기 유지)'
+      : '');
+  showToast(msg, 'success');
+  // 부분 입고면 사용자가 잔여 보게 pending 탭, 전량이면 완료 탭으로
+  window._orderStatusTab = (remainingItemsForPending.length > 0) ? 'pending' : 'received';
   renderInbound();
 }
 
@@ -1098,7 +1182,7 @@ function editOrder(orderId) {
       '</div>';
   });
 
-  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
     '<h3 class="text-base font-bold text-slate-900">✏️ 주문 수정</h3>' +
@@ -1113,6 +1197,7 @@ function editOrder(orderId) {
     '<button onclick="saveOrderEdit(\'' + escapeJs(orderId) + '\')" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold">저장</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
 }
 
 function saveOrderEdit(orderId) {
