@@ -16,6 +16,7 @@ const { generateMonthlyReportExcel, getPreviousMonth, getMonthWeekLabelKr, getMo
 
 const PROJECT_ID = 'moon-dental-stock';
 const DOC_PATH = 'appData/main';
+const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 // 오늘이 이번 달의 "첫째 주 토요일"인지 (월의 1~7일 사이 토요일).
 // 매주 토요일 발송이라 7일 안의 토요일이면 자동으로 첫째 주 토요일임.
@@ -86,15 +87,64 @@ async function main() {
 // ============================================
 // Firestore REST + 타입 파서
 // ============================================
+// Phase 3 호환: 단일 문서 + 컬렉션(inventory/history/orders) 같이 fetch
+// orders는 2026-05-12 추가됨
 async function fetchFirestore() {
-  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/${DOC_PATH}`;
-  const r = await fetch(url);
+  // 1) 단일 문서 (requests/teams/teamMembers 등)
+  const singleUrl = `${FIRESTORE_BASE}/${DOC_PATH}`;
+  const r = await fetch(singleUrl);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
-    throw new Error('Firestore fetch ' + r.status + ': ' + text.slice(0, 300));
+    throw new Error('Firestore single fetch ' + r.status + ': ' + text.slice(0, 300));
   }
   const json = await r.json();
-  return parseFirestoreDoc(json.fields || {});
+  const single = parseFirestoreDoc(json.fields || {});
+
+  // 2) 컬렉션 (1MB 토글 ON 후 inventory/history는 단일 문서에 없음)
+  const [inventory, history, orders] = await Promise.all([
+    fetchCollection('inventory'),
+    fetchCollection('history'),
+    fetchCollection('orders')
+  ]);
+
+  // 단일 문서의 옛 inventory/history 무시 — 컬렉션이 source of truth
+  single.inventory = inventory;
+  single.history = history;
+  single.orders = orders;
+
+  return single;
+}
+
+// 컬렉션 모든 문서 fetch (페이지네이션, 메타필드 _* 제거)
+async function fetchCollection(name) {
+  const result = [];
+  let pageToken = '';
+  let pageNum = 0;
+  do {
+    const url = `${FIRESTORE_BASE}/${name}?pageSize=300` +
+                (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const r = await fetch(url);
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(name + ' 컬렉션 fetch ' + r.status + ' (page ' + pageNum + '): ' + text.slice(0, 200));
+    }
+    const json = await r.json();
+    if (Array.isArray(json.documents)) {
+      json.documents.forEach(doc => {
+        const item = parseFirestoreDoc(doc.fields || {});
+        const clean = {};
+        for (const k in item) if (k.charAt(0) !== '_') clean[k] = item[k];
+        result.push(clean);
+      });
+    }
+    pageToken = json.nextPageToken || '';
+    pageNum++;
+    if (pageNum > 50) {
+      console.warn('⚠️ ' + name + ' 페이지 50 초과 — 비정상');
+      break;
+    }
+  } while (pageToken);
+  return result;
 }
 
 function parseFirestoreDoc(fields) {
@@ -178,6 +228,7 @@ function generateRecoveryExcel(data) {
   const inventory = data.inventory || [];
   const history = data.history || [];
   const requests = data.requests || [];
+  const orders = data.orders || [];
   const teams = data.teams || [];
   const teamMembers = data.teamMembers || {};
 
@@ -197,6 +248,7 @@ function generateRecoveryExcel(data) {
     ['품목 수', inventory.length],
     ['이력 수', history.length],
     ['요청 수', requests.length],
+    ['주문 수', orders.length],
     ['팀 수', teams.length],
     ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (Array.isArray(m) ? m.length : 0), 0)]
   ];
@@ -244,6 +296,32 @@ function generateRecoveryExcel(data) {
   applyFormat(wsReq, [6]);  // 품목수만 숫자
   XLSX.utils.book_append_sheet(wb, wsReq, '반출요청');
 
+  // 주문 (2026-05-12 추가 — orders/ 컬렉션 from Phase 2)
+  // 각 항목을 한 줄씩 펼침: 같은 주문(orderId)의 여러 품목을 한 행씩
+  const orderRows = [['주문ID', '주문일', '상태', '주문자', '입고일', '입고자',
+                      '업체', '품명', '단위', '주문수량', '실제수량', '주문단가', '실제단가',
+                      '메모', '취소사유']];
+  orders.forEach(o => {
+    const items = Array.isArray(o.items) ? o.items : [];
+    if (items.length === 0) {
+      orderRows.push([o.id || '', o.date || '', o.status || '',
+                      o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+                      '', '', '', 0, 0, 0, 0, o.memo || '', o.cancelReason || '']);
+    } else {
+      items.forEach(it => orderRows.push([
+        o.id || '', o.date || '', o.status || '',
+        o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+        it.vendor || '', it.name || '', it.unit || '',
+        it.qty || 0, it.actualQty || 0,
+        it.price || 0, it.actualPrice || 0,
+        o.memo || '', o.cancelReason || ''
+      ]));
+    }
+  });
+  const wsOrders = XLSX.utils.aoa_to_sheet(orderRows);
+  applyFormat(wsOrders, [9, 10, 11, 12]);
+  XLSX.utils.book_append_sheet(wb, wsOrders, '주문');
+
   // 팀_담당자
   const teamRows = [['팀명', '담당자', '대표 여부']];
   teams.forEach(t => {
@@ -260,8 +338,8 @@ function generateRecoveryExcel(data) {
 
   // 원본_JSON (복원용 텍스트 덤프)
   const fullJson = JSON.stringify({
-    version: 1, weekKey, extractedAt: now.toISOString(),
-    inventory, history, requests, teams, teamMembers
+    version: 2, weekKey, extractedAt: now.toISOString(),
+    inventory, history, requests, orders, teams, teamMembers
   });
   const CHUNK = 30000;
   const jsonRows = [['JSON 청크 (모두 이어붙여 사용)'], []];
@@ -282,6 +360,7 @@ function generateReportExcel(data) {
   const inventory = data.inventory || [];
   const history = data.history || [];
   const requests = data.requests || [];
+  const orders = data.orders || [];
   const teams = data.teams || [];
 
   const wb = XLSX.utils.book_new();
@@ -318,7 +397,8 @@ function generateReportExcel(data) {
     ['출고 금액', thisOutCost, '원'],
     ['입고 건수', thisInHist.length, '건'],
     ['입고 수량', thisInQty, '개'],
-    ['대기 요청', pendingReq, '건']
+    ['대기 요청', pendingReq, '건'],
+    ['대기 주문', (orders.filter(o => (o.status || 'pending') === 'pending')).length, '건']
   ];
   const wsSum = XLSX.utils.aoa_to_sheet(summary);
   applyFormat(wsSum, [1], 0);
@@ -397,6 +477,68 @@ function generateReportExcel(data) {
   const wsCombined = XLSX.utils.aoa_to_sheet(combined);
   applyFormat(wsCombined, []);
   XLSX.utils.book_append_sheet(wb, wsCombined, '입출고+요청');
+
+  // 3-1. 주문 내역 (2026-05-12 추가) — 대기/완료/취소 + lead time 분석용
+  const orderListRows = [];
+  const pendingOrders = orders.filter(o => (o.status || 'pending') === 'pending');
+  const receivedOrders = orders.filter(o => o.status === 'received');
+  const cancelledOrders = orders.filter(o => o.status === 'cancelled');
+
+  orderListRows.push(['【 대기 주문 】 ' + pendingOrders.length + '건']);
+  orderListRows.push(['주문일', '주문자', '업체', '품명', '수량', '단가', '금액', '메모']);
+  if (pendingOrders.length === 0) {
+    orderListRows.push(['(대기 중인 주문 없음)']);
+  } else {
+    pendingOrders.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).forEach(o => {
+      (o.items || []).forEach(it => orderListRows.push([
+        (o.date || '').slice(0, 10), o.orderedBy || '',
+        it.vendor || '', it.name || '',
+        it.qty || 0, it.price || 0, (it.qty || 0) * (it.price || 0),
+        o.memo || ''
+      ]));
+    });
+  }
+  orderListRows.push([]);
+  orderListRows.push(['【 완료 주문 (입고 lead time) 】 ' + receivedOrders.length + '건']);
+  orderListRows.push(['주문일', '입고일', 'Lead(일)', '주문자', '업체', '품명', '주문수량', '실제수량', '실제단가', '금액']);
+  if (receivedOrders.length === 0) {
+    orderListRows.push(['(완료된 주문 없음)']);
+  } else {
+    receivedOrders.slice().sort((a, b) => (a.receivedDate || a.date || '').localeCompare(b.receivedDate || b.date || '')).forEach(o => {
+      const od = o.date ? new Date(o.date) : null;
+      const rd = o.receivedDate ? new Date(o.receivedDate) : null;
+      const leadDays = (od && rd) ? Math.round((rd - od) / 86400000) : '';
+      (o.items || []).forEach(it => orderListRows.push([
+        (o.date || '').slice(0, 10),
+        (o.receivedDate || '').slice(0, 10),
+        leadDays,
+        o.orderedBy || '',
+        it.vendor || '', it.name || '',
+        it.qty || 0, it.actualQty || 0, it.actualPrice || it.price || 0,
+        (it.actualQty || 0) * (it.actualPrice || it.price || 0)
+      ]));
+    });
+  }
+  orderListRows.push([]);
+  orderListRows.push(['【 취소 주문 】 ' + cancelledOrders.length + '건']);
+  orderListRows.push(['주문일', '취소일', '주문자', '업체', '품명', '수량', '취소사유']);
+  if (cancelledOrders.length === 0) {
+    orderListRows.push(['(취소된 주문 없음)']);
+  } else {
+    cancelledOrders.slice().sort((a, b) => (a.cancelledDate || a.date || '').localeCompare(b.cancelledDate || b.date || '')).forEach(o => {
+      (o.items || []).forEach(it => orderListRows.push([
+        (o.date || '').slice(0, 10),
+        (o.cancelledDate || '').slice(0, 10),
+        o.orderedBy || '',
+        it.vendor || '', it.name || '',
+        it.qty || 0,
+        o.cancelReason || ''
+      ]));
+    });
+  }
+  const wsOrders2 = XLSX.utils.aoa_to_sheet(orderListRows);
+  applyFormat(wsOrders2, []);
+  XLSX.utils.book_append_sheet(wb, wsOrders2, '주문 내역');
 
   // 3-2. 분류별 합계 (이번 주 출고를 분류별로 집계)
   const catMap = {};

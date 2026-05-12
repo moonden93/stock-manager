@@ -113,6 +113,7 @@ function generateRecoveryExcel() {
     ['품목 수', inventory.length],
     ['이력 수', history.length],
     ['요청 수', requests.length],
+    ['주문 수', (typeof orders !== 'undefined' ? orders.length : 0)],
     ['팀 수', teams.length],
     ['담당자 수', Object.values(teamMembers).reduce((s, m) => s + (m ? m.length : 0), 0)],
     [],
@@ -154,6 +155,30 @@ function generateRecoveryExcel() {
   ]));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(reqRows), '반출요청');
 
+  // ─ 주문 (2026-05-12 추가 — orders/ 컬렉션) ─
+  const ordersArr = (typeof orders !== 'undefined' && Array.isArray(orders)) ? orders : [];
+  const orderRows = [['주문ID', '주문일', '상태', '주문자', '입고일', '입고자',
+                      '업체', '품명', '단위', '주문수량', '실제수량', '주문단가', '실제단가',
+                      '메모', '취소사유']];
+  ordersArr.forEach(o => {
+    const items = Array.isArray(o.items) ? o.items : [];
+    if (items.length === 0) {
+      orderRows.push([o.id || '', o.date || '', o.status || '',
+                      o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+                      '', '', '', 0, 0, 0, 0, o.memo || '', o.cancelReason || '']);
+    } else {
+      items.forEach(it => orderRows.push([
+        o.id || '', o.date || '', o.status || '',
+        o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+        it.vendor || '', it.name || '', it.unit || '',
+        it.qty || 0, it.actualQty || 0,
+        it.price || 0, it.actualPrice || 0,
+        o.memo || '', o.cancelReason || ''
+      ]));
+    }
+  });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderRows), '주문');
+
   // ─ 팀/담당자 ─
   const teamRows = [['팀명', '담당자', '대표 여부']];
   teams.forEach(t => {
@@ -168,8 +193,10 @@ function generateRecoveryExcel() {
 
   // ─ 원본 JSON (복원용 텍스트 덤프, 32KB 청크 분할) ─
   const fullJson = JSON.stringify({
-    version: 1, weekKey, extractedAt: now.toISOString(),
-    inventory, history, requests, teams, teamMembers
+    version: 2, weekKey, extractedAt: now.toISOString(),
+    inventory, history, requests,
+    orders: ordersArr,
+    teams, teamMembers
   });
   const CHUNK = 30000;
   const jsonRows = [['JSON 청크 (모두 이어붙여 사용)'], []];
@@ -366,6 +393,66 @@ function generateReportExcel() {
   }
   const wsCombined = XLSX.utils.aoa_to_sheet(combined);
   XLSX.utils.book_append_sheet(wb, wsCombined, '입출고+요청');
+
+  // ─── 시트 3-1: 주문 내역 (2026-05-12 추가) ───
+  const ordersArr2 = (typeof orders !== 'undefined' && Array.isArray(orders)) ? orders : [];
+  const orderListRows = [];
+  const pendingOrders = ordersArr2.filter(o => (o.status || 'pending') === 'pending');
+  const receivedOrders = ordersArr2.filter(o => o.status === 'received');
+  const cancelledOrders = ordersArr2.filter(o => o.status === 'cancelled');
+
+  orderListRows.push(['【 대기 주문 】 ' + pendingOrders.length + '건']);
+  orderListRows.push(['주문일', '주문자', '업체', '품명', '수량', '단가', '금액', '메모']);
+  if (pendingOrders.length === 0) {
+    orderListRows.push(['(대기 중인 주문 없음)']);
+  } else {
+    pendingOrders.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+      .forEach(o => (o.items || []).forEach(it => orderListRows.push([
+        (o.date || '').slice(0, 10), o.orderedBy || '',
+        it.vendor || '', it.name || '',
+        it.qty || 0, it.price || 0, (it.qty || 0) * (it.price || 0),
+        o.memo || ''
+      ])));
+  }
+  orderListRows.push([]);
+  orderListRows.push(['【 완료 주문 (입고 lead time) 】 ' + receivedOrders.length + '건']);
+  orderListRows.push(['주문일', '입고일', 'Lead(일)', '주문자', '업체', '품명', '주문수량', '실제수량', '실제단가', '금액']);
+  if (receivedOrders.length === 0) {
+    orderListRows.push(['(완료된 주문 없음)']);
+  } else {
+    receivedOrders.slice().sort((a, b) => (a.receivedDate || a.date || '').localeCompare(b.receivedDate || b.date || ''))
+      .forEach(o => {
+        const od = o.date ? new Date(o.date) : null;
+        const rd = o.receivedDate ? new Date(o.receivedDate) : null;
+        const leadDays = (od && rd) ? Math.round((rd - od) / 86400000) : '';
+        (o.items || []).forEach(it => orderListRows.push([
+          (o.date || '').slice(0, 10),
+          (o.receivedDate || '').slice(0, 10),
+          leadDays,
+          o.orderedBy || '',
+          it.vendor || '', it.name || '',
+          it.qty || 0, it.actualQty || 0, it.actualPrice || it.price || 0,
+          (it.actualQty || 0) * (it.actualPrice || it.price || 0)
+        ]));
+      });
+  }
+  orderListRows.push([]);
+  orderListRows.push(['【 취소 주문 】 ' + cancelledOrders.length + '건']);
+  orderListRows.push(['주문일', '취소일', '주문자', '업체', '품명', '수량', '취소사유']);
+  if (cancelledOrders.length === 0) {
+    orderListRows.push(['(취소된 주문 없음)']);
+  } else {
+    cancelledOrders.slice().sort((a, b) => (a.cancelledDate || a.date || '').localeCompare(b.cancelledDate || b.date || ''))
+      .forEach(o => (o.items || []).forEach(it => orderListRows.push([
+        (o.date || '').slice(0, 10),
+        (o.cancelledDate || '').slice(0, 10),
+        o.orderedBy || '',
+        it.vendor || '', it.name || '',
+        it.qty || 0,
+        o.cancelReason || ''
+      ])));
+  }
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderListRows), '주문 내역');
 
   // ─── 시트 4: 팀별 AI 분석 (이번 달 vs 지난 3개월 평균) ───
   // 11-stats.js의 이상치 로직 포팅: 팀별 + 품목별 집계, ±30%/신규/중단 분류

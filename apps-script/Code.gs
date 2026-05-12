@@ -398,17 +398,20 @@ function fetchFirestore() {
   }
   const singleData = parseFirestoreDoc(JSON.parse(singleRes.getContentText()).fields || {});
 
-  // 2) inventory + history 컬렉션 fetch
+  // 2) inventory + history + orders 컬렉션 fetch (orders는 2026-05-12 추가)
   const inventory = fetchCollection_('inventory');
   const history = fetchCollection_('history');
+  const orders = fetchCollection_('orders');
 
   Logger.log('  · 단일 문서 requests: ' + ((singleData.requests || []).length) + '건');
   Logger.log('  · inventory 컬렉션: ' + inventory.length + '개');
   Logger.log('  · history 컬렉션: ' + history.length + '건');
+  Logger.log('  · orders 컬렉션: ' + orders.length + '건');
 
   // 단일 문서 데이터에 컬렉션 덮어쓰기 (단일 문서에 옛 inventory/history 필드 있어도 무시)
   singleData.inventory = inventory;
   singleData.history = history;
+  singleData.orders = orders;
   return singleData;
 }
 
@@ -872,7 +875,8 @@ function createReportSheet(data, name, folder) {
     ['출고 금액(원)', thisOutCost],
     ['입고 건수', thisInHist.length],
     ['입고 수량', thisInQty],
-    ['대기 요청', pendingReq]
+    ['대기 요청', pendingReq],
+    ['대기 주문', (data.orders || []).filter(function(o) { return (o.status || 'pending') === 'pending'; }).length]
   ]);
 
   const hiddenSet = buildHiddenSet_(inventory);
@@ -940,6 +944,78 @@ function createReportSheet(data, name, folder) {
     ]);
   });
   writeRows(ss.insertSheet('입출고+요청'), combined);
+
+  // ─ 3-1. 주문 내역 (2026-05-12 추가) — 대기/완료(lead time)/취소 ─
+  const orders = data.orders || [];
+  const orderListRows = [];
+  const pendingOrders = orders.filter(function(o) { return (o.status || 'pending') === 'pending'; });
+  const receivedOrders = orders.filter(function(o) { return o.status === 'received'; });
+  const cancelledOrders = orders.filter(function(o) { return o.status === 'cancelled'; });
+
+  orderListRows.push(['【 대기 주문 】 ' + pendingOrders.length + '건']);
+  orderListRows.push(['주문일', '주문자', '업체', '품명', '수량', '단가', '금액', '메모']);
+  if (pendingOrders.length === 0) {
+    orderListRows.push(['(대기 중인 주문 없음)']);
+  } else {
+    pendingOrders.slice().sort(function(a, b) { return (a.date || '').localeCompare(b.date || ''); })
+      .forEach(function(o) {
+        (o.items || []).forEach(function(it) {
+          orderListRows.push([
+            (o.date || '').slice(0, 10), o.orderedBy || '',
+            it.vendor || '', it.name || '',
+            it.qty || 0, it.price || 0, (it.qty || 0) * (it.price || 0),
+            o.memo || ''
+          ]);
+        });
+      });
+  }
+  orderListRows.push(['']);
+  orderListRows.push(['【 완료 주문 (입고 lead time) 】 ' + receivedOrders.length + '건']);
+  orderListRows.push(['주문일', '입고일', 'Lead(일)', '주문자', '업체', '품명', '주문수량', '실제수량', '실제단가', '금액']);
+  if (receivedOrders.length === 0) {
+    orderListRows.push(['(완료된 주문 없음)']);
+  } else {
+    receivedOrders.slice().sort(function(a, b) {
+      return (a.receivedDate || a.date || '').localeCompare(b.receivedDate || b.date || '');
+    }).forEach(function(o) {
+      const od = o.date ? new Date(o.date) : null;
+      const rd = o.receivedDate ? new Date(o.receivedDate) : null;
+      const leadDays = (od && rd) ? Math.round((rd - od) / 86400000) : '';
+      (o.items || []).forEach(function(it) {
+        orderListRows.push([
+          (o.date || '').slice(0, 10),
+          (o.receivedDate || '').slice(0, 10),
+          leadDays,
+          o.orderedBy || '',
+          it.vendor || '', it.name || '',
+          it.qty || 0, it.actualQty || 0, it.actualPrice || it.price || 0,
+          (it.actualQty || 0) * (it.actualPrice || it.price || 0)
+        ]);
+      });
+    });
+  }
+  orderListRows.push(['']);
+  orderListRows.push(['【 취소 주문 】 ' + cancelledOrders.length + '건']);
+  orderListRows.push(['주문일', '취소일', '주문자', '업체', '품명', '수량', '취소사유']);
+  if (cancelledOrders.length === 0) {
+    orderListRows.push(['(취소된 주문 없음)']);
+  } else {
+    cancelledOrders.slice().sort(function(a, b) {
+      return (a.cancelledDate || a.date || '').localeCompare(b.cancelledDate || b.date || '');
+    }).forEach(function(o) {
+      (o.items || []).forEach(function(it) {
+        orderListRows.push([
+          (o.date || '').slice(0, 10),
+          (o.cancelledDate || '').slice(0, 10),
+          o.orderedBy || '',
+          it.vendor || '', it.name || '',
+          it.qty || 0,
+          o.cancelReason || ''
+        ]);
+      });
+    });
+  }
+  writeRows(ss.insertSheet('주문 내역'), orderListRows);
 
   // ─ 3-2. 분류별 합계 (이번 주 출고를 분류별로 집계) ─
   const catMap = {};
@@ -1065,6 +1141,7 @@ function createRecoverySheet(data, name, folder) {
   const requests = data.requests || [];
   const teams = data.teams || [];
   const teamMembers = data.teamMembers || {};
+  const orders = data.orders || [];
 
   // 메타
   const metaSheet = ss.getActiveSheet();
@@ -1079,6 +1156,7 @@ function createRecoverySheet(data, name, folder) {
     ['품목 수', inventory.length],
     ['이력 수', history.length],
     ['요청 수', requests.length],
+    ['주문 수', orders.length],
     ['팀 수', teams.length],
     ['담당자 수', Object.keys(teamMembers).reduce(function(s, k) {
       return s + (Array.isArray(teamMembers[k]) ? teamMembers[k].length : 0);
@@ -1124,6 +1202,32 @@ function createRecoverySheet(data, name, folder) {
     ]);
   });
   writeRows(ss.insertSheet('반출요청'), reqRows);
+
+  // 주문 (2026-05-12 추가 — orders/ 컬렉션)
+  // 각 항목을 한 줄씩 펼침
+  const orderRows = [['주문ID', '주문일', '상태', '주문자', '입고일', '입고자',
+                      '업체', '품명', '단위', '주문수량', '실제수량', '주문단가', '실제단가',
+                      '메모', '취소사유']];
+  orders.forEach(function(o) {
+    const items = Array.isArray(o.items) ? o.items : [];
+    if (items.length === 0) {
+      orderRows.push([o.id || '', o.date || '', o.status || '',
+                      o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+                      '', '', '', 0, 0, 0, 0, o.memo || '', o.cancelReason || '']);
+    } else {
+      items.forEach(function(it) {
+        orderRows.push([
+          o.id || '', o.date || '', o.status || '',
+          o.orderedBy || '', o.receivedDate || '', o.receivedBy || '',
+          it.vendor || '', it.name || '', it.unit || '',
+          it.qty || 0, it.actualQty || 0,
+          it.price || 0, it.actualPrice || 0,
+          o.memo || '', o.cancelReason || ''
+        ]);
+      });
+    }
+  });
+  writeRows(ss.insertSheet('주문'), orderRows);
 
   // 팀_담당자
   const teamRows = [['팀명', '담당자', '대표 여부']];
