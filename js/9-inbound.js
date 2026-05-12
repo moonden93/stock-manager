@@ -7,10 +7,12 @@
 
 let inboundSearchTerm = '';
 let inboundSelectedVendor = '';
+let inboundSelectedCategory = '';  // 분류 필터 (구강위생용품/치과재료)
 
 function getInboundFilteredItems() {
   const filtered = inventory.filter(i => {
     if (inboundSelectedVendor && i.vendor !== inboundSelectedVendor) return false;
+    if (inboundSelectedCategory && (i.category || '') !== inboundSelectedCategory) return false;
     if (inboundSearchTerm) {
       if (!matchesSearch(i.name, inboundSearchTerm) && !matchesSearch(i.vendor, inboundSearchTerm)) return false;
     }
@@ -57,6 +59,7 @@ function renderInboundItems() {
 
 function renderInbound() {
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
+  const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const filtered = getInboundFilteredItems();
 
   // ============================================
@@ -309,7 +312,20 @@ function renderInbound() {
     html += '<button onclick="inboundSelectedVendor = \'' + escapeJs(v) + '\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
       (inboundSelectedVendor === v ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(v) + '</button>';
   });
-  html += '</div></div><div id="inbound-items-list" class="divide-y divide-slate-100">';
+  html += '</div>';
+  // 분류 필터 (업체 아래) — 요청/재고 탭과 동일 패턴
+  if (categories.length > 0) {
+    html += '<p class="text-xs text-slate-500 mt-3 mb-2">분류:</p>' +
+      '<div class="flex flex-wrap gap-1">' +
+      '<button onclick="inboundSelectedCategory = \'\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
+      (!inboundSelectedCategory ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">전체</button>';
+    categories.forEach(c => {
+      html += '<button onclick="inboundSelectedCategory = \'' + escapeJs(c) + '\'; renderInbound();" class="px-3 py-1.5 text-sm rounded-full ' +
+        (inboundSelectedCategory === c ? 'bg-blue-600 text-white font-bold' : 'bg-slate-100 text-slate-700') + '">' + escapeHtml(c) + '</button>';
+    });
+    html += '</div>';
+  }
+  html += '</div><div id="inbound-items-list" class="divide-y divide-slate-100">';
 
   if (filtered.length === 0) {
     html += '<div class="py-12 text-center text-slate-400">검색 결과 없음</div>';
@@ -564,7 +580,9 @@ function openOrderItemDialog(itemId) {
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<h3 class="text-base font-bold text-slate-900">🛒 ' + (existing ? '장바구니 수정' : '장바구니 담기') + '</h3></div>' +
     '<div class="px-5 py-5">' +
-    '<p class="text-xs text-slate-500 mb-1">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
+    '<div class="mb-1 flex items-center gap-1">' + categoryBadgeHtml_(item.category) +
+    '<span class="text-sm font-bold text-slate-700">🏢 ' + escapeHtml(item.vendor) + '</span>' +
+    '</div>' +
     '<p class="text-base font-bold text-slate-900 mb-1">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-sm text-slate-500 mb-4">현재 재고: <strong>' + item.stock + '</strong> · 기준: ' + (item.minStock || 0) + '</p>' +
     // 수량
@@ -673,12 +691,36 @@ function confirmOrder() {
   const totalCost = orderCart.reduce((s, c) => s + (c.qty || 0) * (c.price || 0), 0);
   const totalQty = orderCart.reduce((s, c) => s + (c.qty || 0), 0);
 
+  // 업체별 그룹핑
+  const byVendor = {};
+  orderCart.forEach(c => {
+    const v = c.vendor || '(업체 없음)';
+    if (!byVendor[v]) byVendor[v] = [];
+    byVendor[v].push(c);
+  });
+  const vendorNames = Object.keys(byVendor).sort((a, b) => a.localeCompare(b, 'ko'));
+  let itemsHtml = '<div class="mb-4 bg-slate-50 rounded-xl p-3 max-h-48 overflow-y-auto">';
+  vendorNames.forEach(v => {
+    const vItems = byVendor[v];
+    const vCost = vItems.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+    itemsHtml += '<div class="mb-2 last:mb-0">' +
+      '<p class="text-xs font-bold text-slate-700 mb-1">🏢 ' + escapeHtml(v) +
+      ' <span class="font-normal text-slate-500">(' + vItems.length + '종 · ' + vCost.toLocaleString() + '원)</span></p>';
+    vItems.forEach(it => {
+      itemsHtml += '<p class="text-[11px] text-slate-600 pl-3">· ' + escapeHtml(it.name) +
+        ' <span class="text-slate-400">' + (it.qty || 0) + (it.unit || '') + ' × ' + (it.price || 0).toLocaleString() + '원</span></p>';
+    });
+    itemsHtml += '</div>';
+  });
+  itemsHtml += '</div>';
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
-    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onclick="event.stopPropagation()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<h3 class="text-base font-bold text-slate-900">📋 주문 등록 확인</h3></div>' +
-    '<div class="px-5 py-5">' +
+    '<div class="px-5 py-5 overflow-y-auto">' +
     '<p class="text-sm text-slate-700 mb-3">' + orderCart.length + '종 · ' + totalQty + '개 · <strong class="text-amber-700">' + totalCost.toLocaleString() + '원</strong></p>' +
+    itemsHtml +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 주문 일자</label>' +
     '<input type="date" id="order-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">메모 <span class="font-normal text-slate-400">(선택)</span></label>' +
