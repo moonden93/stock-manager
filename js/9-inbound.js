@@ -249,11 +249,58 @@ function renderInbound() {
     orderHistHtml += '<div class="py-8 text-center text-slate-400 text-sm">' +
       (orderTab === 'pending' ? '대기 중인 주문이 없습니다' : (orderTab === 'received' ? '입고 완료된 주문이 없습니다' : '취소된 주문이 없습니다')) + '</div>';
   } else {
-    orderHistHtml += '<div class="divide-y divide-slate-100">';
+    // 주차별 collapsible 그룹 (입고 내역과 동일 패턴)
+    // 탭별로 기준 날짜 선택: 대기=주문일, 완료=입고일, 취소=취소일 (없으면 주문일)
+    const dateOf = function(o) {
+      if (orderTab === 'received') return o.receivedDate || o.date;
+      if (orderTab === 'cancelled') return o.cancelledDate || o.date;
+      return o.date;
+    };
+    const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
+    window._orderExpandedWeeks = window._orderExpandedWeeks || {};
+
+    const weekGroups = {};
     visibleOrders.forEach(o => {
-      orderHistHtml += _renderOrderCard(o);
+      const d = dateOf(o);
+      const wk = (typeof getWeekKey === 'function') ? getWeekKey(d) : (d || '').slice(0, 7);
+      if (!weekGroups[wk]) weekGroups[wk] = [];
+      weekGroups[wk].push(o);
     });
-    orderHistHtml += '</div>';
+    // 주차 키 최신순 정렬
+    const orderedWeeks = Object.keys(weekGroups).sort((a, b) => b.localeCompare(a));
+
+    orderedWeeks.forEach((wk, wi) => {
+      const groupOrders = weekGroups[wk];
+      const wkLabel = (typeof formatWeekLabel === 'function') ? formatWeekLabel(wk) : wk;
+      // 주차별 합계: 종수/개수/금액
+      let weekItemCount = 0;
+      let weekQty = 0;
+      let weekCost = 0;
+      groupOrders.forEach(o => {
+        (o.items || []).forEach(it => {
+          weekItemCount++;
+          weekQty += (it.qty || 0);
+          weekCost += (it.qty || 0) * (it.price || 0);
+        });
+      });
+      const weekCostStr = weekCost > 0 ? ' · ' + weekCost.toLocaleString() + '원' : '';
+      const isAutoOpen = (wk === currentWeek) || (currentWeek === '' && wi === 0);
+      const wkExpKey = orderTab + ':' + wk;  // 탭별 독립 상태
+      const expanded = (window._orderExpandedWeeks[wkExpKey] === undefined) ? isAutoOpen : window._orderExpandedWeeks[wkExpKey];
+
+      orderHistHtml += '<div class="' + (wi > 0 ? 'border-t-2 border-slate-200' : '') + '">' +
+        '<button onclick="toggleOrderWeek(\'' + escapeJs(wkExpKey) + '\')" ' +
+        'class="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100 flex items-center gap-2 text-left">' +
+        '<span class="text-slate-500 text-xs">' + (expanded ? '▼' : '▶') + '</span>' +
+        '<span class="font-bold text-slate-800 text-sm">📅 ' + escapeHtml(wkLabel) + '</span>' +
+        '<span class="ml-auto text-xs text-slate-600">' + groupOrders.length + '건 · ' + weekQty + '개' + weekCostStr + '</span>' +
+        '</button>' +
+        '<div class="' + (expanded ? '' : 'hidden') + ' divide-y divide-slate-100">';
+      groupOrders.forEach(o => {
+        orderHistHtml += _renderOrderCard(o);
+      });
+      orderHistHtml += '</div></div>';
+    });
   }
   orderHistHtml += '</div>';
 
@@ -423,6 +470,21 @@ function clearInboundFilter() {
 // 입고 내역 전체 섹션 토글 (헤더 클릭 시 주차 list 펼침/접힘)
 function toggleInboundHistorySection() {
   window._inboundHistoryExpanded = !window._inboundHistoryExpanded;
+  renderInbound();
+}
+
+// 주문 내역 주차 토글 (탭별 독립 상태 — key='tab:weekKey')
+function toggleOrderWeek(wkExpKey) {
+  window._orderExpandedWeeks = window._orderExpandedWeeks || {};
+  const orderTab = window._orderStatusTab || 'pending';
+  // 첫 토글이면 기본값(현재주차=open, 나머지=closed) 반대로
+  if (window._orderExpandedWeeks[wkExpKey] === undefined) {
+    const currentWeek = (typeof getWeekKey === 'function') ? getWeekKey(new Date()) : '';
+    const wk = wkExpKey.split(':').slice(1).join(':'); // 'tab:weekKey'에서 weekKey 추출
+    window._orderExpandedWeeks[wkExpKey] = !(wk === currentWeek);
+  } else {
+    window._orderExpandedWeeks[wkExpKey] = !window._orderExpandedWeeks[wkExpKey];
+  }
   renderInbound();
 }
 
