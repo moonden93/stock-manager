@@ -522,6 +522,7 @@ function _renderOrderCard(o) {
     '<div class="flex items-center gap-2 mb-2">' +
     '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
     badgeHtml +
+    (o.orderedBy ? '<span class="text-xs text-slate-600">👤 ' + escapeHtml(o.orderedBy) + '</span>' : '') +
     '<span class="text-xs text-slate-500">' + items.length + '종 · ' + totalQty + '개</span>' +
     '<span class="ml-auto text-sm font-bold text-slate-800">' + totalCost.toLocaleString() + '원</span>' +
     '</div>';
@@ -718,24 +719,91 @@ function confirmOrder() {
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
     '<h3 class="text-base font-bold text-slate-900">📋 주문 등록 확인</h3></div>' +
-    '<div class="px-5 py-5 overflow-y-auto">' +
-    '<p class="text-sm text-slate-700 mb-3">' + orderCart.length + '종 · ' + totalQty + '개 · <strong class="text-amber-700">' + totalCost.toLocaleString() + '원</strong></p>' +
+    '<div class="px-5 py-5 overflow-y-auto flex-1 space-y-4">' +
+    '<p class="text-sm text-slate-700">' + orderCart.length + '종 · ' + totalQty + '개 · <strong class="text-amber-700">' + totalCost.toLocaleString() + '원</strong></p>' +
     itemsHtml +
+    // 주문 담당자
+    '<div>' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">주문 담당자 <span class="text-red-500">*</span></label>' +
+    '<div class="grid grid-cols-2 gap-2">' +
+    '<button id="orderer-btn-이충현" onclick="selectOrderer(\'이충현\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-amber-400 transition">이충현</button>' +
+    '<button id="orderer-btn-주경심" onclick="selectOrderer(\'주경심\')" class="py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-amber-400 transition">주경심</button>' +
+    '</div>' +
+    '<p class="text-xs text-slate-500 mt-3 mb-1">또는 다른 사람이 주문한 경우 직접 입력:</p>' +
+    '<input type="text" id="orderer-custom" oninput="onOrdererCustomInput(this.value)" placeholder="이름 입력" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
+    '</div>' +
+    // 주문 일자
+    '<div>' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 주문 일자</label>' +
-    '<input type="date" id="order-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
+    '<input type="date" id="order-date" value="' + todayStr + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
+    '</div>' +
+    // 메모
+    '<div>' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">메모 <span class="font-normal text-slate-400">(선택)</span></label>' +
     '<textarea id="order-overall-memo" rows="2" placeholder="예: 5월 정기 발주" class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 resize-none"></textarea>' +
     '</div>' +
+    '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
-    '<button onclick="submitOrder()" class="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold">✅ 주문 등록</button>' +
+    '<button id="order-confirm-btn" onclick="submitOrder()" disabled class="flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold">주문 담당자 선택 필요</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
-  setTimeout(() => { const el = document.getElementById('order-overall-memo'); if (el) el.focus(); }, 100);
+  window._pendingOrderer = null;
+}
+
+// 주문 담당자 버튼 핸들러
+function selectOrderer(name) {
+  window._pendingOrderer = name;
+  ['이충현', '주경심'].forEach(n => {
+    const b = document.getElementById('orderer-btn-' + n);
+    if (!b) return;
+    b.className = (n === name)
+      ? 'py-3 bg-amber-600 border-2 border-amber-600 rounded-xl font-bold text-white transition'
+      : 'py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-amber-400 transition';
+  });
+  const customInput = document.getElementById('orderer-custom');
+  if (customInput) customInput.value = '';
+  updateOrderConfirmBtn();
+}
+
+// 직접 입력 핸들러
+function onOrdererCustomInput(value) {
+  const trimmed = (value || '').trim();
+  if (trimmed) {
+    window._pendingOrderer = trimmed;
+    ['이충현', '주경심'].forEach(n => {
+      const b = document.getElementById('orderer-btn-' + n);
+      if (b) b.className = 'py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-700 hover:border-amber-400 transition';
+    });
+  } else {
+    window._pendingOrderer = null;
+  }
+  updateOrderConfirmBtn();
+}
+
+function updateOrderConfirmBtn() {
+  const btn = document.getElementById('order-confirm-btn');
+  if (!btn) return;
+  if (window._pendingOrderer) {
+    btn.disabled = false;
+    btn.className = 'flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold';
+    btn.textContent = '✅ 주문 등록';
+  } else {
+    btn.disabled = true;
+    btn.className = 'flex-1 py-3 bg-slate-200 text-slate-400 cursor-not-allowed rounded-lg font-bold';
+    btn.textContent = '주문 담당자 선택 필요';
+  }
 }
 
 function submitOrder() {
   if (orderCart.length === 0) { closeModal(); return; }
+
+  const orderedBy = window._pendingOrderer;
+  if (!orderedBy) {
+    showAlert('주문 담당자를 선택해주세요', '실제로 주문한 사람을 입력해야 처리됩니다.\n\n[이충현] 또는 [주경심] 버튼을 누르거나,\n다른 사람이면 아래 입력 칸에\n이름을 직접 입력하세요.');
+    return;
+  }
+
   const dateInput = document.getElementById('order-date');
   const memoInput = document.getElementById('order-overall-memo');
   const dateStr = dateInput && dateInput.value;
@@ -745,7 +813,6 @@ function submitOrder() {
   const memo = memoInput ? (memoInput.value || '').trim() : '';
 
   const orderId = 'O' + Date.now();
-  const orderedBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
 
   const newOrder = {
     id: orderId,
@@ -786,9 +853,10 @@ function submitOrder() {
   }
 
   orderCart.length = 0;
+  window._pendingOrderer = null;
   saveAll();
   closeModal();
-  showToast('주문 등록 완료! ' + newOrder.items.length + '종', 'success');
+  showToast('주문 등록 완료! ' + newOrder.items.length + '종 (' + orderedBy + ')', 'success');
   window._orderStatusTab = 'pending';
   renderInbound();
 }
