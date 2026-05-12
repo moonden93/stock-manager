@@ -497,8 +497,15 @@ function _applySyncData(data) {
   applyCloudData(data);
   saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
-  const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
-  if (typeof renderFn === 'function') renderFn();
+  // debounced 재렌더 — 단일 문서 + collection listener echo 합쳐서 한 번만 실행
+  // (saveAll 한 번이 단일 문서 + 여러 컬렉션을 동시에 건드려서 echo가 cascading하면
+  //  renderInbound가 3~4번 연속 호출되어 직후 클릭이 destroy된 DOM에 가서 누락)
+  if (typeof debouncedReRenderCurrentTab === 'function') {
+    debouncedReRenderCurrentTab();
+  } else {
+    const renderFn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
+    if (typeof renderFn === 'function') renderFn();
+  }
   // Phase 1 안전망: 클라우드 카운트 기준선 갱신
   // ⚠️ 컬렉션 listener가 활성인 필드는 단일 문서 카운트로 덮어쓰지 않음
   // (옛 단일 문서가 컬렉션보다 N건 많을 때 다음 save가 false alarm 나는 버그 방지)
