@@ -627,9 +627,11 @@ function _renderOrderCard(o) {
   if (status === 'pending') {
     html += '<button onclick="openReceiveOrderModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
       '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold">✏️ 수정</button>' +
+      '<button onclick="openEditOrderDatesModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="주문일자 수정">📅 일자</button>' +
       '<button onclick="cancelOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
-    html += '<button onclick="revertReceivedOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" title="입고 완료를 되돌립니다 (재고 차감, 기록 보존)">↩ 입고 되돌리기</button>';
+    html += '<button onclick="openEditOrderDatesModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="주문일자/입고일자 수정 (데이터 분석용)">📅 일자 수정</button>' +
+      '<button onclick="revertReceivedOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" title="입고 완료를 되돌립니다 (재고 차감, 기록 보존)">↩ 입고 되돌리기</button>';
   }
   html += '</div></div>';
 
@@ -1331,6 +1333,131 @@ function saveOrderEdit(orderId) {
   saveAll();
   closeModal();
   showToast('주문 수정 완료', 'success');
+  renderInbound();
+}
+
+// ============================================
+// 주문일자/입고일자 수정 (사후 보정 — 데이터 분석용)
+// ============================================
+// pending: 주문일자만 / received: 주문일자 + 입고일자
+// 입고일자 변경 시 연결된 history 'in' 레코드 date + weekKey도 같이 갱신
+//   → 주차별 입고 통계/보고서 일관성 유지
+function openEditOrderDatesModal(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) { showToast('주문을 찾을 수 없습니다', 'error'); return; }
+  if (o.status === 'cancelled') {
+    showToast('취소된 주문은 일자 수정 불가', 'info');
+    return;
+  }
+
+  const isoToInput = (iso) => iso ? new Date(iso).toISOString().slice(0, 10) : '';
+  const orderDateInput = isoToInput(o.date);
+  const recvDateInput = isoToInput(o.receivedDate);
+
+  const recvSection = (o.status === 'received')
+    ? '<div class="mb-4">' +
+      '<label class="text-sm font-bold text-slate-700 mb-2 block">📥 입고 일자</label>' +
+      '<input type="date" id="edit-recv-date" value="' + recvDateInput + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-purple-500" />' +
+      '<p class="text-[11px] text-slate-500 mt-1">⚠️ 변경 시 연결된 입고 history도 같이 갱신됩니다 (주차별 통계 일관성)</p>' +
+      '</div>'
+    : '';
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-purple-50 border-b border-purple-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📅 일자 수정</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">사후 보정용 — 변경 이력 보존</p></div>' +
+    '<div class="px-5 py-5 overflow-y-auto">' +
+    '<div class="mb-4">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📋 주문 일자</label>' +
+    '<input type="date" id="edit-order-date" value="' + orderDateInput + '" class="w-full px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-purple-500" />' +
+    '</div>' +
+    recvSection +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveOrderDates(\'' + escapeJs(orderId) + '\')" class="flex-1 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold">저장</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
+}
+
+function saveOrderDates(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status === 'cancelled') return;
+
+  const orderInput = document.getElementById('edit-order-date');
+  const recvInput = document.getElementById('edit-recv-date');
+  const newOrderStr = orderInput && orderInput.value;
+  const newRecvStr = recvInput && recvInput.value;
+
+  if (!newOrderStr) {
+    showAlert('주문 일자를 입력하세요', '주문 일자는 필수입니다.');
+    return;
+  }
+  const newOrderDate = new Date(newOrderStr + 'T00:00:00.000Z').toISOString();
+
+  const changes = [];
+  let orderChanged = false;
+  let recvChanged = false;
+
+  if (newOrderDate !== o.date) {
+    changes.push({ field: 'orderDate', from: o.date, to: newOrderDate });
+    o.date = newOrderDate;
+    orderChanged = true;
+  }
+
+  let newRecvDate = null;
+  if (o.status === 'received' && newRecvStr) {
+    newRecvDate = new Date(newRecvStr + 'T00:00:00.000Z').toISOString();
+    if (newRecvDate !== o.receivedDate) {
+      changes.push({ field: 'receivedDate', from: o.receivedDate, to: newRecvDate });
+      o.receivedDate = newRecvDate;
+      recvChanged = true;
+    }
+  }
+
+  if (changes.length === 0) {
+    closeModal();
+    return;
+  }
+
+  // 입고일자 변경 시 연결된 history 레코드 date/weekKey도 갱신
+  if (recvChanged) {
+    (o.items || []).forEach(it => {
+      if (!it.historyId) return;
+      const h = (history || []).find(x => x.id === it.historyId);
+      if (!h) return;
+      h.date = newRecvDate;
+      if (typeof getWeekKey === 'function') h.weekKey = getWeekKey(newRecvDate);
+      if (typeof upsertHistoryDoc === 'function') {
+        upsertHistoryDoc(h).catch(err => console.warn('date edit hist upsert 실패:', err));
+        if (window._historyHashes) window._historyHashes.set(h.id, JSON.stringify(h));
+      }
+    });
+  }
+
+  const at = new Date().toISOString();
+  const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+  o.editHistory = o.editHistory || [];
+  o.editHistory.push({ at: at, by: by, type: 'date_edit', changes: changes });
+
+  if (typeof upsertOrderDoc === 'function') {
+    upsertOrderDoc(o).catch(err => console.warn('order date edit upsert 실패:', err));
+  }
+  if (typeof logEvent === 'function') {
+    logEvent('order', 'edit_dates', {
+      summary: '일자 수정: ' + changes.map(c => c.field).join(', '),
+      orderId: orderId,
+      changes: changes,
+      editBy: by
+    });
+  }
+
+  saveAll();
+  closeModal();
+  showToast('일자 수정 완료', 'success');
   renderInbound();
 }
 
