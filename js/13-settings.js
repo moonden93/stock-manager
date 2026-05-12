@@ -507,13 +507,26 @@ function openEditItemDialog(itemId) {
 
   const hideBtnLabel = item.hidden ? '👁️ 다시 보이기 (재고 탭)' : '🙈 재고 탭에서 숨기기';
 
+  // 업체 dropdown — 오타로 중복 vendor 생기는 사고 방지
+  const vendors = [...new Set(inventory.map(i => i.vendor).filter(Boolean))].sort();
+  let vendorOptions = '';
+  vendors.forEach(v => {
+    const sel = (v === item.vendor) ? ' selected' : '';
+    vendorOptions += '<option value="' + escapeHtml(v) + '"' + sel + '>' + escapeHtml(v) + '</option>';
+  });
+  // 현재 vendor가 목록에 없으면 (예: 데이터 이상) 임시 옵션 추가해 보존
+  if (item.vendor && !vendors.includes(item.vendor)) {
+    vendorOptions = '<option value="' + escapeHtml(item.vendor) + '" selected>' + escapeHtml(item.vendor) + '</option>' + vendorOptions;
+  }
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
     '<h3 class="text-base font-bold text-slate-900">📦 품목 수정</h3></div>' +
     '<div class="px-5 py-5 space-y-3 overflow-y-auto">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">업체</label>' +
-    '<input type="text" id="edit-item-vendor" value="' + escapeHtml(item.vendor) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
+    '<select id="edit-item-vendor-select" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 mb-2">' + vendorOptions + '</select>' +
+    '<input type="text" id="edit-item-vendor-new" placeholder="또는 새 업체 직접 입력 (오타 방지: 우선 위에서 선택)" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
     '<input type="text" id="edit-item-name" value="' + escapeHtml(item.name) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
@@ -551,15 +564,20 @@ function openInventoryItemEdit(itemId) {
 function saveItem(itemId) {
   const item = inventory.find(i => i.id === itemId);
   if (!item) return;
-  const vendor = (document.getElementById('edit-item-vendor').value || '').trim();
+  // 업체: 새 업체 직접 입력이 있으면 우선, 없으면 dropdown 선택값
+  const newVendorEl = document.getElementById('edit-item-vendor-new');
+  const selectEl = document.getElementById('edit-item-vendor-select');
+  const newVendor = newVendorEl ? (newVendorEl.value || '').trim() : '';
+  const selectedVendor = selectEl ? (selectEl.value || '').trim() : '';
+  const vendor = newVendor || selectedVendor;
   const name = (document.getElementById('edit-item-name').value || '').trim();
   const unit = (document.getElementById('edit-item-unit').value || '').trim();
   const price = parseInt(document.getElementById('edit-item-price').value) || 0;
   const stock = parseInt(document.getElementById('edit-item-stock').value);
   const minStock = parseInt(document.getElementById('edit-item-min').value);
   if (!vendor) {
-    showAlert('업체명을 입력해주세요', '업체명은 필수 입력 항목입니다.');
-    setTimeout(() => { const el = document.getElementById('edit-item-vendor'); if (el) el.focus(); }, 50);
+    showAlert('업체명을 선택해주세요', '업체는 필수 항목입니다.\n\n위쪽 dropdown에서 선택하거나\n새 업체명을 직접 입력하세요.');
+    setTimeout(() => { const el = document.getElementById('edit-item-vendor-select'); if (el) el.focus(); }, 50);
     return;
   }
   if (!name) {
