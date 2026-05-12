@@ -385,16 +385,69 @@ function sortTabsNewestFirst_(ss) {
 // ============================================
 // Firestore REST + 타입 파서
 // ============================================
+// Phase 3 (2026-05-09 이후): 단일 문서엔 inventory/history 없음.
+// 컬렉션 inventory/ + history/ 를 따로 읽어와 합쳐서 반환.
 function fetchFirestore() {
-  const url = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT +
-              '/databases/(default)/documents/' + FIRESTORE_PATH;
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-  if (response.getResponseCode() !== 200) {
-    throw new Error('Firestore fetch 실패: HTTP ' + response.getResponseCode() +
-                    ' — ' + response.getContentText().substring(0, 300));
+  // 1) 단일 문서 (requests, teams, teamMembers, lastUpdated)
+  const singleUrl = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT +
+                    '/databases/(default)/documents/' + FIRESTORE_PATH;
+  const singleRes = UrlFetchApp.fetch(singleUrl, { muteHttpExceptions: true });
+  if (singleRes.getResponseCode() !== 200) {
+    throw new Error('Firestore 단일 문서 fetch 실패: HTTP ' + singleRes.getResponseCode() +
+                    ' — ' + singleRes.getContentText().substring(0, 300));
   }
-  const json = JSON.parse(response.getContentText());
-  return parseFirestoreDoc(json.fields || {});
+  const singleData = parseFirestoreDoc(JSON.parse(singleRes.getContentText()).fields || {});
+
+  // 2) inventory + history 컬렉션 fetch
+  const inventory = fetchCollection_('inventory');
+  const history = fetchCollection_('history');
+
+  Logger.log('  · 단일 문서 requests: ' + ((singleData.requests || []).length) + '건');
+  Logger.log('  · inventory 컬렉션: ' + inventory.length + '개');
+  Logger.log('  · history 컬렉션: ' + history.length + '건');
+
+  // 단일 문서 데이터에 컬렉션 덮어쓰기 (단일 문서에 옛 inventory/history 필드 있어도 무시)
+  singleData.inventory = inventory;
+  singleData.history = history;
+  return singleData;
+}
+
+// Firestore REST API로 컬렉션 모든 문서 읽기 (페이지네이션)
+function fetchCollection_(collectionName) {
+  const result = [];
+  let pageToken = '';
+  const baseUrl = 'https://firestore.googleapis.com/v1/projects/' + FIRESTORE_PROJECT +
+                  '/databases/(default)/documents/' + collectionName;
+  let pageNum = 0;
+
+  do {
+    const url = baseUrl + '?pageSize=300' + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : '');
+    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (response.getResponseCode() !== 200) {
+      throw new Error(collectionName + ' 컬렉션 fetch 실패 (page ' + pageNum + '): HTTP ' +
+                      response.getResponseCode() + ' — ' + response.getContentText().substring(0, 300));
+    }
+    const json = JSON.parse(response.getContentText());
+    if (Array.isArray(json.documents)) {
+      json.documents.forEach(function(doc) {
+        const item = parseFirestoreDoc(doc.fields || {});
+        // 메타 필드 (_syncedAt, _device 등) 제거
+        const clean = {};
+        for (const k in item) {
+          if (k.charAt(0) !== '_') clean[k] = item[k];
+        }
+        result.push(clean);
+      });
+    }
+    pageToken = json.nextPageToken || '';
+    pageNum++;
+    if (pageNum > 50) {
+      Logger.log('  ⚠️ ' + collectionName + ' 페이지 50 초과 — 비정상');
+      break;
+    }
+  } while (pageToken);
+
+  return result;
 }
 
 function parseFirestoreDoc(fields) {
