@@ -750,45 +750,95 @@ _마지막 갱신: 2026-05-09 (백업 시간 + 가격 버그 + 통계 항목별 
 
 ---
 
-## 17. 다음 세션 예정 작업: 입고 주문 기능 (2026-05-09 합의)
+## 17. 2026-05-12 작업: 입고 주문/입고완료 기능 추가
 
-### 17.1 설계 확정
-입고 탭에 "주문 → 입고 완료" 흐름 추가 (현 요청 → 반출 패턴과 동일):
-- **주문 등록**: 장바구니 방식, 항목당 수량+단가+메모
-- **입고 완료**: 실제 수량+단가+도착일자 입력해서 처리, history.in 생성 + inventory.stock 증가
-- **수정/취소/되돌리기**: 기존 요청 패턴 그대로
-- **부분 입고**: 10 주문 7 도착 → 분할 (반출 부분처리와 동일)
+기존 "요청 → 반출" 흐름과 동일한 패턴으로 입고 탭에 "주문 → 입고 완료" 추가.
 
-### 17.2 구현 계획
-- 새 파일: `js/20-orders-collection.js` (Phase 2 패턴 — per-doc collection + listener + immediate upsert)
-- 수정: `js/9-inbound.js` (UI 재구성), `js/5-storage.js` (orders 배열), `index.html` (스크립트 로드)
-- 적용 패턴: 즉시 upsert / 사유 입력 / 자연 정렬 / collapsible / audit log
+### 17.1 데이터 모델: `orders/{id}` (새 컬렉션, 기존 4개 안 건드림)
+```js
+{
+  id: 'O' + Date.now(),
+  date: ISO,
+  status: 'pending' | 'received' | 'cancelled',
+  orderedBy: deviceLabel,
+  memo: '',
+  items: [{
+    itemId, vendor, name, unit, qty, price, memo,
+    // received 시 추가:
+    actualQty, actualPrice, historyId, skipped
+  }],
+  receivedDate: ISO,
+  receivedBy: deviceLabel,
+  cancelReason, cancelledDate, cancelledBy,
+  editHistory: [{ at, by, changes: [...] }],
+  statusHistory: [{ revertedAt, revertedBy, prevReceivedDate, prevReceivedBy, reason }]
+}
+```
 
-### 17.3 🛡️ 데이터 안전 프로토콜 (사용자 강력 요구)
+### 17.2 새 파일 / 변경 파일
+- **NEW** [js/20-orders-collection.js](js/20-orders-collection.js) — Phase 2 패턴 그대로 (per-doc collection, listener as source of truth, hash diff은 안 씀 — orders는 모두 즉시 upsert)
+- [js/5-storage.js](js/5-storage.js) — `let orders = [], let orderCart = []` 추가 + localStorage (`mc_orders`) load/save
+- [index.html](index.html) — `<script src="js/20-orders-collection.js"></script>` 추가
+- [js/9-inbound.js](js/9-inbound.js) — 본격 재구성:
+  - `_inboundItemRowHtml` 버튼: 기존 "입고" → "+ 담기" (장바구니 추가), 이미 담긴 경우 "✓ 담김 (N)" 표시
+  - 새 섹션 순서: 📋 주문 내역 (대기/완료/취소 탭) → 🛒 장바구니 → 📋 입고 내역 → 품목 리스트
+  - `_renderOrderCard(o)` — 카드 1개 (상태별 색상 + 액션 버튼)
+  - `openOrderItemDialog(itemId)` / `saveOrderCartItem` / `removeOrderCartItem` / `removeOrderCartItemById` / `clearOrderCart` — 장바구니 관리
+  - `confirmOrder()` → `submitOrder()` — 주문 등록 (메모 + 일자 입력 모달)
+  - `openReceiveOrderModal(orderId)` → `confirmReceiveOrder()` — 입고 완료 (per-item 실제 수량/단가 + 일자, actualQty=0이면 skip)
+  - `cancelOrder(orderId)` — soft cancel (askConfirmWithReason)
+  - `editOrder(orderId)` → `saveOrderEdit()` — 수량 0이면 항목 제거, editHistory 보존
+  - `revertReceivedOrder(orderId)` — received → pending, 재고 차감, history.cancelled=true
 
-**시작 전 안전망**:
-1. `mcDownloadRecoveryNow()` 실행 → Excel 백업 받기
-2. BEFORE 스냅샷 기록 (inventory/history/requests 카운트)
-3. `mcCheckPhase3Status()` 정상 확인
+### 17.3 race-proof 패턴 (Phase 2와 동일)
+모든 쓰기 경로에서:
+1. 메모리 변경
+2. **즉시** `upsertOrderDoc(o)` (listener echo 차단)
+3. inventory 변경 시 atomic `adjustInventoryStock(itemId, ±delta)` 우선
+4. history record 만들 때 `upsertHistoryDoc` + hashCache.set (Phase 3 hook 중복 push 차단)
+5. `logEvent('order', action, payload)` audit
+6. `saveAll()` + `renderInbound()`
 
-**구현 중 격리**:
-- 새 `orders/` 컬렉션만 추가, 기존 4개 (inventory/history/requests/events) 안 건드림
-- 5-storage.js의 기존 변수/saveAll 로직 안 바꿈
-- 단일 문서 1MB 토글 상태 유지
+### 17.4 입고 완료 처리 동작
+- 입고 모달에서 항목별 실제 수량/단가 편집 가능 (기본값 = 주문 수량/단가)
+- 실제 수량 0 → 해당 항목 skip (재고/history 변동 X, items에 `skipped=true` 보존)
+- 실제 단가가 inventory.price와 다르면 inventory.price도 갱신 (정확한 단가 추적)
+- 각 입고 항목마다 history record 'in' 생성 (orderId 링크 포함)
+- 부분 입고는 지원되지만 "10 주문 → 7 입고 → 나머지 3은 자동 분할" 같은 자동화는 없음. 사용자가 수동으로 두 번째 주문 추가하거나 메모로 처리.
 
-**구현 후 검증**:
-- AFTER 스냅샷 == BEFORE 스냅샷 (카운트 1:1 일치)
-- 차이 발견 시 즉시 중단
+### 17.5 안전망 (사용자 요구 — "기존 데이터 사라지면 절대 안 됨")
+- 기존 4개 컬렉션 (inventory/history/requests/events) 코드 한 줄도 안 건드림
+- 단일 문서 1MB 토글 상태 유지 (orders는 처음부터 컬렉션, 단일 문서엔 안 씀)
+- `orderCart`는 localStorage만 (Firestore 안 씀, 디바이스별 임시 장바구니)
+- 사용자 시작 전 `mcDownloadRecoveryNow()` Excel 백업 받음 (BEFORE: inv=563, hist=1568, req=122/pending=6, teams=15, members=15)
+- AFTER 검증은 사용자 실사용 후 콘솔에서 직접 카운트 확인
 
-**사고 발생 시 복구**:
-- Excel 백업 (PC에 받아둔 것)
-- Firestore 컬렉션 (직접 안 건드린 4개 그대로)
-- 단일 문서 (requests/teams/teamMembers 여전히 보존)
-- Git revert
+### 17.6 audit 이벤트 타입
+- `order/create` — 주문 등록
+- `order/receive` — 입고 완료
+- `order/cancel` — 주문 취소
+- `order/edit` — 주문 수정
+- `order/revert` — 입고 완료 되돌리기
 
-### 17.4 다음 세션 시작 명령
-> "어제 디자인 합의한 입고 주문 기능 구현 시작해줘. CLAUDE.md 17번 섹션 참고. 먼저 데이터 안전 프로토콜 (Excel 백업 + BEFORE 스냅샷) 부터."
+### 17.7 콘솔 함수
+```js
+mcCheckOrdersCollection()    // 컬렉션 doc 수 vs 메모리 orders.length
+forceFetchOrdersCollection() // 강제 fetch (visibility/focus에도 자동 호출됨)
+```
+
+### 17.8 알려진 제약 / 미해결
+- **자동 발주 권고** 없음 — 재고 부족이면 사용자가 직접 ⓘ 보고 주문 등록
+- **공급사 정보** — 별도 vendor master 없음 (inventory.vendor 그대로 사용). 새 vendor는 inventory 추가 시 따라옴
+- **예상 도착일** — 별도 필드 X, 메모로만
+- **부분 입고 분할** — 자동화 안 함 (위 17.4)
+- **Excel 보고서** — 주문 정보는 backup/주차별보고에 안 들어감 (history.in으로 입고분만 잡힘). 향후 보고서 추가 필요 시 `orders` 별도 시트 추가 가능
+
+### 17.9 다음 세션 우선순위
+1. 1주 운영 + 사용자 피드백 후 UX 조정
+2. **Phase 4 Google 로그인** ⭐ (1일) — 50명 동시 운영 + audit log에 진짜 사용자명
+3. **Phase 3.1 atomic stock wiring** (반나절) — 입고/반출 stock 변경을 increment로 (현 코드는 `adjustInventoryStock` 있으면 사용)
+4. **덴트웹 통합** — 환자 데이터 받으면
 
 ---
 
-_마지막 갱신: 2026-05-09 (다음 세션 입고 주문 기능 합의 + 데이터 안전 프로토콜 17번 섹션 추가)_
+_마지막 갱신: 2026-05-12 (입고 주문/입고완료 기능 추가 — orders/{id} 컬렉션 + 즉시 upsert + 부분 입고)_

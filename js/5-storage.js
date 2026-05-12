@@ -13,10 +13,12 @@
 let inventory = [];      // 재고 품목 목록
 let history = [];        // 입출고 이력
 let requests = [];       // 반출 요청 (대기/완료/반려)
+let orders = [];         // 입고 주문 (대기/완료/취소) — 2026-05-12 추가
 let teams = [];          // 팀 목록
 let teamMembers = {};    // { '9층 공통': ['김간호사', '박치위생사'], ... }
 let currentTab = 'release';
 let cart = [];           // 반출 화면의 장바구니
+let orderCart = [];      // 입고 주문 장바구니
 
 // ============================================
 // 데이터 로드 (앱 시작 시 호출)
@@ -46,6 +48,10 @@ function loadData() {
     // 요청
     const r = localStorage.getItem('mc_requests');
     if (r) requests = JSON.parse(r);
+
+    // 입고 주문 (2026-05-12 추가)
+    const o = localStorage.getItem('mc_orders');
+    if (o) orders = JSON.parse(o);
 
     // ============================================
     // 팀 로드 + 마이그레이션
@@ -315,6 +321,7 @@ function saveToLocalStorage() {
     localStorage.setItem('mc_inventory', JSON.stringify(inventory));
     localStorage.setItem('mc_history', JSON.stringify(history));
     localStorage.setItem('mc_requests', JSON.stringify(requests));
+    localStorage.setItem('mc_orders', JSON.stringify(orders));
     localStorage.setItem('mc_teams', JSON.stringify(teams));
     localStorage.setItem('mc_team_members', JSON.stringify(teamMembers));
   } catch (e) {

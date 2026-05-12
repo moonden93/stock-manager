@@ -26,12 +26,18 @@ function getInboundFilteredItems() {
 }
 
 function _inboundItemRowHtml(item) {
+  // 이미 장바구니에 담긴 항목인지
+  const inCart = orderCart.find(c => c.itemId === item.id);
+  const cartQty = inCart ? inCart.qty : 0;
+  const btnLabel = inCart ? '✓ 담김 (' + cartQty + ')' : '+ 담기';
+  const btnCls = inCart ? 'bg-slate-400 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-700';
   return '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
-    '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong></p></div>' +
-    '<button onclick="openInboundDialog(\'' + item.id + '\')" class="px-4 h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-base font-bold">입고</button>' +
+    '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong>' +
+    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
+    '<button onclick="openOrderItemDialog(\'' + item.id + '\')" class="px-4 h-10 ' + btnCls + ' text-white rounded-lg text-base font-bold whitespace-nowrap">' + btnLabel + '</button>' +
     '</div></div>';
 }
 
@@ -208,12 +214,87 @@ function renderInbound() {
   inHistHtml += '</div>';
 
   // ============================================
-  // 전체 조립: 헤더 → 입고 내역 → 품목 리스트
+  // 주문 내역 HTML — 대기/완료/취소 탭
+  // ============================================
+  if (typeof window._orderStatusTab === 'undefined') window._orderStatusTab = 'pending';
+  const orderTab = window._orderStatusTab;
+  const pendingOrders = (orders || []).filter(o => (o.status || 'pending') === 'pending');
+  const receivedOrders = (orders || []).filter(o => o.status === 'received');
+  const cancelledOrders = (orders || []).filter(o => o.status === 'cancelled');
+
+  let visibleOrders = pendingOrders;
+  if (orderTab === 'received') visibleOrders = receivedOrders;
+  else if (orderTab === 'cancelled') visibleOrders = cancelledOrders;
+  // 최신순
+  visibleOrders = visibleOrders.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  let orderHistHtml = '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
+    '<div class="px-4 py-3 bg-slate-50 border-b border-slate-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📋 주문 내역</h3>' +
+    '</div>' +
+    // 상태 탭
+    '<div class="grid grid-cols-3 gap-1 p-2 bg-slate-50 border-b border-slate-200">' +
+    '<button onclick="window._orderStatusTab=\'pending\'; renderInbound();" class="py-2 rounded-lg text-xs font-bold ' +
+    (orderTab === 'pending' ? 'bg-amber-500 text-white' : 'bg-white text-slate-700') + '">⏳ 대기 ' + pendingOrders.length + '</button>' +
+    '<button onclick="window._orderStatusTab=\'received\'; renderInbound();" class="py-2 rounded-lg text-xs font-bold ' +
+    (orderTab === 'received' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-700') + '">✅ 완료 ' + receivedOrders.length + '</button>' +
+    '<button onclick="window._orderStatusTab=\'cancelled\'; renderInbound();" class="py-2 rounded-lg text-xs font-bold ' +
+    (orderTab === 'cancelled' ? 'bg-slate-500 text-white' : 'bg-white text-slate-700') + '">❌ 취소 ' + cancelledOrders.length + '</button>' +
+    '</div>';
+
+  if (visibleOrders.length === 0) {
+    orderHistHtml += '<div class="py-8 text-center text-slate-400 text-sm">' +
+      (orderTab === 'pending' ? '대기 중인 주문이 없습니다' : (orderTab === 'received' ? '입고 완료된 주문이 없습니다' : '취소된 주문이 없습니다')) + '</div>';
+  } else {
+    orderHistHtml += '<div class="divide-y divide-slate-100">';
+    visibleOrders.forEach(o => {
+      orderHistHtml += _renderOrderCard(o);
+    });
+    orderHistHtml += '</div>';
+  }
+  orderHistHtml += '</div>';
+
+  // ============================================
+  // 주문 장바구니 (orderCart) HTML
+  // ============================================
+  let cartHtml = '';
+  if (orderCart.length > 0) {
+    const cartTotal = orderCart.reduce((s, c) => s + (c.qty || 0) * (c.price || 0), 0);
+    cartHtml = '<div class="bg-amber-50 border-2 border-amber-300 rounded-2xl shadow-sm">' +
+      '<div class="px-4 py-3 border-b border-amber-200">' +
+      '<h3 class="text-base font-bold text-slate-900">🛒 주문 장바구니 (' + orderCart.length + '종)</h3>' +
+      '</div>' +
+      '<div class="divide-y divide-amber-200">';
+    orderCart.forEach((c, idx) => {
+      const lineCost = (c.qty || 0) * (c.price || 0);
+      cartHtml += '<div class="px-4 py-3 flex items-center gap-2">' +
+        '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs text-slate-500">' + escapeHtml(c.vendor || '') + '</p>' +
+        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(c.name || '') + '</p>' +
+        '<p class="text-[11px] text-slate-500 mt-0.5">' + c.qty + (c.unit || '') + ' × ' +
+        (c.price || 0).toLocaleString() + '원 = <strong class="text-amber-700">' + lineCost.toLocaleString() + '원</strong></p>' +
+        '</div>' +
+        '<button onclick="openOrderItemDialog(\'' + escapeJs(c.itemId) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold">✏️</button>' +
+        '<button onclick="removeOrderCartItem(' + idx + ')" class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold">🗑️</button>' +
+        '</div>';
+    });
+    cartHtml += '</div>' +
+      '<div class="px-4 py-3 bg-amber-100 border-t border-amber-200 flex items-center gap-2">' +
+      '<span class="text-sm text-slate-700">합계: <strong class="text-amber-700">' + cartTotal.toLocaleString() + '원</strong></span>' +
+      '<button onclick="confirmOrder()" class="ml-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-bold">✅ 주문 등록</button>' +
+      '<button onclick="clearOrderCart()" class="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-sm font-bold">비우기</button>' +
+      '</div></div>';
+  }
+
+  // ============================================
+  // 전체 조립
   // ============================================
   let html = '<div class="space-y-4">' +
     '<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">' +
-    '<h2 class="text-lg font-bold text-slate-900 mb-1">📥 입고 등록</h2>' +
-    '<p class="text-sm text-slate-600">새로 들어온 재료의 입고 수량을 등록합니다</p></div>' +
+    '<h2 class="text-lg font-bold text-slate-900 mb-1">📦 주문/입고 관리</h2>' +
+    '<p class="text-sm text-slate-600">품목을 장바구니에 담아 주문하고, 도착하면 입고 완료 처리합니다</p></div>' +
+    orderHistHtml +
+    cartHtml +
     inHistHtml +
     '<div class="bg-white rounded-2xl border-2 border-slate-200 shadow-sm overflow-clip">' +
     '<div class="sticky top-[232px] sm:top-[156px] z-30 bg-white px-3 pt-3 pb-3 shadow-sm">' +
@@ -394,6 +475,693 @@ function adjustQty(delta) {
   if (!input) return;
   input.value = Math.max(1, (parseInt(input.value) || 1) + delta);
   input.dispatchEvent(new Event('input'));
+}
+
+// ============================================
+// 주문 카드 렌더링 (대기/완료/취소 공통)
+// ============================================
+function _renderOrderCard(o) {
+  const status = o.status || 'pending';
+  const dt = new Date(o.date);
+  const dateStr = isNaN(dt.getTime()) ? '' : (dt.getMonth() + 1) + '/' + dt.getDate();
+  const items = o.items || [];
+  const totalCost = items.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+  const totalQty = items.reduce((s, it) => s + (it.qty || 0), 0);
+
+  let bgCls = 'bg-white hover:bg-slate-50';
+  let badgeHtml = '';
+  if (status === 'received') {
+    bgCls = 'bg-emerald-50/40';
+    const rdt = o.receivedDate ? new Date(o.receivedDate) : null;
+    const rstr = rdt && !isNaN(rdt.getTime()) ? ' · ' + (rdt.getMonth() + 1) + '/' + rdt.getDate() + ' 입고' : '';
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold">✅ 완료' + rstr + '</span>';
+  } else if (status === 'cancelled') {
+    bgCls = 'bg-slate-50 opacity-70';
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded font-bold">❌ 취소</span>';
+  } else {
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">⏳ 대기</span>';
+  }
+
+  let html = '<div class="px-4 py-3 ' + bgCls + '">' +
+    '<div class="flex items-center gap-2 mb-2">' +
+    '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
+    badgeHtml +
+    '<span class="text-xs text-slate-500">' + items.length + '종 · ' + totalQty + '개</span>' +
+    '<span class="ml-auto text-sm font-bold text-slate-800">' + totalCost.toLocaleString() + '원</span>' +
+    '</div>';
+
+  // 항목 리스트
+  html += '<div class="space-y-0.5 mb-2">';
+  items.forEach(it => {
+    const lineCost = (it.qty || 0) * (it.price || 0);
+    const strike = status === 'cancelled' ? 'line-through text-slate-400' : '';
+    html += '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
+      '<span class="text-slate-500 truncate flex-shrink min-w-0">' + escapeHtml(it.vendor || '') + ' · </span>' +
+      '<span class="text-slate-800 font-medium truncate flex-1 min-w-0">' + escapeHtml(it.name || '') + '</span>' +
+      '<span class="text-slate-600 whitespace-nowrap">' + (it.qty || 0) + (it.unit || '') + ' × ' +
+      (it.price || 0).toLocaleString() + '원 = <strong>' + lineCost.toLocaleString() + '원</strong></span>' +
+      '</div>';
+  });
+  html += '</div>';
+
+  // 메모
+  if (o.memo) {
+    html += '<p class="text-[11px] text-slate-500 mb-2">📝 ' + escapeHtml(o.memo) + '</p>';
+  }
+  // 취소 사유
+  if (status === 'cancelled' && o.cancelReason) {
+    html += '<p class="text-[11px] text-slate-500 mb-2">❌ ' + escapeHtml(o.cancelReason) + '</p>';
+  }
+
+  // 액션 버튼
+  html += '<div class="flex flex-wrap gap-1.5 pt-1">';
+  if (status === 'pending') {
+    html += '<button onclick="openReceiveOrderModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
+      '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold">✏️ 수정</button>' +
+      '<button onclick="cancelOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
+  } else if (status === 'received') {
+    html += '<button onclick="revertReceivedOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" title="입고 완료를 되돌립니다 (재고 차감, 기록 보존)">↩ 입고 되돌리기</button>';
+  }
+  html += '</div></div>';
+
+  return html;
+}
+
+// ============================================
+// 장바구니 추가/수정 모달 (수량 + 단가 + 메모)
+// ============================================
+function openOrderItemDialog(itemId) {
+  const item = inventory.find(i => i.id === itemId);
+  if (!item) { showToast('품목을 찾을 수 없습니다', 'error'); return; }
+
+  const existing = orderCart.find(c => c.itemId === itemId);
+  const defaultQty = existing ? existing.qty : 1;
+  const defaultPrice = existing ? existing.price : (item.price || 0);
+  const defaultMemo = existing ? (existing.memo || '') : '';
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
+    '<h3 class="text-base font-bold text-slate-900">🛒 ' + (existing ? '장바구니 수정' : '장바구니 담기') + '</h3></div>' +
+    '<div class="px-5 py-5">' +
+    '<p class="text-xs text-slate-500 mb-1">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
+    '<p class="text-base font-bold text-slate-900 mb-1">' + escapeHtml(item.name) + '</p>' +
+    '<p class="text-sm text-slate-500 mb-4">현재 재고: <strong>' + item.stock + '</strong> · 기준: ' + (item.minStock || 0) + '</p>' +
+    // 수량
+    '<label class="text-sm font-bold text-slate-700 mb-1 block">주문 수량</label>' +
+    '<div class="flex items-center gap-2 mb-3">' +
+    '<button onclick="(function(){var i=document.getElementById(\'order-qty\');i.value=Math.max(1,(parseInt(i.value)||1)-1);i.dispatchEvent(new Event(\'input\'));})()" class="w-12 h-12 bg-slate-200 hover:bg-slate-300 rounded-xl text-xl font-bold">−</button>' +
+    '<input type="number" id="order-qty" value="' + defaultQty + '" min="1" class="flex-1 h-12 text-center text-xl font-bold bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" onfocus="this.select()" />' +
+    '<button onclick="(function(){var i=document.getElementById(\'order-qty\');i.value=(parseInt(i.value)||1)+1;i.dispatchEvent(new Event(\'input\'));})()" class="w-12 h-12 bg-slate-200 hover:bg-slate-300 rounded-xl text-xl font-bold">+</button>' +
+    '</div>' +
+    // 단가
+    '<label class="text-sm font-bold text-slate-700 mb-1 block">개당 단가 (원)</label>' +
+    '<input type="number" id="order-price" value="' + defaultPrice + '" min="0" class="w-full mb-3 h-12 px-4 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" onfocus="this.select()" />' +
+    '<p class="text-xs text-slate-500 mb-4">합계: <span id="order-line-cost" class="font-bold text-amber-700">' + (defaultQty * defaultPrice).toLocaleString() + '원</span></p>' +
+    // 메모
+    '<label class="text-sm font-bold text-slate-700 mb-1 block">메모 <span class="font-normal text-slate-400">(선택)</span></label>' +
+    '<input type="text" id="order-memo" value="' + escapeHtml(defaultMemo) + '" placeholder="예: 빨리 도착 필요" class="w-full h-12 px-4 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    (existing
+      ? '<button onclick="removeOrderCartItemById(\'' + escapeJs(itemId) + '\')" class="px-4 py-3 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg font-bold">🗑️ 빼기</button>'
+      : '') +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveOrderCartItem(\'' + escapeJs(itemId) + '\')" class="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold">' + (existing ? '저장' : '담기') + '</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+
+  // 합계 실시간 업데이트
+  const updateLineCost = function() {
+    const q = parseInt(document.getElementById('order-qty').value) || 0;
+    const p = parseInt(document.getElementById('order-price').value) || 0;
+    document.getElementById('order-line-cost').textContent = (q * p).toLocaleString() + '원';
+  };
+  document.getElementById('order-qty').addEventListener('input', updateLineCost);
+  document.getElementById('order-price').addEventListener('input', updateLineCost);
+  setTimeout(() => { const el = document.getElementById('order-qty'); if (el) { el.focus(); el.select(); } }, 100);
+}
+
+function saveOrderCartItem(itemId) {
+  const item = inventory.find(i => i.id === itemId);
+  if (!item) return;
+  const qty = parseInt(document.getElementById('order-qty').value) || 0;
+  const price = parseInt(document.getElementById('order-price').value) || 0;
+  const memo = (document.getElementById('order-memo').value || '').trim();
+  if (qty < 1) {
+    showAlert('수량을 입력해주세요', '주문 수량은 1 이상이어야 합니다.');
+    return;
+  }
+  const existing = orderCart.find(c => c.itemId === itemId);
+  if (existing) {
+    existing.qty = qty;
+    existing.price = price;
+    existing.memo = memo;
+  } else {
+    orderCart.push({
+      itemId: item.id,
+      vendor: item.vendor,
+      name: item.name,
+      unit: item.unit || '',
+      qty: qty,
+      price: price,
+      memo: memo
+    });
+  }
+  saveAll();
+  closeModal();
+  renderInbound();
+}
+
+function removeOrderCartItem(idx) {
+  if (idx < 0 || idx >= orderCart.length) return;
+  orderCart.splice(idx, 1);
+  saveAll();
+  renderInbound();
+}
+
+function removeOrderCartItemById(itemId) {
+  const idx = orderCart.findIndex(c => c.itemId === itemId);
+  if (idx >= 0) {
+    orderCart.splice(idx, 1);
+    saveAll();
+    closeModal();
+    renderInbound();
+  }
+}
+
+function clearOrderCart() {
+  if (orderCart.length === 0) return;
+  askConfirm('장바구니 비우기', '담긴 ' + orderCart.length + '종을 모두 빼시겠습니까?', function() {
+    orderCart.length = 0;
+    saveAll();
+    renderInbound();
+  }, '예, 비웁니다', 'amber');
+}
+
+// ============================================
+// 주문 등록 (장바구니 → orders/{id})
+// ============================================
+function confirmOrder() {
+  if (orderCart.length === 0) return;
+
+  // 메모 입력 모달 + 주문 일자
+  const todayStr = (function() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+  const totalCost = orderCart.reduce((s, c) => s + (c.qty || 0) * (c.price || 0), 0);
+  const totalQty = orderCart.reduce((s, c) => s + (c.qty || 0), 0);
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-amber-50 border-b border-amber-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📋 주문 등록 확인</h3></div>' +
+    '<div class="px-5 py-5">' +
+    '<p class="text-sm text-slate-700 mb-3">' + orderCart.length + '종 · ' + totalQty + '개 · <strong class="text-amber-700">' + totalCost.toLocaleString() + '원</strong></p>' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 주문 일자</label>' +
+    '<input type="date" id="order-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-amber-500" />' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">메모 <span class="font-normal text-slate-400">(선택)</span></label>' +
+    '<textarea id="order-overall-memo" rows="2" placeholder="예: 5월 정기 발주" class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg focus:outline-none focus:border-amber-500 resize-none"></textarea>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="submitOrder()" class="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold">✅ 주문 등록</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  setTimeout(() => { const el = document.getElementById('order-overall-memo'); if (el) el.focus(); }, 100);
+}
+
+function submitOrder() {
+  if (orderCart.length === 0) { closeModal(); return; }
+  const dateInput = document.getElementById('order-date');
+  const memoInput = document.getElementById('order-overall-memo');
+  const dateStr = dateInput && dateInput.value;
+  const orderDate = dateStr
+    ? new Date(dateStr + 'T00:00:00.000Z').toISOString()
+    : new Date().toISOString();
+  const memo = memoInput ? (memoInput.value || '').trim() : '';
+
+  const orderId = 'O' + Date.now();
+  const orderedBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  const newOrder = {
+    id: orderId,
+    date: orderDate,
+    status: 'pending',
+    orderedBy: orderedBy,
+    memo: memo,
+    items: orderCart.map(c => ({
+      itemId: c.itemId,
+      vendor: c.vendor,
+      name: c.name,
+      unit: c.unit || '',
+      qty: c.qty,
+      price: c.price || 0,
+      memo: c.memo || ''
+    })),
+    editHistory: []
+  };
+
+  orders.push(newOrder);
+
+  // 즉시 컬렉션 push (debounce 우회)
+  if (typeof upsertOrderDoc === 'function') {
+    upsertOrderDoc(newOrder).catch(err => console.warn('order upsert 실패:', err));
+  }
+
+  // audit log
+  if (typeof logEvent === 'function') {
+    const totalCost = newOrder.items.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+    logEvent('order', 'create', {
+      summary: '주문 등록: ' + newOrder.items.length + '종 · ' + totalCost.toLocaleString() + '원',
+      orderId: orderId,
+      itemCount: newOrder.items.length,
+      totalCost: totalCost,
+      memo: memo,
+      orderedBy: orderedBy
+    });
+  }
+
+  orderCart.length = 0;
+  saveAll();
+  closeModal();
+  showToast('주문 등록 완료! ' + newOrder.items.length + '종', 'success');
+  window._orderStatusTab = 'pending';
+  renderInbound();
+}
+
+// ============================================
+// 입고 완료 모달 (per-item 실제 입고 수량/단가/일자)
+// ============================================
+function openReceiveOrderModal(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) { showToast('주문을 찾을 수 없습니다', 'error'); return; }
+  if (o.status !== 'pending') { showToast('대기 중인 주문만 입고 처리 가능', 'info'); return; }
+
+  const todayStr = (function() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+
+  let itemsHtml = '';
+  o.items.forEach((it, idx) => {
+    itemsHtml += '<div class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+      '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
+      '<p class="text-sm font-bold text-slate-900 mb-2">' + escapeHtml(it.name || '') + '</p>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">실제 입고 수량</label>' +
+      '<input type="number" id="recv-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '</div>' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">실제 단가 (원)</label>' +
+      '<input type="number" id="recv-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '</div>' +
+      '</div>' +
+      '<p class="text-[10px] text-slate-500 mt-1">주문: ' + (it.qty || 0) + (it.unit || '') + ' × ' + (it.price || 0).toLocaleString() + '원</p>' +
+      '</div>';
+  });
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
+    '<h3 class="text-base font-bold text-slate-900">✅ 입고 완료 처리</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">실제 수량/단가가 다르면 수정하세요. 0으로 두면 해당 항목 제외</p></div>' +
+    '<div class="px-5 py-4 overflow-y-auto">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
+    '<input type="date" id="recv-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
+    itemsHtml +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="confirmReceiveOrder(\'' + escapeJs(orderId) + '\')" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold">✅ 입고 완료</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+function confirmReceiveOrder(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status !== 'pending') return;
+
+  const dateInput = document.getElementById('recv-date');
+  const dateStr = dateInput && dateInput.value;
+  const receivedDate = dateStr
+    ? new Date(dateStr + 'T00:00:00.000Z').toISOString()
+    : new Date().toISOString();
+
+  const receivedBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  // 각 항목 처리
+  let receivedItemCount = 0;
+  let receivedTotalQty = 0;
+  let receivedTotalCost = 0;
+  const updatedItems = [];
+
+  o.items.forEach((it, idx) => {
+    const qtyEl = document.getElementById('recv-qty-' + idx);
+    const priceEl = document.getElementById('recv-price-' + idx);
+    const actualQty = parseInt(qtyEl && qtyEl.value) || 0;
+    const actualPrice = parseInt(priceEl && priceEl.value) || 0;
+
+    if (actualQty <= 0) {
+      // 입고 안 함 (skipped) — items에는 보존, 표시는 0
+      updatedItems.push(Object.assign({}, it, {
+        actualQty: 0,
+        actualPrice: actualPrice,
+        skipped: true
+      }));
+      return;
+    }
+
+    // 재고 증가 (atomic 우선)
+    const item = inventory.find(i => i.id === it.itemId);
+    if (item) {
+      if (typeof adjustInventoryStock === 'function') {
+        adjustInventoryStock(item.id, actualQty);
+      } else {
+        item.stock += actualQty;
+        if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
+      }
+      // 단가가 바뀌었으면 inventory 단가도 갱신 (정확한 단가 추적)
+      if (actualPrice > 0 && actualPrice !== item.price) {
+        item.price = actualPrice;
+        if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
+      }
+    }
+
+    // history 'in' record (orderId 링크)
+    const histId = 'H' + Date.now() + '_' + idx + '_' + it.itemId;
+    const histRec = {
+      id: histId,
+      type: 'in',
+      date: receivedDate,
+      itemId: it.itemId,
+      vendor: it.vendor,
+      name: it.name,
+      qty: actualQty,
+      unit: it.unit || '',
+      price: actualPrice,
+      weekKey: (typeof getWeekKey === 'function') ? getWeekKey(receivedDate) : '',
+      orderId: orderId
+    };
+    history.push(histRec);
+    if (typeof upsertHistoryDoc === 'function') {
+      upsertHistoryDoc(histRec).catch(err => console.warn('order receive hist upsert 실패:', err));
+      if (window._historyHashes) window._historyHashes.set(histRec.id, JSON.stringify(histRec));
+    }
+
+    updatedItems.push(Object.assign({}, it, {
+      actualQty: actualQty,
+      actualPrice: actualPrice,
+      historyId: histId
+    }));
+
+    receivedItemCount++;
+    receivedTotalQty += actualQty;
+    receivedTotalCost += actualQty * actualPrice;
+  });
+
+  // 주문 상태 갱신
+  o.status = 'received';
+  o.receivedDate = receivedDate;
+  o.receivedBy = receivedBy;
+  o.items = updatedItems;
+
+  // 즉시 upsert
+  if (typeof upsertOrderDoc === 'function') {
+    upsertOrderDoc(o).catch(err => console.warn('order receive upsert 실패:', err));
+  }
+
+  if (typeof logEvent === 'function') {
+    logEvent('order', 'receive', {
+      summary: '입고 완료: ' + receivedItemCount + '종 · ' + receivedTotalQty + '개 · ' + receivedTotalCost.toLocaleString() + '원',
+      orderId: orderId,
+      itemCount: receivedItemCount,
+      totalQty: receivedTotalQty,
+      totalCost: receivedTotalCost,
+      receivedBy: receivedBy
+    });
+  }
+
+  saveAll();
+  updateHeaderStats();
+  closeModal();
+  showToast('입고 완료! ' + receivedItemCount + '종 ' + receivedTotalQty + '개 (' + receivedTotalCost.toLocaleString() + '원)', 'success');
+  window._orderStatusTab = 'received';
+  renderInbound();
+}
+
+// ============================================
+// 주문 취소 (소프트 — status='cancelled', 데이터 보존)
+// ============================================
+function cancelOrder(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status !== 'pending') {
+    showToast('대기 중인 주문만 취소 가능', 'info');
+    return;
+  }
+  const totalQty = o.items.reduce((s, it) => s + (it.qty || 0), 0);
+  const totalCost = o.items.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+
+  askConfirmWithReason('주문 취소',
+    '주문 ' + o.items.length + '종 · ' + totalQty + '개 · ' + totalCost.toLocaleString() + '원을 취소합니다.\n\n' +
+    '· 데이터는 삭제되지 않고 [취소] 탭으로 이동\n' +
+    '· 재고/입고기록 변동 없음',
+    '예: 발주 보류, 거래처 변경, 수량 오류',
+    function(reason) {
+      const at = new Date().toISOString();
+      const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+      o.status = 'cancelled';
+      o.cancelledDate = at;
+      o.cancelledBy = by;
+      if (reason) o.cancelReason = reason;
+
+      if (typeof upsertOrderDoc === 'function') {
+        upsertOrderDoc(o).catch(err => console.warn('order cancel upsert 실패:', err));
+      }
+      if (typeof logEvent === 'function') {
+        logEvent('order', 'cancel', {
+          summary: '주문 취소: ' + o.items.length + '종 · ' + totalCost.toLocaleString() + '원' +
+                   (reason ? ' — ' + reason : ''),
+          orderId: orderId,
+          reason: reason || '',
+          cancelledBy: by
+        });
+      }
+
+      saveAll();
+      showToast('주문 취소 완료', 'success');
+      window._orderStatusTab = 'cancelled';
+      renderInbound();
+    }, '예, 취소합니다', 'red');
+}
+
+// ============================================
+// 주문 수정 (대기 중만, 항목 수량/단가 편집)
+// ============================================
+function editOrder(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status !== 'pending') {
+    showToast('대기 중인 주문만 수정 가능', 'info');
+    return;
+  }
+
+  let itemsHtml = '';
+  o.items.forEach((it, idx) => {
+    itemsHtml += '<div class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+      '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
+      '<p class="text-sm font-bold text-slate-900 mb-2">' + escapeHtml(it.name || '') + '</p>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">수량 <span class="text-slate-400 font-normal">(0=항목 제거)</span></label>' +
+      '<input type="number" id="edit-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500" onfocus="this.select()" />' +
+      '</div>' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">단가 (원)</label>' +
+      '<input type="number" id="edit-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500" onfocus="this.select()" />' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+  });
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">✏️ 주문 수정</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">수정 이력은 보존됩니다</p></div>' +
+    '<div class="px-5 py-4 overflow-y-auto">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">메모</label>' +
+    '<input type="text" id="edit-order-memo" value="' + escapeHtml(o.memo || '') + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" />' +
+    itemsHtml +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveOrderEdit(\'' + escapeJs(orderId) + '\')" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold">저장</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+}
+
+function saveOrderEdit(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status !== 'pending') return;
+
+  const memoEl = document.getElementById('edit-order-memo');
+  const newMemo = memoEl ? (memoEl.value || '').trim() : (o.memo || '');
+
+  const at = new Date().toISOString();
+  const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  const changes = [];
+  const newItems = [];
+  o.items.forEach((it, idx) => {
+    const qtyEl = document.getElementById('edit-qty-' + idx);
+    const priceEl = document.getElementById('edit-price-' + idx);
+    const newQty = parseInt(qtyEl && qtyEl.value);
+    const newPrice = parseInt(priceEl && priceEl.value);
+    const qtyV = isNaN(newQty) ? (it.qty || 0) : newQty;
+    const priceV = isNaN(newPrice) ? (it.price || 0) : newPrice;
+
+    if (qtyV === 0) {
+      changes.push({ itemName: it.name, action: 'removed', qtyFrom: it.qty });
+      return;
+    }
+    if (qtyV !== (it.qty || 0) || priceV !== (it.price || 0)) {
+      changes.push({
+        itemName: it.name,
+        qtyFrom: it.qty, qtyTo: qtyV,
+        priceFrom: it.price, priceTo: priceV
+      });
+    }
+    newItems.push(Object.assign({}, it, { qty: qtyV, price: priceV }));
+  });
+
+  if (newItems.length === 0) {
+    showAlert('주문에 항목이 없습니다', '항목을 1개 이상 남겨두세요.\n주문 자체를 취소하려면 ❌ 취소 버튼을 쓰세요.');
+    return;
+  }
+
+  const memoChanged = newMemo !== (o.memo || '');
+  if (changes.length === 0 && !memoChanged) {
+    closeModal();
+    return;
+  }
+
+  o.items = newItems;
+  if (memoChanged) {
+    changes.push({ memoFrom: o.memo || '', memoTo: newMemo });
+    o.memo = newMemo;
+  }
+  o.editHistory = o.editHistory || [];
+  o.editHistory.push({ at: at, by: by, changes: changes });
+
+  if (typeof upsertOrderDoc === 'function') {
+    upsertOrderDoc(o).catch(err => console.warn('order edit upsert 실패:', err));
+  }
+  if (typeof logEvent === 'function') {
+    logEvent('order', 'edit', {
+      summary: '주문 수정: ' + changes.length + '건 변경',
+      orderId: orderId,
+      changes: changes,
+      editBy: by
+    });
+  }
+
+  saveAll();
+  closeModal();
+  showToast('주문 수정 완료', 'success');
+  renderInbound();
+}
+
+// ============================================
+// 입고 완료 되돌리기 (received → pending, 재고 차감, history cancelled)
+// ============================================
+function revertReceivedOrder(orderId) {
+  const o = (orders || []).find(x => x.id === orderId);
+  if (!o) return;
+  if (o.status !== 'received') {
+    showToast('입고 완료된 주문만 되돌리기 가능', 'info');
+    return;
+  }
+  const totalActualQty = o.items.reduce((s, it) => s + (it.actualQty || 0), 0);
+
+  askConfirmWithReason('입고 완료 되돌리기',
+    '주문을 [대기] 상태로 되돌립니다.\n\n' +
+    '· 재고 ' + totalActualQty + '개 차감\n' +
+    '· 입고 history는 [되돌림]으로 표시 (삭제 X)\n' +
+    '· 통계/주간보고에서 자동 제외',
+    '예: 수량 잘못 입력, 반품',
+    function(reason) {
+      const at = new Date().toISOString();
+      const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+      // 1. 각 항목 재고 차감 + history cancelled
+      o.items.forEach(it => {
+        if (!it.actualQty || it.actualQty <= 0) return;
+        const item = inventory.find(i => i.id === it.itemId);
+        if (item) {
+          if (typeof adjustInventoryStock === 'function') {
+            adjustInventoryStock(item.id, -it.actualQty);
+          } else {
+            item.stock = Math.max(0, item.stock - it.actualQty);
+            if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
+          }
+        }
+        // history 매칭 (orderId + itemId, 또는 historyId)
+        const hist = (history || []).find(h =>
+          h.id === it.historyId ||
+          (h.orderId === orderId && h.itemId === it.itemId && !h.cancelled)
+        );
+        if (hist) {
+          hist.cancelled = true;
+          hist.cancelledDate = at;
+          hist.cancelledBy = by;
+          if (reason) hist.cancelReason = reason;
+          if (typeof upsertHistoryDoc === 'function') {
+            upsertHistoryDoc(hist).catch(err => console.warn('order revert hist upsert 실패:', err));
+            if (window._historyHashes) window._historyHashes.set(hist.id, JSON.stringify(hist));
+          }
+        }
+      });
+
+      // 2. 주문 status 복원
+      o.status = 'pending';
+      o.statusHistory = o.statusHistory || [];
+      o.statusHistory.push({
+        revertedAt: at,
+        revertedBy: by,
+        prevReceivedDate: o.receivedDate,
+        prevReceivedBy: o.receivedBy,
+        reason: reason || ''
+      });
+      // received 정보 클리어 (다시 입고 처리 가능하게)
+      delete o.receivedDate;
+      delete o.receivedBy;
+
+      if (typeof upsertOrderDoc === 'function') {
+        upsertOrderDoc(o).catch(err => console.warn('order revert upsert 실패:', err));
+      }
+      if (typeof logEvent === 'function') {
+        logEvent('order', 'revert', {
+          summary: '입고 완료 되돌림: ' + totalActualQty + '개 차감' +
+                   (reason ? ' — ' + reason : ''),
+          orderId: orderId,
+          totalQty: totalActualQty,
+          reason: reason || '',
+          revertedBy: by
+        });
+      }
+
+      saveAll();
+      updateHeaderStats();
+      showToast('입고 되돌림 — 재고 ' + totalActualQty + '개 차감', 'success');
+      window._orderStatusTab = 'pending';
+      renderInbound();
+    }, '예, 되돌리기', 'amber');
 }
 
 function confirmInbound(itemId) {
