@@ -165,6 +165,22 @@ function markModalOpened() {
   window._lastModalOpenTime = Date.now();
 }
 
+// listener-driven 재렌더 디바운스 (UI 지연/버튼 누락 방지)
+// 짧은 시간 안에 여러 collection listener가 echo로 발화해도 단일 renderInbound로 통합
+// — 한 번의 입고/주문 처리가 history/inventory/orders 3개 컬렉션을 한꺼번에 건드려서
+//    각자 listener echo가 돌아오면 renderXxx가 3번 연속 호출되어 그 사이 사용자 클릭이 누락됨
+function debouncedReRenderCurrentTab() {
+  if (window._reRenderDebounceTimer) clearTimeout(window._reRenderDebounceTimer);
+  window._reRenderDebounceTimer = setTimeout(() => {
+    window._reRenderDebounceTimer = null;
+    if (typeof currentTab !== 'undefined') {
+      const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
+      const renderFn = window[fnName];
+      if (typeof renderFn === 'function') renderFn();
+    }
+  }, 200);
+}
+
 
 // ============================================
 // 안내/경고 모달 (확인 버튼 1개)

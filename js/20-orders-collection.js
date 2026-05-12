@@ -84,14 +84,36 @@ function setupOrdersCollectionListener() {
   }
 }
 
+// orders 변경분 hash 캐시 — listener echo가 동일 데이터를 가져왔을 때 재렌더 스킵
+// (사용자가 방금 쓴 데이터가 listener로 돌아왔을 때 불필요한 renderInbound 막아서
+//  버튼 클릭 누락/UI 지연 방지)
+function _hashOrdersForSync(arr) {
+  return arr.slice()
+    .sort((a, b) => (a.id || '').localeCompare(b.id || ''))
+    .map(o => (o.id || '') + '|' + (o.status || '') + '|' + JSON.stringify(o.items || []) +
+              '|' + (o.receivedDate || '') + '|' + (o.cancelledDate || '') +
+              '|' + JSON.stringify(o.partialReceiveHistory || []) +
+              '|' + JSON.stringify(o.editHistory || []))
+    .join('||');
+}
+
 function _applyOrdersSync(newOrders) {
   if (typeof orders === 'undefined' || !Array.isArray(orders)) return;
   if (window._resetInProgress) return;
+
+  // 변경분 없으면 재렌더 스킵 (echo 가드)
+  const newHash = _hashOrdersForSync(newOrders);
+  if (newHash === window._lastOrdersSyncHash) return;
+  window._lastOrdersSyncHash = newHash;
+
   orders.length = 0;
   newOrders.forEach(o => orders.push(o));
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
-  if (typeof currentTab !== 'undefined') {
+  // debounced 재렌더 (다른 listener echo와 합쳐져 한 번만 실행 → UI 지연 방지)
+  if (typeof debouncedReRenderCurrentTab === 'function') {
+    debouncedReRenderCurrentTab();
+  } else if (typeof currentTab !== 'undefined') {
     const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
     const renderFn = window[fnName];
     if (typeof renderFn === 'function') renderFn();

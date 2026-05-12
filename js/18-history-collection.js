@@ -151,7 +151,10 @@ function _applyHistorySync(newHist) {
   if (window._lastCloudSnapshot) window._lastCloudSnapshot.historyCount = newHist.length;
   if (typeof saveToLocalStorage === 'function') saveToLocalStorage();
   if (typeof updateHeaderStats === 'function') updateHeaderStats();
-  if (typeof currentTab !== 'undefined') {
+  // debounced 재렌더 (echo 누적 시 UI 지연 방지)
+  if (typeof debouncedReRenderCurrentTab === 'function') {
+    debouncedReRenderCurrentTab();
+  } else if (typeof currentTab !== 'undefined') {
     const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
     const renderFn = window[fnName];
     if (typeof renderFn === 'function') renderFn();
