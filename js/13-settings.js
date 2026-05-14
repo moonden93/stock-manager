@@ -427,19 +427,34 @@ function removeMember(team, member) {
 // ============================================
 // 품목 추가
 // ============================================
-function openAddItemDialog() {
-  // 일반 호출 시엔 직접요청 link 플래그 클리어 (직전에 cancel된 custom 호출의 잔여 방지)
-  // openInventoryAddFromCustom은 이 함수 호출 *후* 플래그 다시 세팅함
-  window._addingFromCustomReqId = null;
+function openAddItemDialog(fromCustomReqId) {
+  // fromCustomReqId가 있으면 직접요청에서 진입한 것 (저장 시 자동 연결 + 기존 품목 연결 옵션 표시)
+  window._addingFromCustomReqId = fromCustomReqId || null;
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   let vendorOptions = '<option value="">-- 업체 선택 --</option>';
   vendors.forEach(v => { vendorOptions += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
-  
+
+  // 직접요청 진입인 경우 — 기존 품목에 연결할 수 있는 검색 섹션
+  const linkSectionHtml = fromCustomReqId ? (
+    '<div class="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 mb-3">' +
+    '<p class="text-sm font-bold text-amber-700 mb-1">⭐ 이미 비슷한 품목이 재고에 있나요?</p>' +
+    '<p class="text-[11px] text-slate-600 mb-2">검색해서 기존 품목에 연결하면 중복 추가 안 됨</p>' +
+    '<input type="text" id="link-search" oninput="filterLinkCandidates()" ' +
+    'placeholder="검색 (품명 또는 업체)" ' +
+    'class="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500" />' +
+    '<div id="link-candidates" class="mt-2 space-y-1 max-h-40 overflow-y-auto">' +
+    '<p class="text-[10px] text-slate-400">검색어 입력 →</p>' +
+    '</div>' +
+    '<p class="text-[10px] text-slate-500 mt-2 text-center">─── 또는 아래에서 새 품목으로 추가 ───</p>' +
+    '</div>'
+  ) : '';
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-teal-50 border-b border-teal-200">' +
     '<h3 class="text-base font-bold text-slate-900">+ 품목 추가</h3></div>' +
     '<div class="px-5 py-5 space-y-3 overflow-y-auto">' +
+    linkSectionHtml +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">업체</label>' +
     '<select id="new-item-vendor-select" onchange="document.getElementById(\'new-item-vendor\').value = this.value" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 mb-2">' + vendorOptions + '</select>' +
     '<input type="text" id="new-item-vendor" placeholder="또는 새 업체 직접 입력" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
@@ -561,6 +576,12 @@ function openEditItemDialog(itemId) {
     '<input type="text" id="edit-item-vendor-new" placeholder="또는 새 업체 직접 입력 (오타 방지: 우선 위에서 선택)" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
     '<input type="text" id="edit-item-name" value="' + escapeHtml(item.name) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">🏷️ 분류</label>' +
+    '<select id="edit-item-category" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500">' +
+    '<option value="치과재료"' + ((item.category || '치과재료') === '치과재료' ? ' selected' : '') + '>치과재료</option>' +
+    '<option value="구강위생용품"' + (item.category === '구강위생용품' ? ' selected' : '') + '>구강위생용품</option>' +
+    '<option value=""' + (!item.category ? ' selected' : '') + '>(분류 없음)</option>' +
+    '</select></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위</label>' +
     '<input type="text" id="edit-item-unit" value="' + escapeHtml(item.unit) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
@@ -1022,4 +1043,66 @@ function applyExcelChanges() {
   const msg = '적용 완료! 추가 ' + c.toAdd.length + ' / 수정 ' + c.toUpdate.length + ' / 삭제 ' + c.toDelete.length;
   showToast(msg, 'success');
   _applyItemChangeAndRender();
+}
+
+// ============================================
+// 직접요청 → 기존 재고 품목 연결 (orphan 직접요청 정리용)
+// ============================================
+function filterLinkCandidates() {
+  const inputEl = document.getElementById('link-search');
+  const div = document.getElementById('link-candidates');
+  if (!inputEl || !div) return;
+  const term = (inputEl.value || '').trim().toLowerCase();
+  if (!term) {
+    div.innerHTML = '<p class="text-[10px] text-slate-400">검색어 입력 →</p>';
+    return;
+  }
+  const matches = (typeof inventory !== 'undefined' ? inventory : []).filter(i => {
+    if (i.hidden) return false;
+    return (i.name || '').toLowerCase().includes(term) || (i.vendor || '').toLowerCase().includes(term);
+  }).slice(0, 10);
+  if (matches.length === 0) {
+    div.innerHTML = '<p class="text-[10px] text-slate-400">결과 없음 (아래에서 새 품목으로 추가)</p>';
+    return;
+  }
+  div.innerHTML = matches.map(it =>
+    '<button onclick="linkCustomToInventory(\'' + escapeJs(it.id) + '\')" class="w-full text-left text-xs bg-white border border-slate-300 rounded-lg p-2 hover:bg-amber-100 hover:border-amber-400">' +
+    '<span class="text-slate-500">' + escapeHtml(it.vendor || '') + '</span> · ' +
+    '<strong class="text-slate-800">' + escapeHtml(it.name || '') + '</strong>' +
+    '<span class="text-slate-400 text-[10px]"> · 재고 ' + (it.stock || 0) + '</span>' +
+    '</button>'
+  ).join('');
+}
+
+function linkCustomToInventory(inventoryItemId) {
+  const reqId = window._addingFromCustomReqId;
+  if (!reqId) { showToast('연결 대상 직접요청을 찾을 수 없습니다', 'error'); return; }
+  const item = (typeof inventory !== 'undefined' ? inventory : []).find(i => i.id === inventoryItemId);
+  if (!item) { showToast('재고 품목을 찾을 수 없습니다', 'error'); return; }
+  const r = (typeof requests !== 'undefined' ? requests : []).find(req => req.id === reqId);
+  if (!r) { showToast('직접요청을 찾을 수 없습니다', 'error'); return; }
+
+  r.itemId = item.id;
+  r.isCustom = false;
+  r.vendor = item.vendor;
+  r.name = item.name;
+  r.unit = item.unit;
+  if (typeof upsertRequestDoc === 'function') {
+    upsertRequestDoc(r).catch(err => console.warn('link existing upsert 실패:', err));
+  }
+  if (typeof logEvent === 'function') {
+    logEvent('request', 'link_to_inventory', {
+      summary: '직접요청 → 기존 재고 품목 연결: ' + item.name,
+      requestId: r.id,
+      linkedItemId: item.id,
+      vendor: item.vendor,
+      name: item.name
+    });
+  }
+  window._addingFromCustomReqId = null;
+
+  saveAll();
+  closeModal();
+  showToast('"' + item.name + '"에 연결됨');
+  if (typeof renderManage === 'function') renderManage();
 }

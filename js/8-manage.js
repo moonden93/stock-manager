@@ -1027,9 +1027,8 @@ function openInventoryAddFromCustom(reqItemId) {
     return;
   }
 
-  openAddItemDialog();
-  // openAddItemDialog는 시작 시 플래그를 null로 클리어함. 호출 후 다시 세팅.
-  window._addingFromCustomReqId = reqItemId;
+  // reqItemId 전달 — 모달이 "기존 품목 연결" 검색 섹션 표시 + 저장 시 자동 연결
+  openAddItemDialog(reqItemId);
   // 모달 열린 직후 입력값 프리필 (DOM 생성 후)
   setTimeout(() => {
     const vendorSelect = document.getElementById('new-item-vendor-select');
