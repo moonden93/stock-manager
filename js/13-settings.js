@@ -428,6 +428,9 @@ function removeMember(team, member) {
 // 품목 추가
 // ============================================
 function openAddItemDialog() {
+  // 일반 호출 시엔 직접요청 link 플래그 클리어 (직전에 cancel된 custom 호출의 잔여 방지)
+  // openInventoryAddFromCustom은 이 함수 호출 *후* 플래그 다시 세팅함
+  window._addingFromCustomReqId = null;
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   let vendorOptions = '<option value="">-- 업체 선택 --</option>';
   vendors.forEach(v => { vendorOptions += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
@@ -493,8 +496,37 @@ function addItem() {
     vendor, name, unit, price, stock, minStock, category: '치과재료'
   };
   inventory.push(newItem);
+
+  // 직접요청에서 시작한 경우 → 그 요청을 새 inventory 항목으로 자동 연결
+  // (isCustom=false, itemId=새 항목 id. 다음부터 일반 요청처럼 처리되어 '📦 품목 추가' 버튼 안 보임)
+  const customReqId = window._addingFromCustomReqId;
+  window._addingFromCustomReqId = null;
+  if (customReqId && typeof requests !== 'undefined' && Array.isArray(requests)) {
+    const r = requests.find(req => req.id === customReqId);
+    if (r && r.isCustom) {
+      r.itemId = newItem.id;
+      r.isCustom = false;
+      r.vendor = newItem.vendor;
+      r.name = newItem.name;
+      r.unit = newItem.unit;
+      // 즉시 컬렉션 push (race 차단)
+      if (typeof upsertRequestDoc === 'function') {
+        upsertRequestDoc(r).catch(err => console.warn('custom→inventory link upsert 실패:', err));
+      }
+      if (typeof logEvent === 'function') {
+        logEvent('request', 'link_to_inventory', {
+          summary: '직접요청 → 재고 품목 등록: ' + r.name + ' (요청 보존, 정식 품목으로 전환)',
+          requestId: r.id,
+          newItemId: newItem.id,
+          vendor: newItem.vendor,
+          name: newItem.name
+        });
+      }
+    }
+  }
+
   closeModal();
-  showToast('"' + name + '" 추가됨');
+  showToast('"' + name + '" 추가됨' + (customReqId ? ' · 직접요청 자동 연결' : ''));
   _applyItemChangeAndRender();
 }
 

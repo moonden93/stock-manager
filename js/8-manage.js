@@ -1027,6 +1027,8 @@ function openInventoryAddFromCustom(reqItemId) {
   }
 
   openAddItemDialog();
+  // openAddItemDialog는 시작 시 플래그를 null로 클리어함. 호출 후 다시 세팅.
+  window._addingFromCustomReqId = reqItemId;
   // 모달 열린 직후 입력값 프리필 (DOM 생성 후)
   setTimeout(() => {
     const vendorSelect = document.getElementById('new-item-vendor-select');
