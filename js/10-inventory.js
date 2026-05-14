@@ -57,10 +57,16 @@ function _inventoryItemRowHtml(item) {
   const hiddenClass = item.hidden ? ' opacity-60' : '';
   const hiddenBadge = item.hidden ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">숨김</span>' : '';
 
-  // 대기 주문 배지 (부족/품절일 때만 표시)
+  // 대기 주문 / 주문필요 배지 (부족·품절만)
   const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
-  const showOrderBadge = pendingQty > 0 && (status === 'out' || status === 'low');
-  const orderBadge = showOrderBadge ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+  const isShort = (status === 'out' || status === 'low');
+  const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
+  let orderBadge = '';
+  if (pendingQty > 0 && isShort) {
+    orderBadge = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
+  } else if (isShort && inPendingReq) {
+    orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
+  }
 
   return '<button onclick="openInventoryItemEdit(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:opacity-90 ' + bgClass + hiddenClass + '">' +
     '<div class="flex items-center gap-3">' +
@@ -78,6 +84,7 @@ function _inventoryItemRowHtml(item) {
 // 검색 결과 목록 + 카운트만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
 function renderInventoryItems() {
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   const filtered = getInventoryFilteredItems();
   const countEl = document.getElementById('inventory-items-count');
   if (countEl) countEl.innerHTML = '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정';
@@ -93,8 +100,9 @@ function renderInventoryItems() {
 }
 
 function renderInventory() {
-  // 대기 주문 맵 — 부족/품절 행에 🛒 배지 표시용
+  // 대기 주문 맵 + 대기 요청 Set — 부족/품절 행에 🛒/📝 배지 표시용
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   // KPI는 숨김 항목 제외 — 사용자가 행동해야 할 진짜 부족/품절만 카운트
   const visibleInv = inventory.filter(i => !i.hidden);
   const out = visibleInv.filter(i => i.stock === 0).length;

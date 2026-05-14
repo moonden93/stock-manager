@@ -71,10 +71,18 @@ function _releaseItemRowHtml(item) {
   const stockColor = item.stock === 0 ? 'text-red-600' : item.stock < item.minStock ? 'text-amber-600' : 'text-slate-700';
   const insufficient = cartQty > item.stock;
 
-  // 대기 주문 배지 (재고 부족이거나 품절인 경우만 표시 — 정상이면 굳이 알 필요 없음)
+  // 대기 주문 / 주문필요 배지
+  // - 🛒 주문중 N: 이미 발주됨 (부족·품절만)
+  // - 📝 주문필요: 요청은 들어왔는데 부족·품절이면서 주문도 안 들어감 (관리자 액션 신호)
   const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
-  const showOrderBadge = pendingQty > 0 && (item.stock === 0 || item.stock < item.minStock);
-  const orderBadge = showOrderBadge ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+  const isShort = item.stock === 0 || item.stock < item.minStock;
+  const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
+  let orderBadge = '';
+  if (pendingQty > 0 && isShort) {
+    orderBadge = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
+  } else if (isShort && inPendingReq) {
+    orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
+  }
 
   let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
     '<div class="flex items-center gap-3">' +
@@ -104,8 +112,9 @@ function _releaseItemRowHtml(item) {
 
 // 검색 결과 목록 + 카운트만 부분 갱신 (검색 input element를 destroy 안 함 → IME 안전)
 function renderReleaseItems() {
-  // 대기 주문 맵 갱신 (검색 시에도 최신 상태로)
+  // 대기 주문 맵 + 대기 요청 itemId Set 갱신
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   const filtered = getReleaseFilteredItems();
   const countEl = document.getElementById('release-items-count');
   if (countEl) countEl.textContent = filtered.length + '개';
@@ -121,8 +130,9 @@ function renderReleaseItems() {
 }
 
 function renderRelease() {
-  // 대기 주문 맵 계산 — _releaseItemRowHtml에서 사용
+  // 대기 주문 맵 + 대기 요청 itemId Set 계산 — _releaseItemRowHtml에서 사용
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];

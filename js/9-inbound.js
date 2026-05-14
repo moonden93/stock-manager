@@ -34,9 +34,18 @@ function _inboundItemRowHtml(item) {
   const btnLabel = inCart ? '✓ 담김 (' + cartQty + ')' : '+ 담기';
   const btnCls = inCart ? 'bg-slate-400 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-700';
 
-  // 대기 주문 배지 (입고 탭에선 항상 표시 — 중복 주문 방지)
+  // 대기 주문 / 주문필요 배지
+  // - 🛒 주문중 N: 항상 표시 (중복 주문 방지)
+  // - 📝 주문필요: 부족·품절 + 요청 들어옴 + 주문 안 됨 (관리자 우선 발주 신호)
   const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
-  const orderBadge = pendingQty > 0 ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+  const isShort = item.stock === 0 || item.stock < item.minStock;
+  const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
+  let orderBadge = '';
+  if (pendingQty > 0) {
+    orderBadge = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
+  } else if (isShort && inPendingReq) {
+    orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
+  }
 
   return '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
@@ -51,6 +60,7 @@ function _inboundItemRowHtml(item) {
 // 검색 결과 목록만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
 function renderInboundItems() {
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   const filtered = getInboundFilteredItems();
   const listEl = document.getElementById('inbound-items-list');
   if (!listEl) return;
@@ -64,8 +74,9 @@ function renderInboundItems() {
 }
 
 function renderInbound() {
-  // 대기 주문 맵 계산 — _inboundItemRowHtml에서 사용 (중복 주문 방지)
+  // 대기 주문 맵 + 대기 요청 Set — _inboundItemRowHtml에서 사용
   window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const filtered = getInboundFilteredItems();

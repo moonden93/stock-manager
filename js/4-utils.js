@@ -31,6 +31,18 @@ function getPendingOrderMap() {
   return map;
 }
 
+// 대기 요청에 들어 있는 itemId Set (📝 주문필요 배지 조건의 한 축)
+// 누군가 요청한 itemId만 추적 — 무차별 표시 방지
+function getPendingRequestItemIdSet() {
+  const set = new Set();
+  if (typeof requests === 'undefined' || !Array.isArray(requests)) return set;
+  requests.forEach(r => {
+    if ((r.status || 'completed') !== 'pending') return;
+    if (r.itemId) set.add(r.itemId);
+  });
+  return set;
+}
+
 // 분류 뱃지 (재고/요청/입고/반출관리 모든 탭에서 공용)
 // 치과재료(오렌지) / 구강위생용품(스카이) / 기타(회색). 빈 문자열이면 ''
 function categoryBadgeHtml_(category) {
