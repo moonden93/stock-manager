@@ -226,7 +226,8 @@ function renderInbound() {
           '</div>' +
           (isReverted
             ? ''
-            : '<button onclick="revertInboundEntry(\'' + escapeJs(e.id) + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 입고를 되돌립니다 (재고 차감, 기록 보존)">↩ 되돌리기</button>') +
+            : '<button onclick="openEditInboundEntry(\'' + escapeJs(e.id) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold" title="업체/품명/수량/단가/일자 수정">📝 수정</button>' +
+              '<button onclick="revertInboundEntry(\'' + escapeJs(e.id) + '\')" class="text-[11px] px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold" title="이 입고를 되돌립니다 (재고 차감, 기록 보존)">↩ 되돌리기</button>') +
           '</div></div></div>';
       });
 
@@ -509,6 +510,128 @@ function renderInbound() {
 // - inventory.stock에서 입고분 차감
 // - history entry는 삭제 X, cancelled=true 플래그만 (기록 보존)
 // - 통계/주간보고에서 자동 제외
+// 입고 내역 수정 (업체/품명/수량/단가/일자 모두 수정 가능)
+// 수량 변경 시 재고 차이만큼 자동 조정. history record 직접 수정.
+function openEditInboundEntry(historyId) {
+  const h = (history || []).find(x => x.id === historyId);
+  if (!h) { showToast('입고 내역을 찾을 수 없습니다', 'error'); return; }
+  if (h.cancelled) { showToast('되돌려진 입고는 수정 불가', 'info'); return; }
+  if (h.type !== 'in') return;
+
+  const dateStr = h.date ? new Date(h.date).toISOString().slice(0, 10) : '';
+  const vendors = [...new Set(inventory.map(i => i.vendor).filter(Boolean))].sort();
+  let vendorOptions = '';
+  vendors.forEach(v => {
+    const sel = (v === h.vendor) ? ' selected' : '';
+    vendorOptions += '<option value="' + escapeHtml(v) + '"' + sel + '>' + escapeHtml(v) + '</option>';
+  });
+  if (h.vendor && !vendors.includes(h.vendor)) {
+    vendorOptions = '<option value="' + escapeHtml(h.vendor) + '" selected>' + escapeHtml(h.vendor) + '</option>' + vendorOptions;
+  }
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📝 입고 내역 수정</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">수량 변경 시 재고가 자동 조정됩니다</p></div>' +
+    '<div class="px-5 py-5 space-y-3 overflow-y-auto">' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">업체</label>' +
+    '<select id="edit-hist-vendor-select" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl mb-2">' + vendorOptions + '</select>' +
+    '<input type="text" id="edit-hist-vendor-new" placeholder="또는 새 업체 직접 입력" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
+    '<input type="text" id="edit-hist-name" value="' + escapeHtml(h.name || '') + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl" /></div>' +
+    '<div class="grid grid-cols-2 gap-2">' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">수량</label>' +
+    '<input type="number" id="edit-hist-qty" value="' + (h.qty || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl" onfocus="this.select()" /></div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단가(원)</label>' +
+    '<input type="number" id="edit-hist-price" value="' + (h.price || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl" onfocus="this.select()" /></div>' +
+    '</div>' +
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">📅 일자</label>' +
+    '<input type="date" id="edit-hist-date" value="' + dateStr + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl" /></div>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveEditInboundEntry(\'' + escapeJs(historyId) + '\')" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold">저장</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
+}
+
+function saveEditInboundEntry(historyId) {
+  const h = (history || []).find(x => x.id === historyId);
+  if (!h || h.cancelled) return;
+
+  const newVendor = (document.getElementById('edit-hist-vendor-new').value || '').trim();
+  const selVendor = (document.getElementById('edit-hist-vendor-select').value || '').trim();
+  const vendor = newVendor || selVendor;
+  const name = (document.getElementById('edit-hist-name').value || '').trim();
+  const qty = parseInt(document.getElementById('edit-hist-qty').value) || 0;
+  const price = parseInt(document.getElementById('edit-hist-price').value) || 0;
+  const dateStr = document.getElementById('edit-hist-date').value;
+
+  if (!vendor) { showAlert('업체 입력 필요', '업체를 선택하거나 입력하세요.'); return; }
+  if (!name) { showAlert('품명 입력 필요', '품명을 입력하세요.'); return; }
+  if (qty < 1) { showAlert('수량 오류', '수량은 1 이상이어야 합니다.'); return; }
+
+  const newDate = dateStr ? new Date(dateStr + 'T00:00:00.000Z').toISOString() : h.date;
+  const qtyDelta = qty - (h.qty || 0);  // 수량 변경분
+
+  // 변경 이력 보존
+  const changes = [];
+  if (vendor !== h.vendor) changes.push({ field: 'vendor', from: h.vendor, to: vendor });
+  if (name !== h.name) changes.push({ field: 'name', from: h.name, to: name });
+  if (qty !== h.qty) changes.push({ field: 'qty', from: h.qty, to: qty });
+  if (price !== h.price) changes.push({ field: 'price', from: h.price, to: price });
+  if (newDate !== h.date) changes.push({ field: 'date', from: h.date, to: newDate });
+
+  if (changes.length === 0) { closeModal(); return; }
+
+  // history record 수정
+  h.vendor = vendor;
+  h.name = name;
+  h.qty = qty;
+  h.price = price;
+  h.date = newDate;
+  if (typeof getWeekKey === 'function') h.weekKey = getWeekKey(newDate);
+  h.editHistory = h.editHistory || [];
+  h.editHistory.push({
+    at: new Date().toISOString(),
+    by: (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자',
+    changes: changes
+  });
+
+  if (typeof upsertHistoryDoc === 'function') {
+    upsertHistoryDoc(h).catch(err => console.warn('hist edit upsert 실패:', err));
+    if (window._historyHashes) window._historyHashes.set(h.id, JSON.stringify(h));
+  }
+
+  // 수량 변경되었으면 재고 자동 조정 (음수 허용)
+  if (qtyDelta !== 0 && h.itemId) {
+    const item = inventory.find(i => i.id === h.itemId);
+    if (item) {
+      if (typeof adjustInventoryStock === 'function') {
+        adjustInventoryStock(item.id, qtyDelta);
+      } else {
+        item.stock = (item.stock || 0) + qtyDelta;
+        if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
+      }
+    }
+  }
+
+  if (typeof logEvent === 'function') {
+    logEvent('inbound', 'edit', {
+      summary: '입고 내역 수정: ' + h.name + ' (' + changes.length + '개 필드)',
+      historyId: h.id, changes: changes
+    });
+  }
+
+  saveAll();
+  updateHeaderStats();
+  closeModal();
+  showToast('입고 내역 수정 완료', 'success');
+  renderInbound();
+}
+
 function revertInboundEntry(historyId) {
   const h = (history || []).find(x => x.id === historyId);
   if (!h) { showToast('입고 내역을 찾을 수 없습니다', 'error'); return; }
@@ -519,22 +642,30 @@ function revertInboundEntry(historyId) {
   const itemName = h.name || (item ? item.name : '품목');
   const currentStock = item ? item.stock : '?';
 
+  // 음수 허용 — 입고 후 일부 출고되었어도 정확한 회계 (109 - 130 = -21)
+  // 음수면 사용자에게 경고 표시
+  const expectedStock = item ? (currentStock - h.qty) : '?';
+  const warnNeg = (item && expectedStock < 0)
+    ? '\n\n⚠️ 재고가 음수가 됩니다 (' + expectedStock + ') — 이미 일부 출고된 후 되돌림\n' +
+      '   회계 정확성을 위해 음수로 표시. 실제 재고와 다르면 재고 탭에서 수정하세요.'
+    : '';
   askConfirmWithReason('입고 되돌리기',
     itemName + ' +' + h.qty + ' 입고를 되돌립니다.\n\n' +
-    '· 재고 ' + currentStock + ' → ' + (item ? Math.max(0, currentStock - h.qty) : '?') + '\n' +
+    '· 재고 ' + currentStock + ' → ' + expectedStock + '\n' +
     '· 입고 기록은 삭제되지 않고 [❌ 되돌림] 표시로 보존\n' +
-    '· 통계/주간보고에서 자동 제외',
+    '· 통계/주간보고에서 자동 제외' + warnNeg,
     '예: 잘못 입고, 수량 오류, 반품',
     function(reason) {
       const at = new Date().toISOString();
       const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
 
       // 1. 재고 차감 (atomic 사용 가능하면 atomic, 없으면 직접 대입)
+      // 음수 허용 — 정확한 회계가 우선
       if (item) {
         if (typeof adjustInventoryStock === 'function') {
           adjustInventoryStock(item.id, -h.qty);
         } else {
-          item.stock = Math.max(0, item.stock - h.qty);
+          item.stock = item.stock - h.qty;  // 음수 허용
           if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(item).catch(() => {});
         }
       }
