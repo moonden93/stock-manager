@@ -434,6 +434,16 @@ function openAddItemDialog(fromCustomReqId) {
   let vendorOptions = '<option value="">-- 업체 선택 --</option>';
   vendors.forEach(v => { vendorOptions += '<option value="' + escapeHtml(v) + '">' + escapeHtml(v) + '</option>'; });
 
+  // 분류 — 기존 사용 중인 분류 dropdown + 새 분류 직접 입력
+  const cats = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
+  // 기본 옵션 (치과재료/구강위생용품)도 포함 — 빈 inventory 케이스 대응
+  ['치과재료', '구강위생용품'].forEach(d => { if (!cats.includes(d)) cats.push(d); });
+  let catOptions = '<option value="">(분류 없음)</option>';
+  cats.forEach(c => {
+    const sel = (c === '치과재료') ? ' selected' : '';
+    catOptions += '<option value="' + escapeHtml(c) + '"' + sel + '>' + escapeHtml(c) + '</option>';
+  });
+
   // 직접요청 진입인 경우 — 기존 품목에 연결할 수 있는 검색 섹션
   const linkSectionHtml = fromCustomReqId ? (
     '<div class="bg-amber-50 border-2 border-amber-200 rounded-xl p-3 mb-3">' +
@@ -460,13 +470,10 @@ function openAddItemDialog(fromCustomReqId) {
     '<input type="text" id="new-item-vendor" placeholder="또는 새 업체 직접 입력" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
     '<input type="text" id="new-item-name" placeholder="예: Denture bur #9369" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
-    // 분류 (치과재료 / 구강위생용품)
+    // 분류 (기존 dropdown + 새 분류 직접 입력)
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">🏷️ 분류</label>' +
-    '<select id="new-item-category" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500">' +
-    '<option value="치과재료" selected>치과재료</option>' +
-    '<option value="구강위생용품">구강위생용품</option>' +
-    '<option value="">(분류 없음)</option>' +
-    '</select></div>' +
+    '<select id="new-item-category-select" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 mb-2">' + catOptions + '</select>' +
+    '<input type="text" id="new-item-category-new" placeholder="또는 새 분류 직접 입력 (예: 진료보조용품)" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위</label>' +
     '<input type="text" id="new-item-unit" placeholder="ea, box, 갑" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
@@ -513,8 +520,12 @@ function addItem() {
     return;
   }
   
-  const categoryEl = document.getElementById('new-item-category');
-  const category = categoryEl ? categoryEl.value : '치과재료';
+  // 분류: 새 분류 직접 입력 우선, 없으면 dropdown 선택값
+  const newCatEl = document.getElementById('new-item-category-new');
+  const catSelEl = document.getElementById('new-item-category-select');
+  const newCat = newCatEl ? (newCatEl.value || '').trim() : '';
+  const selCat = catSelEl ? (catSelEl.value || '').trim() : '';
+  const category = newCat || selCat;
   const newItem = {
     id: 'M' + Date.now(),
     vendor, name, unit, price, stock, minStock, category
@@ -575,6 +586,16 @@ function openEditItemDialog(itemId) {
     vendorOptions = '<option value="' + escapeHtml(item.vendor) + '" selected>' + escapeHtml(item.vendor) + '</option>' + vendorOptions;
   }
 
+  // 분류 dropdown (기존 사용 분류 + 기본 2개 + 현재 항목 분류 보존)
+  const cats = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
+  ['치과재료', '구강위생용품'].forEach(d => { if (!cats.includes(d)) cats.push(d); });
+  if (item.category && !cats.includes(item.category)) cats.unshift(item.category);
+  let catOptions = '<option value=""' + (!item.category ? ' selected' : '') + '>(분류 없음)</option>';
+  cats.forEach(c => {
+    const sel = (c === item.category) ? ' selected' : '';
+    catOptions += '<option value="' + escapeHtml(c) + '"' + sel + '>' + escapeHtml(c) + '</option>';
+  });
+
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
@@ -586,11 +607,8 @@ function openEditItemDialog(itemId) {
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
     '<input type="text" id="edit-item-name" value="' + escapeHtml(item.name) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">🏷️ 분류</label>' +
-    '<select id="edit-item-category" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500">' +
-    '<option value="치과재료"' + ((item.category || '치과재료') === '치과재료' ? ' selected' : '') + '>치과재료</option>' +
-    '<option value="구강위생용품"' + (item.category === '구강위생용품' ? ' selected' : '') + '>구강위생용품</option>' +
-    '<option value=""' + (!item.category ? ' selected' : '') + '>(분류 없음)</option>' +
-    '</select></div>' +
+    '<select id="edit-item-category-select" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 mb-2">' + catOptions + '</select>' +
+    '<input type="text" id="edit-item-category-new" placeholder="또는 새 분류 직접 입력 (예: 진료보조용품)" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위</label>' +
     '<input type="text" id="edit-item-unit" value="' + escapeHtml(item.unit) + '" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
@@ -672,8 +690,12 @@ function saveItem(itemId) {
   }
   const memoEl = document.getElementById('edit-item-memo');
   const memo = memoEl ? (memoEl.value || '').trim() : (item.memo || '');
-  const categoryEl = document.getElementById('edit-item-category');
-  const category = categoryEl ? categoryEl.value : (item.category || '');
+  // 분류: 새 분류 직접 입력 우선, 없으면 dropdown 선택값
+  const newCatEl = document.getElementById('edit-item-category-new');
+  const catSelEl = document.getElementById('edit-item-category-select');
+  const newCat = newCatEl ? (newCatEl.value || '').trim() : '';
+  const selCat = catSelEl ? (catSelEl.value || '').trim() : '';
+  const category = newCat || selCat;
   item.vendor = vendor;
   item.name = name;
   item.unit = unit;
