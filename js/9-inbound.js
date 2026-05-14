@@ -236,6 +236,69 @@ function renderInbound() {
   inHistHtml += '</div>';
 
   // ============================================
+  // 📝 주문 필요 섹션 — 요청 들어왔는데 부족·품절 + 주문도 안 들어간 품목
+  // ============================================
+  const pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  // itemId별 총 요청 수량 집계 (pending 요청만, isCustom 제외)
+  const requestedByItem = {};
+  (requests || []).forEach(r => {
+    if ((r.status || 'completed') !== 'pending') return;
+    if (r.isCustom || !r.itemId) return;
+    if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set() };
+    requestedByItem[r.itemId].qty += (r.qty || 0);
+    requestedByItem[r.itemId].requesters.add(r.team || '');
+  });
+  // 주문 필요 항목 추출
+  const needsOrderList = [];
+  Object.keys(requestedByItem).forEach(itemId => {
+    if (pendingOrderMap[itemId] > 0) return;  // 이미 발주됨
+    const item = (inventory || []).find(i => i.id === itemId);
+    if (!item) return;
+    const reqQty = requestedByItem[itemId].qty;
+    const isShort = (item.stock === 0) || (item.stock < item.minStock) || (item.stock < reqQty);
+    if (!isShort) return;
+    needsOrderList.push({
+      item: item,
+      reqQty: reqQty,
+      teamCount: requestedByItem[itemId].requesters.size
+    });
+  });
+  // 정렬: 품절 > 부족 > 부족기준 미달 순, 그 다음 요청 수량 큰 순
+  needsOrderList.sort((a, b) => {
+    const aSev = a.item.stock === 0 ? 0 : (a.item.stock < a.item.minStock ? 1 : 2);
+    const bSev = b.item.stock === 0 ? 0 : (b.item.stock < b.item.minStock ? 1 : 2);
+    if (aSev !== bSev) return aSev - bSev;
+    return b.reqQty - a.reqQty;
+  });
+
+  let needsOrderHtml = '';
+  if (needsOrderList.length > 0) {
+    needsOrderHtml = '<div class="bg-orange-50 border-2 border-orange-300 rounded-2xl shadow-sm overflow-hidden">' +
+      '<div class="px-4 py-3 bg-orange-100 border-b border-orange-200">' +
+      '<h3 class="text-base font-bold text-orange-900">📝 주문 필요 (' + needsOrderList.length + '종)</h3>' +
+      '<p class="text-xs text-orange-700 mt-0.5">요청 들어왔는데 재고 부족 + 주문도 안 들어간 품목</p>' +
+      '</div>' +
+      '<div class="divide-y divide-orange-200">';
+    needsOrderList.forEach(n => {
+      const it = n.item;
+      const statusIcon = it.stock === 0 ? '🔴' : '🟡';
+      const statusText = it.stock === 0 ? '품절' : '부족';
+      needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
+        '<div class="flex-1 min-w-0">' +
+        '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
+        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(it.name) + '</p>' +
+        '<p class="text-xs text-slate-600 mt-0.5">' + statusIcon + ' ' + statusText +
+        ' · 재고 <strong>' + it.stock + '</strong>/' + (it.minStock || 0) +
+        ' · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
+        (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
+        '</p></div>' +
+        '<button onclick="openOrderItemDialog(\'' + escapeJs(it.id) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">+ 주문 담기</button>' +
+        '</div>';
+    });
+    needsOrderHtml += '</div></div>';
+  }
+
+  // ============================================
   // 주문 내역 HTML — 대기/완료/취소 탭
   // ============================================
   if (typeof window._orderStatusTab === 'undefined') window._orderStatusTab = 'pending';
@@ -362,6 +425,7 @@ function renderInbound() {
     '<div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">' +
     '<h2 class="text-lg font-bold text-slate-900 mb-1">📦 주문/입고 관리</h2>' +
     '<p class="text-sm text-slate-600">품목을 장바구니에 담아 주문하고, 도착하면 입고 완료 처리합니다</p></div>' +
+    needsOrderHtml +
     orderHistHtml +
     cartHtml +
     inHistHtml +
