@@ -237,19 +237,30 @@ function renderInbound() {
 
   // ============================================
   // 📝 주문 필요 섹션 — 요청 들어왔는데 부족·품절 + 주문도 안 들어간 품목
+  // (직접요청도 포함 — 재고 미등록은 항상 주문 필요)
   // ============================================
   const pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
-  // itemId별 총 요청 수량 집계 (pending 요청만, isCustom 제외)
+  // 일반 요청: itemId별 총 요청 수량 집계
   const requestedByItem = {};
+  // 직접요청: vendor+name 으로 그룹핑 (같은 항목 여러 팀 요청 합산)
+  const customByKey = {};
   (requests || []).forEach(r => {
     if ((r.status || 'completed') !== 'pending') return;
-    if (r.isCustom || !r.itemId) return;
-    if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set() };
-    requestedByItem[r.itemId].qty += (r.qty || 0);
-    requestedByItem[r.itemId].requesters.add(r.team || '');
+    if (r.isCustom) {
+      const key = (r.vendor || '') + '||' + (r.name || '');
+      if (!customByKey[key]) customByKey[key] = { vendor: r.vendor, name: r.name, qty: 0, requesters: new Set(), reqIds: [] };
+      customByKey[key].qty += (r.qty || 0);
+      customByKey[key].requesters.add(r.team || '');
+      customByKey[key].reqIds.push(r.id);
+    } else if (r.itemId) {
+      if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set() };
+      requestedByItem[r.itemId].qty += (r.qty || 0);
+      requestedByItem[r.itemId].requesters.add(r.team || '');
+    }
   });
   // 주문 필요 항목 추출
   const needsOrderList = [];
+  // 일반 inventory 항목
   Object.keys(requestedByItem).forEach(itemId => {
     if (pendingOrderMap[itemId] > 0) return;  // 이미 발주됨
     const item = (inventory || []).find(i => i.id === itemId);
@@ -258,15 +269,26 @@ function renderInbound() {
     const isShort = (item.stock === 0) || (item.stock < item.minStock) || (item.stock < reqQty);
     if (!isShort) return;
     needsOrderList.push({
-      item: item,
-      reqQty: reqQty,
+      kind: 'inv', item: item, reqQty: reqQty,
       teamCount: requestedByItem[itemId].requesters.size
     });
   });
-  // 정렬: 품절 > 부족 > 부족기준 미달 순, 그 다음 요청 수량 큰 순
+  // 직접요청 항목 (재고 미등록 — 무조건 주문 필요)
+  Object.values(customByKey).forEach(g => {
+    needsOrderList.push({
+      kind: 'custom', vendor: g.vendor, name: g.name, reqQty: g.qty,
+      teamCount: g.requesters.size, primaryReqId: g.reqIds[0]
+    });
+  });
+  // 정렬: custom(미등록) > 품절 > 부족 순, 같은 등급은 요청 수량 큰 순
   needsOrderList.sort((a, b) => {
-    const aSev = a.item.stock === 0 ? 0 : (a.item.stock < a.item.minStock ? 1 : 2);
-    const bSev = b.item.stock === 0 ? 0 : (b.item.stock < b.item.minStock ? 1 : 2);
+    const sev = (n) => {
+      if (n.kind === 'custom') return 0;  // 재고 미등록이 가장 시급
+      if (n.item.stock === 0) return 1;   // 품절
+      if (n.item.stock < n.item.minStock) return 2;  // 부족
+      return 3;
+    };
+    const aSev = sev(a), bSev = sev(b);
     if (aSev !== bSev) return aSev - bSev;
     return b.reqQty - a.reqQty;
   });
@@ -276,24 +298,38 @@ function renderInbound() {
     needsOrderHtml = '<div class="bg-orange-50 border-2 border-orange-300 rounded-2xl shadow-sm overflow-hidden">' +
       '<div class="px-4 py-3 bg-orange-100 border-b border-orange-200">' +
       '<h3 class="text-base font-bold text-orange-900">📝 주문 필요 (' + needsOrderList.length + '종)</h3>' +
-      '<p class="text-xs text-orange-700 mt-0.5">요청 들어왔는데 재고 부족 + 주문도 안 들어간 품목</p>' +
+      '<p class="text-xs text-orange-700 mt-0.5">요청 들어왔는데 재고 부족 + 주문도 안 들어간 품목 (직접요청 포함)</p>' +
       '</div>' +
       '<div class="divide-y divide-orange-200">';
     needsOrderList.forEach(n => {
-      const it = n.item;
-      const statusIcon = it.stock === 0 ? '🔴' : '🟡';
-      const statusText = it.stock === 0 ? '품절' : '부족';
-      needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
-        '<div class="flex-1 min-w-0">' +
-        '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
-        '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(it.name) + '</p>' +
-        '<p class="text-xs text-slate-600 mt-0.5">' + statusIcon + ' ' + statusText +
-        ' · 재고 <strong>' + it.stock + '</strong>/' + (it.minStock || 0) +
-        ' · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
-        (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
-        '</p></div>' +
-        '<button onclick="openOrderItemDialog(\'' + escapeJs(it.id) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">+ 주문 담기</button>' +
-        '</div>';
+      if (n.kind === 'custom') {
+        // 직접요청 — 재고 미등록 → 📦 품목 추가 흐름
+        needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
+          '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs text-slate-500"><span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1">🆕 직접 요청</span>' +
+          escapeHtml(n.vendor || '업체 미지정') + '</p>' +
+          '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(n.name) + '</p>' +
+          '<p class="text-xs text-slate-600 mt-0.5">📦 재고 미등록 · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
+          (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
+          '</p></div>' +
+          '<button onclick="openInventoryAddFromCustom(\'' + escapeJs(n.primaryReqId) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">📦 품목 추가</button>' +
+          '</div>';
+      } else {
+        const it = n.item;
+        const statusIcon = it.stock === 0 ? '🔴' : '🟡';
+        const statusText = it.stock === 0 ? '품절' : '부족';
+        needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
+          '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
+          '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(it.name) + '</p>' +
+          '<p class="text-xs text-slate-600 mt-0.5">' + statusIcon + ' ' + statusText +
+          ' · 재고 <strong>' + it.stock + '</strong>/' + (it.minStock || 0) +
+          ' · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
+          (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
+          '</p></div>' +
+          '<button onclick="openOrderItemDialog(\'' + escapeJs(it.id) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">+ 주문 담기</button>' +
+          '</div>';
+      }
     });
     needsOrderHtml += '</div></div>';
   }
