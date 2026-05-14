@@ -348,15 +348,19 @@ function renderManage() {
             }
           }
 
-          // 🛒 주문중 / 📝 주문필요 배지 (직접 요청 아닐 때만 — itemId가 inventory와 매칭됨)
+          // 🛒 주문중 / 📝 주문필요 배지 (직접 요청 아닐 때만)
+          // 조건: 다음 셋 중 하나라도 해당하면 "주문 신경 써야 함"
+          //   1) 품절 (stock = 0)
+          //   2) 재고 부족 (stock < minStock)
+          //   3) 요청을 다 못 채움 (stock < 요청 수량)
           let orderBadgeHtml = '';
           if (!it.isCustom && item) {
             const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
-            const isShortInv = item.stock === 0 || item.stock < item.minStock;
-            const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
-            if (pendingQty > 0 && isShortInv) {
+            const needsAttention = (item.stock === 0) || (item.stock < item.minStock) || (item.stock < (it.qty || 0));
+            if (pendingQty > 0 && needsAttention) {
               orderBadgeHtml = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
-            } else if (isShortInv && inPendingReq) {
+            } else if (needsAttention) {
+              // 반출관리 탭 = 이 항목 자체가 pending request라 inPendingReq 검사 불필요
               orderBadgeHtml = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
             }
           }
@@ -372,7 +376,8 @@ function renderManage() {
             escapeHtml(it.name) + '</p>' +
             '<p class="text-xs text-slate-500">요청 ' + it.qty + editHistHtml +
             (it.isCustom
-              ? ' · <button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700">상세보기</button>'
+              ? ' · <button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700">상세보기</button>' +
+                ' · <button onclick="openInventoryAddFromCustom(\'' + escapeJs(it.id) + '\')" class="text-orange-600 underline hover:text-orange-700 font-bold" title="이 항목을 재고 품목 목록에 등록 — 다음 요청부터 검색 가능">📦 품목 추가</button>'
               : ' · 재고 ' + stock + (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '') + orderBadgeHtml) +
             '</p>' +
             '</div>';
@@ -1003,4 +1008,46 @@ function previewCustomImage(reqItemId, imageIdx) {
     '<button onclick="closeModal()" class="fixed top-4 right-4 w-10 h-10 bg-white/20 hover:bg-white/30 text-white rounded-full text-xl flex items-center justify-center">✕</button>' +
     '</div>';
   document.getElementById('modal-container').innerHTML = html;
+}
+
+// ============================================
+// 직접 요청 → 재고 품목 목록에 추가 (2026-05-12 추가)
+// ============================================
+// 자주 쓰는 custom 품목을 카탈로그에 등록해서 다음 요청부터 검색 가능하게.
+// 동작: 기존 품목 추가 모달 열고 vendor/품명/단위 미리 채움.
+//   사용자가 자유롭게 편집 후 저장 → inventory 등록 (stock=0이 기본).
+//   기존 직접요청 record는 그대로 (역사 보존 — 새 inventory로 자동 연결 안 함).
+function openInventoryAddFromCustom(reqItemId) {
+  const r = (requests || []).find(req => req.id === reqItemId);
+  if (!r) { showToast('요청 항목을 찾을 수 없습니다', 'error'); return; }
+  if (!r.isCustom) { showToast('직접 요청 항목만 추가 가능합니다', 'info'); return; }
+  if (typeof openAddItemDialog !== 'function') {
+    showAlert('품목 추가 기능을 사용할 수 없습니다', '설정 모듈이 로드되지 않았습니다.');
+    return;
+  }
+
+  openAddItemDialog();
+  // 모달 열린 직후 입력값 프리필 (DOM 생성 후)
+  setTimeout(() => {
+    const vendorSelect = document.getElementById('new-item-vendor-select');
+    const vendorInput = document.getElementById('new-item-vendor');
+    const nameInput = document.getElementById('new-item-name');
+    const unitInput = document.getElementById('new-item-unit');
+
+    if (r.vendor && vendorSelect && vendorInput) {
+      // 기존 vendor면 dropdown 선택, 새 vendor면 input에 입력
+      const existing = Array.from(vendorSelect.options).find(o => o.value === r.vendor);
+      if (existing) {
+        vendorSelect.value = r.vendor;
+        vendorInput.value = '';
+      } else {
+        vendorInput.value = r.vendor;
+      }
+    }
+    if (r.name && nameInput) nameInput.value = r.name;
+    if (r.unit && unitInput) unitInput.value = r.unit;
+
+    // 품명에 포커스 (보통 가장 먼저 확인해야 할 부분)
+    if (nameInput) { nameInput.focus(); nameInput.select(); }
+  }, 80);
 }
