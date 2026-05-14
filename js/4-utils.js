@@ -16,6 +16,15 @@ function escapeJs(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
 }
 
+// 텍스트의 URL을 클릭 가능한 링크로 변환 (XSS-safe — escapeHtml 먼저)
+// 줄바꿈은 <br>로 변환. 빈/null이면 빈 문자열.
+function linkifyText(text) {
+  if (!text) return '';
+  return escapeHtml(text)
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" class="text-blue-600 underline hover:text-blue-800">$1</a>')
+    .replace(/\n/g, '<br>');
+}
+
 // 대기 주문 itemId → 총 주문 수량 맵 (요청/재고/입고 행에 🛒 주문중 N 배지 표시용)
 // 2026-05-12 추가 — "재고 부족인데 이미 주문됨" vs "주문 안 됨" 한눈에 구분
 function getPendingOrderMap() {

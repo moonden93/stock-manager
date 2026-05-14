@@ -574,6 +574,14 @@ function openEditItemDialog(itemId) {
     '<input type="number" id="edit-item-min" value="' + (item.minStock || 0) + '" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" /></div>' +
     '</div>' +
     '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
+    // 메모 (주문 링크, 거래처 연락처, 특이사항 등)
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">📝 메모 <span class="font-normal text-slate-400">(주문 링크, 거래처 연락처 등)</span></label>' +
+    (item.memo
+      ? '<div class="text-xs text-slate-700 bg-blue-50 border border-blue-200 rounded-lg p-2 mb-2 break-all">' + linkifyText(item.memo) + '</div>'
+      : '') +
+    '<textarea id="edit-item-memo" rows="3" placeholder="예: 쿠팡 https://...\n새한치재 02-xxxx-xxxx" class="w-full px-3 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500 resize-y">' + escapeHtml(item.memo || '') + '</textarea>' +
+    (item.memo ? '<p class="text-[10px] text-slate-400 mt-1">↑ 파란색 박스에서 링크 클릭 가능. 수정은 아래 textarea에서.</p>' : '') +
+    '</div>' +
     // 보조 액션: 숨김 토글 + 삭제 (재고 수정 모달에서 이전됨)
     '<div class="pt-3 mt-2 border-t border-slate-100 space-y-2">' +
     '<button onclick="toggleItemHidden(\'' + item.id + '\')" class="w-full py-2.5 text-sm font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">' +
@@ -632,12 +640,15 @@ function saveItem(itemId) {
     setTimeout(() => { const el = document.getElementById('edit-item-min'); if (el) { el.focus(); el.select(); } }, 50);
     return;
   }
+  const memoEl = document.getElementById('edit-item-memo');
+  const memo = memoEl ? (memoEl.value || '').trim() : (item.memo || '');
   item.vendor = vendor;
   item.name = name;
   item.unit = unit;
   item.price = price;
   item.stock = stock;
   item.minStock = minStock;
+  item.memo = memo;
   closeModal();
   showToast('수정 완료');
   _applyItemChangeAndRender();
