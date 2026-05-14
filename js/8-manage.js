@@ -1049,9 +1049,9 @@ function _renderProcessCustomModal(reqItemId, searchTerm) {
       (q ? '검색 결과 없음 — 아래에서 새 품목 추가' : '검색어 입력') + '</div>';
   } else {
     matched.forEach(it => {
-      // <p>는 phrasing content 아니라 <button> 안에서 브라우저가 button을 미리 닫는 파싱 버그 → <span>+block 사용
-      listHtml += '<button type="button" onclick="linkCustomReqToInventoryItem(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
-        'class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition cursor-pointer">' +
+      // data-attr + addEventListener 사용 — 인라인 onclick의 함수 이름 충돌/캐시 문제 회피
+      listHtml += '<button type="button" data-picker-inv-id="' + escapeHtml(it.id) + '" ' +
+        'class="picker-link-btn w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition cursor-pointer">' +
         '<span class="block text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</span>' +
         '<span class="block text-sm font-medium text-slate-900">' + escapeHtml(it.name) +
         ' <span class="text-xs text-slate-500 font-normal">· 재고 ' + (it.stock || 0) + '</span></span>' +
@@ -1082,6 +1082,15 @@ function _renderProcessCustomModal(reqItemId, searchTerm) {
   setTimeout(() => {
     const el = document.getElementById('process-custom-search');
     if (el) { el.focus(); const v = el.value; el.value = ''; el.value = v; }
+    // 결과 버튼에 click 리스너 부착 (inline onclick 대신 — robust)
+    document.querySelectorAll('#modal-container .picker-link-btn').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const invId = btn.getAttribute('data-picker-inv-id');
+        linkCustomReqToInventoryItem(reqItemId, invId);
+      });
+    });
   }, 30);
 }
 
