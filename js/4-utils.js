@@ -16,6 +16,21 @@ function escapeJs(str) {
   return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
 }
 
+// 대기 주문 itemId → 총 주문 수량 맵 (요청/재고/입고 행에 🛒 주문중 N 배지 표시용)
+// 2026-05-12 추가 — "재고 부족인데 이미 주문됨" vs "주문 안 됨" 한눈에 구분
+function getPendingOrderMap() {
+  const map = {};
+  if (typeof orders === 'undefined' || !Array.isArray(orders)) return map;
+  orders.forEach(o => {
+    if ((o.status || 'pending') !== 'pending') return;
+    (o.items || []).forEach(it => {
+      if (!it.itemId) return;
+      map[it.itemId] = (map[it.itemId] || 0) + (it.qty || 0);
+    });
+  });
+  return map;
+}
+
 // 분류 뱃지 (재고/요청/입고/반출관리 모든 탭에서 공용)
 // 치과재료(오렌지) / 구강위생용품(스카이) / 기타(회색). 빈 문자열이면 ''
 function categoryBadgeHtml_(category) {

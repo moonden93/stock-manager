@@ -56,6 +56,12 @@ function _inventoryItemRowHtml(item) {
   const stockColor = status === 'out' ? 'text-red-600' : status === 'low' ? 'text-amber-600' : 'text-slate-700';
   const hiddenClass = item.hidden ? ' opacity-60' : '';
   const hiddenBadge = item.hidden ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">숨김</span>' : '';
+
+  // 대기 주문 배지 (부족/품절일 때만 표시)
+  const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
+  const showOrderBadge = pendingQty > 0 && (status === 'out' || status === 'low');
+  const orderBadge = showOrderBadge ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+
   return '<button onclick="openInventoryItemEdit(\'' + item.id + '\')" class="w-full text-left px-4 py-3 hover:opacity-90 ' + bgClass + hiddenClass + '">' +
     '<div class="flex items-center gap-3">' +
     '<span class="text-xl flex-shrink-0">' + icons[status] + '</span>' +
@@ -63,7 +69,7 @@ function _inventoryItemRowHtml(item) {
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + hiddenBadge + '</p>' +
     '<p class="text-xs text-slate-500 mt-0.5">기준: ' + item.minStock +
-    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
+    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + orderBadge + '</p></div>' +
     '<div class="text-right flex-shrink-0">' +
     '<p class="text-2xl font-bold ' + stockColor + '">' + item.stock + '</p></div>' +
     '</div></button>';
@@ -71,6 +77,7 @@ function _inventoryItemRowHtml(item) {
 
 // 검색 결과 목록 + 카운트만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
 function renderInventoryItems() {
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   const filtered = getInventoryFilteredItems();
   const countEl = document.getElementById('inventory-items-count');
   if (countEl) countEl.innerHTML = '<strong>' + filtered.length + '</strong>개 · 클릭해서 수정';
@@ -86,6 +93,8 @@ function renderInventoryItems() {
 }
 
 function renderInventory() {
+  // 대기 주문 맵 — 부족/품절 행에 🛒 배지 표시용
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   // KPI는 숨김 항목 제외 — 사용자가 행동해야 할 진짜 부족/품절만 카운트
   const visibleInv = inventory.filter(i => !i.hidden);
   const out = visibleInv.filter(i => i.stock === 0).length;

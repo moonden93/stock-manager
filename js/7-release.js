@@ -71,13 +71,19 @@ function _releaseItemRowHtml(item) {
   const stockColor = item.stock === 0 ? 'text-red-600' : item.stock < item.minStock ? 'text-amber-600' : 'text-slate-700';
   const insufficient = cartQty > item.stock;
 
+  // 대기 주문 배지 (재고 부족이거나 품절인 경우만 표시 — 정상이면 굳이 알 필요 없음)
+  const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
+  const showOrderBadge = pendingQty > 0 && (item.stock === 0 || item.stock < item.minStock);
+  const orderBadge = showOrderBadge ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+
   let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
     '<div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
-    (item.stock === 0 ? ' · 🔴 품절' : item.stock < item.minStock ? ' · 🟡 부족' : '') + '</p></div>' +
+    (item.stock === 0 ? ' · 🔴 품절' : item.stock < item.minStock ? ' · 🟡 부족' : '') +
+    orderBadge + '</p></div>' +
     '<div class="flex items-center gap-2">';
 
   if (cartQty > 0) {
@@ -98,6 +104,8 @@ function _releaseItemRowHtml(item) {
 
 // 검색 결과 목록 + 카운트만 부분 갱신 (검색 input element를 destroy 안 함 → IME 안전)
 function renderReleaseItems() {
+  // 대기 주문 맵 갱신 (검색 시에도 최신 상태로)
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   const filtered = getReleaseFilteredItems();
   const countEl = document.getElementById('release-items-count');
   if (countEl) countEl.textContent = filtered.length + '개';
@@ -113,6 +121,8 @@ function renderReleaseItems() {
 }
 
 function renderRelease() {
+  // 대기 주문 맵 계산 — _releaseItemRowHtml에서 사용
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const teamRecommendedMembers = (releaseSelectedTeam && teamMembers[releaseSelectedTeam]) || [];

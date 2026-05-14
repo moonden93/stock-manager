@@ -33,18 +33,24 @@ function _inboundItemRowHtml(item) {
   const cartQty = inCart ? inCart.qty : 0;
   const btnLabel = inCart ? '✓ 담김 (' + cartQty + ')' : '+ 담기';
   const btnCls = inCart ? 'bg-slate-400 hover:bg-slate-500' : 'bg-emerald-600 hover:bg-emerald-700';
+
+  // 대기 주문 배지 (입고 탭에선 항상 표시 — 중복 주문 방지)
+  const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
+  const orderBadge = pendingQty > 0 ? ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>' : '';
+
   return '<div class="px-4 py-3 hover:bg-slate-50"><div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
     '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-xs text-slate-500 mt-0.5">현재 재고: <strong>' + item.stock + '</strong>' +
-    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + '</p></div>' +
+    (item.price ? ' · ' + item.price.toLocaleString() + '원' : '') + orderBadge + '</p></div>' +
     '<button onclick="openOrderItemDialog(\'' + item.id + '\')" class="px-4 h-10 ' + btnCls + ' text-white rounded-lg text-base font-bold whitespace-nowrap">' + btnLabel + '</button>' +
     '</div></div>';
 }
 
 // 검색 결과 목록만 부분 갱신 (검색 input destroy 안 함 → IME 안전)
 function renderInboundItems() {
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   const filtered = getInboundFilteredItems();
   const listEl = document.getElementById('inbound-items-list');
   if (!listEl) return;
@@ -58,6 +64,8 @@ function renderInboundItems() {
 }
 
 function renderInbound() {
+  // 대기 주문 맵 계산 — _inboundItemRowHtml에서 사용 (중복 주문 방지)
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   const vendors = [...new Set(inventory.map(i => i.vendor))].sort();
   const categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
   const filtered = getInboundFilteredItems();
