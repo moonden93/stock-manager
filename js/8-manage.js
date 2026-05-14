@@ -1022,34 +1022,119 @@ function openInventoryAddFromCustom(reqItemId) {
   const r = (requests || []).find(req => req.id === reqItemId);
   if (!r) { showToast('요청 항목을 찾을 수 없습니다', 'error'); return; }
   if (!r.isCustom) { showToast('직접 요청 항목만 추가 가능합니다', 'info'); return; }
+  // 초기 검색어: vendor가 있으면 vendor 기준, 없으면 name
+  const initial = r.vendor || r.name || '';
+  _renderProcessCustomModal(reqItemId, initial);
+}
+
+// 처리 모달: 기존 inventory에서 검색 후 연결 또는 새 품목 추가
+function _renderProcessCustomModal(reqItemId, searchTerm) {
+  const r = (requests || []).find(req => req.id === reqItemId);
+  if (!r) return;
+  const q = (searchTerm || '').trim().toLowerCase();
+  let matched = [];
+  if (q) {
+    matched = inventory.filter(it => {
+      const v = (it.vendor || '').toLowerCase();
+      const n = (it.name || '').toLowerCase();
+      return v.includes(q) || n.includes(q) || q.split(/\s+/).some(w => w && (v.includes(w) || n.includes(w)));
+    }).slice(0, 30);
+    if (r.vendor) {
+      matched.sort((a, b) => (a.vendor === r.vendor ? 0 : 1) - (b.vendor === r.vendor ? 0 : 1));
+    }
+  }
+  let listHtml = '';
+  if (matched.length === 0) {
+    listHtml = '<div class="py-6 text-center text-slate-400 text-sm">' +
+      (q ? '검색 결과 없음 — 아래에서 새 품목 추가' : '검색어 입력') + '</div>';
+  } else {
+    matched.forEach(it => {
+      listHtml += '<button onclick="linkCustomToInventory(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
+        'class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition">' +
+        '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
+        '<p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) +
+        ' <span class="text-xs text-slate-500 font-normal">· 재고 ' + (it.stock || 0) + '</span></p>' +
+        '</button>';
+    });
+  }
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">📦 직접요청 처리</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">' + escapeHtml(r.vendor || '업체 미지정') + ' · ' + escapeHtml(r.name) + '</p></div>' +
+    '<div class="px-5 py-4 overflow-y-auto flex-1">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">🔍 기존 품목 검색 (선택하면 연결)</label>' +
+    '<input type="text" id="process-custom-search" value="' + escapeHtml(searchTerm || '') + '" ' +
+    'oninput="_renderProcessCustomModal(\'' + escapeJs(reqItemId) + '\', this.value)" ' +
+    'placeholder="업체 또는 품명" ' +
+    'class="w-full mb-3 px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" />' +
+    '<div class="border-2 border-slate-200 rounded-xl overflow-hidden max-h-64 overflow-y-auto">' + listHtml + '</div>' +
+    '<div class="text-center py-3 text-xs text-slate-400">— 또는 —</div>' +
+    '<button onclick="_addNewItemFromCustom(\'' + escapeJs(reqItemId) + '\')" ' +
+    'class="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold">+ 새 품목으로 추가</button>' +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t">' +
+    '<button onclick="closeModal()" class="w-full py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  setTimeout(() => {
+    const el = document.getElementById('process-custom-search');
+    if (el) { el.focus(); const v = el.value; el.value = ''; el.value = v; }
+  }, 30);
+}
+
+// 기존 inventory 항목과 직접요청 연결 (새 inventory 생성 안 함)
+function linkCustomToInventory(reqItemId, invItemId) {
+  const r = (requests || []).find(req => req.id === reqItemId);
+  const item = (inventory || []).find(it => it.id === invItemId);
+  if (!r || !item) { showToast('항목을 찾을 수 없습니다', 'error'); return; }
+
+  const oldName = r.name;
+  r.itemId = item.id;
+  r.isCustom = false;
+  r.vendor = item.vendor;
+  r.name = item.name;
+  r.unit = item.unit;
+
+  if (typeof upsertRequestDoc === 'function') {
+    upsertRequestDoc(r).catch(err => console.warn('link upsert 실패:', err));
+  }
+  if (typeof logEvent === 'function') {
+    logEvent('request', 'link_to_inventory', {
+      summary: '직접요청 → 기존 품목 연결: ' + oldName + ' → ' + item.name,
+      requestId: r.id, itemId: item.id, vendor: item.vendor, name: item.name
+    });
+  }
+  saveAll();
+  closeModal();
+  showToast('"' + item.name + '"으로 연결됨', 'success');
+  renderManage();
+}
+
+// 새 품목 추가 흐름 (기존 add 모달 + 저장 시 자동 link)
+function _addNewItemFromCustom(reqItemId) {
+  const r = (requests || []).find(req => req.id === reqItemId);
+  if (!r) return;
   if (typeof openAddItemDialog !== 'function') {
     showAlert('품목 추가 기능을 사용할 수 없습니다', '설정 모듈이 로드되지 않았습니다.');
     return;
   }
-
-  // reqItemId 전달 — 모달이 "기존 품목 연결" 검색 섹션 표시 + 저장 시 자동 연결
-  openAddItemDialog(reqItemId);
-  // 모달 열린 직후 입력값 프리필 (DOM 생성 후)
+  closeModal();
+  openAddItemDialog();
+  window._addingFromCustomReqId = reqItemId;
   setTimeout(() => {
     const vendorSelect = document.getElementById('new-item-vendor-select');
     const vendorInput = document.getElementById('new-item-vendor');
     const nameInput = document.getElementById('new-item-name');
     const unitInput = document.getElementById('new-item-unit');
-
     if (r.vendor && vendorSelect && vendorInput) {
-      // 기존 vendor면 dropdown 선택, 새 vendor면 input에 입력
       const existing = Array.from(vendorSelect.options).find(o => o.value === r.vendor);
-      if (existing) {
-        vendorSelect.value = r.vendor;
-        vendorInput.value = '';
-      } else {
-        vendorInput.value = r.vendor;
-      }
+      if (existing) { vendorSelect.value = r.vendor; vendorInput.value = ''; }
+      else { vendorInput.value = r.vendor; }
     }
     if (r.name && nameInput) nameInput.value = r.name;
     if (r.unit && unitInput) unitInput.value = r.unit;
-
-    // 품명에 포커스 (보통 가장 먼저 확인해야 할 부분)
     if (nameInput) { nameInput.focus(); nameInput.select(); }
   }, 80);
 }
