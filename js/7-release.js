@@ -72,13 +72,13 @@ function _releaseItemRowHtml(item) {
   const insufficient = cartQty > item.stock;
 
   // 대기 주문 / 주문필요 배지
-  // - 🛒 주문중 N: 이미 발주됨 (부족·품절만)
-  // - 📝 주문필요: 요청은 들어왔는데 부족·품절이면서 주문도 안 들어감 (관리자 액션 신호)
+  // - 🛒 주문중 N: 발주됨 (재고 상태 무관하게 항상 표시 — 중복 주문 방지 + 들어올 정보)
+  // - 📝 주문필요: 요청 들어왔는데 부족·품절이면서 주문도 안 들어감 (관리자 액션 신호)
   const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
   const isShort = item.stock === 0 || item.stock < item.minStock;
   const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
   let orderBadge = '';
-  if (pendingQty > 0 && isShort) {
+  if (pendingQty > 0) {
     orderBadge = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
   } else if (isShort && inPendingReq) {
     orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';

@@ -349,15 +349,16 @@ function renderManage() {
           }
 
           // 🛒 주문중 / 📝 주문필요 배지 (직접 요청 아닐 때만)
-          // 조건: 다음 셋 중 하나라도 해당하면 "주문 신경 써야 함"
-          //   1) 품절 (stock = 0)
-          //   2) 재고 부족 (stock < minStock)
-          //   3) 요청을 다 못 채움 (stock < 요청 수량)
+          // - 주문중: 발주됨 (재고 무관 — 들어올 정보 인지)
+          // - 주문필요: 다음 중 하나 + 발주 안 됨
+          //     1) 품절 (stock = 0)
+          //     2) 재고 부족 (stock < minStock)
+          //     3) 요청을 다 못 채움 (stock < 요청 수량)
           let orderBadgeHtml = '';
           if (!it.isCustom && item) {
             const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
             const needsAttention = (item.stock === 0) || (item.stock < item.minStock) || (item.stock < (it.qty || 0));
-            if (pendingQty > 0 && needsAttention) {
+            if (pendingQty > 0) {
               orderBadgeHtml = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
             } else if (needsAttention) {
               // 반출관리 탭 = 이 항목 자체가 pending request라 inPendingReq 검사 불필요

@@ -57,12 +57,14 @@ function _inventoryItemRowHtml(item) {
   const hiddenClass = item.hidden ? ' opacity-60' : '';
   const hiddenBadge = item.hidden ? '<span class="ml-2 text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded">숨김</span>' : '';
 
-  // 대기 주문 / 주문필요 배지 (부족·품절만)
+  // 대기 주문 / 주문필요 배지
+  // - 🛒 주문중 N: 발주됨 (재고 무관 — 들어오는 정보)
+  // - 📝 주문필요: 부족·품절 + 요청 들어옴 + 주문 없음
   const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
   const isShort = (status === 'out' || status === 'low');
   const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
   let orderBadge = '';
-  if (pendingQty > 0 && isShort) {
+  if (pendingQty > 0) {
     orderBadge = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
   } else if (isShort && inPendingReq) {
     orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
