@@ -460,6 +460,13 @@ function openAddItemDialog(fromCustomReqId) {
     '<input type="text" id="new-item-vendor" placeholder="또는 새 업체 직접 입력" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">품명</label>' +
     '<input type="text" id="new-item-name" placeholder="예: Denture bur #9369" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
+    // 분류 (치과재료 / 구강위생용품)
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">🏷️ 분류</label>' +
+    '<select id="new-item-category" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500">' +
+    '<option value="치과재료" selected>치과재료</option>' +
+    '<option value="구강위생용품">구강위생용품</option>' +
+    '<option value="">(분류 없음)</option>' +
+    '</select></div>' +
     '<div class="grid grid-cols-2 gap-2">' +
     '<div><label class="text-sm font-bold text-slate-700 mb-1 block">단위</label>' +
     '<input type="text" id="new-item-unit" placeholder="ea, box, 갑" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
@@ -506,9 +513,11 @@ function addItem() {
     return;
   }
   
+  const categoryEl = document.getElementById('new-item-category');
+  const category = categoryEl ? categoryEl.value : '치과재료';
   const newItem = {
     id: 'M' + Date.now(),
-    vendor, name, unit, price, stock, minStock, category: '치과재료'
+    vendor, name, unit, price, stock, minStock, category
   };
   inventory.push(newItem);
 
@@ -663,6 +672,8 @@ function saveItem(itemId) {
   }
   const memoEl = document.getElementById('edit-item-memo');
   const memo = memoEl ? (memoEl.value || '').trim() : (item.memo || '');
+  const categoryEl = document.getElementById('edit-item-category');
+  const category = categoryEl ? categoryEl.value : (item.category || '');
   item.vendor = vendor;
   item.name = name;
   item.unit = unit;
@@ -670,6 +681,7 @@ function saveItem(itemId) {
   item.stock = stock;
   item.minStock = minStock;
   item.memo = memo;
+  item.category = category;
   closeModal();
   showToast('수정 완료');
   _applyItemChangeAndRender();
