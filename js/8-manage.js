@@ -1050,7 +1050,7 @@ function _renderProcessCustomModal(reqItemId, searchTerm) {
   } else {
     matched.forEach(it => {
       // <p>는 phrasing content 아니라 <button> 안에서 브라우저가 button을 미리 닫는 파싱 버그 → <span>+block 사용
-      listHtml += '<button type="button" onclick="linkCustomToInventory(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
+      listHtml += '<button type="button" onclick="linkCustomReqToInventoryItem(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
         'class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition cursor-pointer">' +
         '<span class="block text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</span>' +
         '<span class="block text-sm font-medium text-slate-900">' + escapeHtml(it.name) +
@@ -1086,7 +1086,7 @@ function _renderProcessCustomModal(reqItemId, searchTerm) {
 }
 
 // 기존 inventory 항목과 직접요청 연결 (새 inventory 생성 안 함)
-function linkCustomToInventory(reqItemId, invItemId) {
+function linkCustomReqToInventoryItem(reqItemId, invItemId) {
   const r = (requests || []).find(req => req.id === reqItemId);
   const item = (inventory || []).find(it => it.id === invItemId);
   if (!r || !item) { showToast('항목을 찾을 수 없습니다', 'error'); return; }
