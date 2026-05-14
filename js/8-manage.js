@@ -1049,11 +1049,12 @@ function _renderProcessCustomModal(reqItemId, searchTerm) {
       (q ? '검색 결과 없음 — 아래에서 새 품목 추가' : '검색어 입력') + '</div>';
   } else {
     matched.forEach(it => {
-      listHtml += '<button onclick="linkCustomToInventory(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
-        'class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition">' +
-        '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
-        '<p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) +
-        ' <span class="text-xs text-slate-500 font-normal">· 재고 ' + (it.stock || 0) + '</span></p>' +
+      // <p>는 phrasing content 아니라 <button> 안에서 브라우저가 button을 미리 닫는 파싱 버그 → <span>+block 사용
+      listHtml += '<button type="button" onclick="linkCustomToInventory(\'' + escapeJs(reqItemId) + '\', \'' + escapeJs(it.id) + '\')" ' +
+        'class="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-slate-100 transition cursor-pointer">' +
+        '<span class="block text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</span>' +
+        '<span class="block text-sm font-medium text-slate-900">' + escapeHtml(it.name) +
+        ' <span class="text-xs text-slate-500 font-normal">· 재고 ' + (it.stock || 0) + '</span></span>' +
         '</button>';
     });
   }
