@@ -51,6 +51,9 @@ function ensureSelection(groupId, items) {
 }
 
 function renderManage() {
+  // 주문중/주문필요 배지 lookup — 부족·품절 항목 옆에 표시
+  window._pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  window._pendingRequestItemIdSet = (typeof getPendingRequestItemIdSet === 'function') ? getPendingRequestItemIdSet() : new Set();
   // status 필터 먼저 적용
   let filtered = (manageStatusFilter === 'all')
     ? requests.slice()
@@ -345,6 +348,19 @@ function renderManage() {
             }
           }
 
+          // 🛒 주문중 / 📝 주문필요 배지 (직접 요청 아닐 때만 — itemId가 inventory와 매칭됨)
+          let orderBadgeHtml = '';
+          if (!it.isCustom && item) {
+            const pendingQty = (window._pendingOrderMap || {})[item.id] || 0;
+            const isShortInv = item.stock === 0 || item.stock < item.minStock;
+            const inPendingReq = (window._pendingRequestItemIdSet || new Set()).has(item.id);
+            if (pendingQty > 0 && isShortInv) {
+              orderBadgeHtml = ' · <span class="text-blue-600 font-bold">🛒 주문중 ' + pendingQty + '</span>';
+            } else if (isShortInv && inPendingReq) {
+              orderBadgeHtml = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
+            }
+          }
+
           html += '<div class="flex items-center gap-2 py-2 px-2 ' + (isChecked ? 'bg-white' : 'bg-slate-100 opacity-60') + ' rounded-lg border border-slate-100">' +
             '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' ' +
             'onchange="toggleItemCheck(\'' + gid + '\', \'' + it.id + '\', this.checked)" ' +
@@ -357,7 +373,7 @@ function renderManage() {
             '<p class="text-xs text-slate-500">요청 ' + it.qty + editHistHtml +
             (it.isCustom
               ? ' · <button onclick="openCustomItemDetail(\'' + escapeJs(it.id) + '\')" class="text-teal-600 underline hover:text-teal-700">상세보기</button>'
-              : ' · 재고 ' + stock + (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '')) +
+              : ' · 재고 ' + stock + (isShort ? ' <span class="text-amber-700 font-bold">⚠️ 재고 부족</span>' : '') + orderBadgeHtml) +
             '</p>' +
             '</div>';
 
