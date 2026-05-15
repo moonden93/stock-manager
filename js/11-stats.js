@@ -15,31 +15,38 @@ let statsCustomEnd = '';   // YYYY-MM-DD
 let anomalyMonth = '';
 
 function renderStats() {
-  // 기간 필터링
+  // 기간 필터링 — 출고
   let baseHistory = history.filter(h => h.type === 'out' && !h.cancelled);
+  // 같은 기간의 입고도 항목별 통계에서 보여주려고 별도 추출
+  let baseInbound = history.filter(h => h.type === 'in' && !h.cancelled);
 
-  if (statsPeriod === 'all') {
-    // 'all' = 이번 년도 (1/1 ~ 오늘)
-    const yearStart = new Date(new Date().getFullYear(), 0, 1);
-    yearStart.setHours(0, 0, 0, 0);
-    baseHistory = baseHistory.filter(h => new Date(h.date) >= yearStart);
-  } else if (statsPeriod === 'month') {
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    baseHistory = baseHistory.filter(h => new Date(h.date) >= monthStart);
-  } else if (statsPeriod === 'week') {
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    baseHistory = baseHistory.filter(h => new Date(h.date) >= weekAgo);
-  } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
-    const start = new Date(statsCustomStart + 'T00:00:00');
-    const end = new Date(statsCustomEnd + 'T23:59:59');
-    baseHistory = baseHistory.filter(h => {
-      const d = new Date(h.date);
-      return d >= start && d <= end;
-    });
-  }
+  const applyPeriodFilter = (arr) => {
+    if (statsPeriod === 'all') {
+      const yearStart = new Date(new Date().getFullYear(), 0, 1);
+      yearStart.setHours(0, 0, 0, 0);
+      return arr.filter(h => new Date(h.date) >= yearStart);
+    } else if (statsPeriod === 'month') {
+      const monthStart = new Date();
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      return arr.filter(h => new Date(h.date) >= monthStart);
+    } else if (statsPeriod === 'week') {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return arr.filter(h => new Date(h.date) >= weekAgo);
+    } else if (statsPeriod === 'custom' && statsCustomStart && statsCustomEnd) {
+      const start = new Date(statsCustomStart + 'T00:00:00');
+      const end = new Date(statsCustomEnd + 'T23:59:59');
+      return arr.filter(h => {
+        const d = new Date(h.date);
+        return d >= start && d <= end;
+      });
+    }
+    return arr;
+  };
+  baseHistory = applyPeriodFilter(baseHistory);
+  baseInbound = applyPeriodFilter(baseInbound);
+  window._statsItemBaseInbound = baseInbound;
   
   const totalQty = baseHistory.reduce((s, h) => s + h.qty, 0);
   const totalCost = baseHistory.reduce((s, h) => s + h.qty * (h.price || 0), 0);
@@ -303,17 +310,23 @@ function renderStatsByItem(baseHistory) {
 // 항목별 list 부분 갱신 (검색 input은 destroy 안 됨 → IME 안전)
 function renderStatsItemList() {
   const baseHistory = window._statsItemBaseHistory || [];
+  const baseInbound = window._statsItemBaseInbound || [];
   const searchTerm = window._statsItemSearch || '';
 
-  // 집계
+  // 출고 집계
   const itemStats = {};
-  baseHistory.forEach(h => {
-    const k = (h.vendor || '') + '::' + (h.name || '');
+  const ensure = (vendor, name, unit) => {
+    const k = (vendor || '') + '::' + (name || '');
     if (!itemStats[k]) itemStats[k] = {
-      vendor: h.vendor, name: h.name, unit: h.unit,
-      qty: 0, cost: 0, count: 0, teams: {}
+      vendor: vendor, name: name, unit: unit,
+      qty: 0, cost: 0, count: 0, teams: {},
+      inQty: 0, inCost: 0, inCount: 0,
+      pendingOrderQty: 0
     };
-    const s = itemStats[k];
+    return itemStats[k];
+  };
+  baseHistory.forEach(h => {
+    const s = ensure(h.vendor, h.name, h.unit);
     const lineCost = (h.qty || 0) * (h.price || 0);
     s.qty += h.qty || 0;
     s.cost += lineCost;
@@ -324,6 +337,22 @@ function renderStatsItemList() {
     s.teams[t].cost += lineCost;
     s.teams[t].count++;
   });
+  // 같은 기간 입고 집계 (vendor+name 기준)
+  baseInbound.forEach(h => {
+    const s = ensure(h.vendor, h.name, h.unit);
+    s.inQty += h.qty || 0;
+    s.inCost += (h.qty || 0) * (h.price || 0);
+    s.inCount++;
+  });
+  // 대기 주문 (vendor+name 기준 — 기간 필터 무관, 항상 현재)
+  (typeof orders !== 'undefined' && Array.isArray(orders) ? orders : [])
+    .filter(o => (o.status || 'pending') === 'pending')
+    .forEach(o => (o.items || []).forEach(it => {
+      const k = (it.vendor || '') + '::' + (it.name || '');
+      if (itemStats[k]) {
+        itemStats[k].pendingOrderQty += (it.qty || 0);
+      }
+    }));
 
   let itemList = Object.values(itemStats);
   if (searchTerm) {
@@ -360,6 +389,30 @@ function renderStatsItemList() {
     const unitPrice = it.qty > 0 ? Math.round(it.cost / it.qty) : 0;
     const unitStr = unitPrice > 0 ? unitPrice.toLocaleString() + '원/' + (it.unit || '개') + ' · ' : '';
 
+    // 입고 / 주문중 / 순변동 정보
+    const netDelta = (it.inQty || 0) - (it.qty || 0);
+    const netStr = (netDelta >= 0 ? '+' : '') + netDelta;
+    const netColor = netDelta > 0 ? 'text-emerald-700' : netDelta < 0 ? 'text-amber-700' : 'text-slate-500';
+    let flowHtml = '<div class="grid grid-cols-2 gap-2 mb-3 text-xs">';
+    flowHtml += '<div class="bg-amber-50 rounded-lg p-2">' +
+      '<div class="text-[10px] text-amber-700 font-bold">🔻 출고</div>' +
+      '<div class="text-slate-900 font-bold">' + it.qty + (it.unit || '개') + '</div>' +
+      '<div class="text-[10px] text-slate-500">' + formatWon(it.cost) + ' · ' + it.count + '건</div>' +
+      '</div>';
+    flowHtml += '<div class="bg-emerald-50 rounded-lg p-2">' +
+      '<div class="text-[10px] text-emerald-700 font-bold">🔺 입고</div>' +
+      '<div class="text-slate-900 font-bold">' + (it.inQty || 0) + (it.unit || '개') + '</div>' +
+      '<div class="text-[10px] text-slate-500">' + formatWon(it.inCost) + ' · ' + (it.inCount || 0) + '건</div>' +
+      '</div>';
+    flowHtml += '</div>';
+    // 주문중 + 순변동 한 줄
+    const extras = [];
+    if (it.pendingOrderQty > 0) {
+      extras.push('<span class="text-blue-600 font-bold">🛒 주문중 ' + it.pendingOrderQty + '</span>');
+    }
+    extras.push('<span class="' + netColor + ' font-bold">📊 순변동 ' + netStr + (it.unit || '개') + '</span>');
+    flowHtml += '<p class="text-xs text-slate-600 mb-3">' + extras.join(' · ') + '</p>';
+
     html += '<div class="bg-white rounded-2xl border-2 border-slate-200 p-4">' +
       '<div class="flex items-start justify-between mb-2 gap-2">' +
       '<div class="flex-1 min-w-0">' +
@@ -373,6 +426,7 @@ function renderStatsItemList() {
       '<div class="h-2 bg-slate-100 rounded-full overflow-hidden mb-3">' +
       '<div class="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all" style="width:' + pct + '%"></div>' +
       '</div>' +
+      flowHtml +
       '<div class="space-y-1 pt-2 border-t border-slate-100">' +
       '<p class="text-[10px] text-slate-500 mb-1">팀별 사용:</p>';
 
