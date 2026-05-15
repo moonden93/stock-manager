@@ -1200,22 +1200,37 @@ function openReceiveOrderModal(orderId) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   })();
 
-  let itemsHtml = '';
+  // 전체선택 + 항목별 체크박스 + 수량 조절 (반출관리와 동일 패턴)
+  let itemsHtml = '<div class="flex items-center justify-between mb-2 px-1">' +
+    '<label class="flex items-center gap-2 cursor-pointer">' +
+    '<input type="checkbox" id="recv-all" checked onchange="toggleAllReceiveItems(this.checked)" class="w-5 h-5 accent-emerald-600 cursor-pointer" />' +
+    '<span class="text-sm font-bold text-slate-700">전체선택</span>' +
+    '</label>' +
+    '<span class="text-xs text-slate-500">' + o.items.length + '종</span>' +
+    '</div>';
   o.items.forEach((it, idx) => {
-    itemsHtml += '<div class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+    itemsHtml += '<div id="recv-row-' + idx + '" class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+      '<div class="flex items-start gap-2 mb-2">' +
+      '<input type="checkbox" id="recv-check-' + idx + '" checked onchange="toggleReceiveItem(' + idx + ', this.checked)" class="w-5 h-5 accent-emerald-600 cursor-pointer mt-1 shrink-0" />' +
+      '<div class="flex-1 min-w-0">' +
       '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
-      '<p class="text-sm font-bold text-slate-900 mb-2">' + escapeHtml(it.name || '') + '</p>' +
-      '<div class="grid grid-cols-2 gap-2">' +
-      '<div>' +
-      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">실제 입고 수량</label>' +
-      '<input type="number" id="recv-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '<p class="text-sm font-bold text-slate-900">' + escapeHtml(it.name || '') + '</p>' +
+      '<p class="text-[10px] text-slate-500 mt-0.5">주문: ' + (it.qty || 0) + (it.unit || '') + ' × ' + (it.price || 0).toLocaleString() + '원</p>' +
+      '</div></div>' +
+      // 수량 조절 (−/+ + input)
+      '<div class="flex items-center gap-2 mb-2 pl-7">' +
+      '<span class="text-[11px] font-bold text-slate-600 w-16 shrink-0">실제 수량</span>' +
+      '<button onclick="adjustReceiveQty(' + idx + ', -1, ' + (it.qty || 0) + ')" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold">−</button>' +
+      '<input type="number" id="recv-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-16 h-9 text-center font-bold bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '<button onclick="adjustReceiveQty(' + idx + ', 1, ' + (it.qty || 0) + ')" class="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-lg font-bold">+</button>' +
+      '<span class="text-[11px] text-slate-500">/ ' + (it.qty || 0) + '</span>' +
       '</div>' +
-      '<div>' +
-      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">실제 단가 (원)</label>' +
-      '<input type="number" id="recv-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      // 단가
+      '<div class="flex items-center gap-2 pl-7">' +
+      '<span class="text-[11px] font-bold text-slate-600 w-16 shrink-0">실제 단가</span>' +
+      '<input type="number" id="recv-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="flex-1 h-9 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '<span class="text-[11px] text-slate-500">원</span>' +
       '</div>' +
-      '</div>' +
-      '<p class="text-[10px] text-slate-500 mt-1">주문: ' + (it.qty || 0) + (it.unit || '') + ' × ' + (it.price || 0).toLocaleString() + '원</p>' +
       '</div>';
   });
 
@@ -1223,7 +1238,7 @@ function openReceiveOrderModal(orderId) {
     '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
     '<h3 class="text-base font-bold text-slate-900">✅ 입고 완료 처리</h3>' +
-    '<p class="text-xs text-slate-600 mt-1">받은 만큼만 수량을 줄여서 처리하세요. 안 받은 분량은 자동으로 [주문 대기]에 남습니다.</p></div>' +
+    '<p class="text-xs text-slate-600 mt-1">체크된 항목만 처리. 수량은 받은 만큼만 줄이세요. 안 받은 분량/체크 해제된 항목은 [주문 대기]에 남습니다.</p></div>' +
     '<div class="px-5 py-4 overflow-y-auto">' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
     '<input type="date" id="recv-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
@@ -1235,6 +1250,57 @@ function openReceiveOrderModal(orderId) {
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
   if (typeof markModalOpened === 'function') markModalOpened();
+}
+
+// 입고 모달 — 전체선택 토글
+function toggleAllReceiveItems(checked) {
+  document.querySelectorAll('[id^="recv-check-"]').forEach(cb => {
+    cb.checked = checked;
+    const idx = cb.id.replace('recv-check-', '');
+    toggleReceiveItem(parseInt(idx, 10), checked);
+  });
+}
+
+// 입고 모달 — 개별 체크 토글 (해제 시 수량 0으로, 행 회색 처리)
+function toggleReceiveItem(idx, checked) {
+  const row = document.getElementById('recv-row-' + idx);
+  const qty = document.getElementById('recv-qty-' + idx);
+  const price = document.getElementById('recv-price-' + idx);
+  if (!row) return;
+  if (checked) {
+    row.classList.remove('opacity-50');
+    if (qty) qty.disabled = false;
+    if (price) price.disabled = false;
+  } else {
+    row.classList.add('opacity-50');
+    if (qty) { qty.value = 0; qty.disabled = true; }
+    if (price) price.disabled = true;
+  }
+  // 전체선택 체크박스 상태 갱신
+  const all = document.getElementById('recv-all');
+  if (all) {
+    const checks = document.querySelectorAll('[id^="recv-check-"]');
+    const allChecked = Array.from(checks).every(c => c.checked);
+    all.checked = allChecked;
+  }
+}
+
+// 입고 모달 — 수량 -/+ 조절 (0 ~ 주문수량 클램프)
+function adjustReceiveQty(idx, delta, maxQty) {
+  const el = document.getElementById('recv-qty-' + idx);
+  if (!el) return;
+  const cur = parseInt(el.value) || 0;
+  const newVal = Math.max(0, cur + delta);  // 0 이상 (주문 초과는 허용 — 실제 더 받았을 수 있음)
+  el.value = newVal;
+  // 0이면 체크 자동 해제
+  const cb = document.getElementById('recv-check-' + idx);
+  if (cb && newVal === 0 && cb.checked) {
+    cb.checked = false;
+    toggleReceiveItem(idx, false);
+  } else if (cb && newVal > 0 && !cb.checked) {
+    cb.checked = true;
+    toggleReceiveItem(idx, true);
+  }
 }
 
 // 부분 입고: 받은 만큼만 처리 + 잔여는 주문대기 유지 (반출 부분처리와 동일 패턴)
@@ -1258,7 +1324,10 @@ function confirmReceiveOrder(orderId) {
   const inputs = o.items.map((it, idx) => {
     const qtyEl = document.getElementById('recv-qty-' + idx);
     const priceEl = document.getElementById('recv-price-' + idx);
-    const actualQty = parseInt(qtyEl && qtyEl.value) || 0;
+    const checkEl = document.getElementById('recv-check-' + idx);
+    const isChecked = checkEl ? checkEl.checked : true;
+    // 체크 해제된 항목은 actualQty=0 으로 강제 → 잔여로 보존됨
+    const actualQty = isChecked ? (parseInt(qtyEl && qtyEl.value) || 0) : 0;
     const actualPrice = parseInt(priceEl && priceEl.value) || (it.price || 0);
     return { it: it, actualQty: actualQty, actualPrice: actualPrice };
   });
