@@ -903,8 +903,7 @@ function _renderMergedOrderCard(merged) {
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
   if (status === 'pending') {
     html += '<button onclick="openReceiveOrderModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
-      '<button onclick="editOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold" title="묶음 전체 항목 수정">✏️ 주문수정</button>' +
-      '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="묶음 전체 일자 수정">📅 일자</button>' +
+      '<button onclick="editOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold" title="묶음 전체 항목/일자 수정">✏️ 주문수정</button>' +
       '<button onclick="cancelOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
     html += '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold">📅 일자</button>';
@@ -1185,12 +1184,16 @@ function editOrderMerged(firstId) {
       '</div>';
   });
 
+  const firstOrder = (orders || []).find(x => x.id === firstId);
+  const orderDateInput = firstOrder && firstOrder.date ? new Date(firstOrder.date).toISOString().slice(0, 10) : '';
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
     '<h3 class="text-base font-bold text-slate-900">✏️ 묶음 주문 수정 (' + ids.length + '개 주문)</h3>' +
-    '<p class="text-xs text-slate-600 mt-1">각 항목 수량/단가 변경 가능. 수량 0 → 항목 제거.</p></div>' +
+    '<p class="text-xs text-slate-600 mt-1">각 항목 수량/단가/일자 변경. 수량 0 → 항목 제거.</p></div>' +
     '<div class="px-5 py-4 overflow-y-auto flex-1">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 주문 일자 (묶음 전체)</label>' +
+    '<input type="date" id="edit-merged-date" value="' + orderDateInput + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" />' +
     itemsHtml +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
@@ -1206,6 +1209,11 @@ function saveOrderEditMerged() {
   if (!ctx) return;
   const at = new Date().toISOString();
   const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  // 묶음 일자 (모든 underlying에 일괄 적용)
+  const dateEl = document.getElementById('edit-merged-date');
+  const dateStr = dateEl && dateEl.value;
+  const newDate = dateStr ? new Date(dateStr + 'T00:00:00.000Z').toISOString() : null;
 
   // 각 source order 별로 수정사항 정리
   const perOrder = {};  // orderId -> Map(sourceIdx -> { qty, price })
@@ -1246,6 +1254,14 @@ function saveOrderEditMerged() {
       }
       newItems.push(Object.assign({}, it, { qty: qtyV, price: priceV }));
     });
+
+    // 일자 변경 처리
+    const dateChanged = newDate && newDate !== o.date;
+    if (dateChanged) {
+      changes.push({ field: 'date', from: o.date, to: newDate });
+      o.date = newDate;
+    }
+
     if (changes.length === 0) return;
 
     if (newItems.length === 0) {
@@ -1347,8 +1363,7 @@ function _renderOrderCard(o) {
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
   if (status === 'pending') {
     html += '<button onclick="openReceiveOrderModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
-      '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold">✏️ 주문수정</button>' +
-      '<button onclick="openEditOrderDatesModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="주문일자 수정">📅 일자</button>' +
+      '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold" title="항목/일자/메모 수정">✏️ 주문수정</button>' +
       '<button onclick="cancelOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
     html += '<button onclick="openEditOrderDatesModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="주문일자/입고일자 수정 (데이터 분석용)">📅 일자 수정</button>' +
@@ -2151,12 +2166,15 @@ function editOrder(orderId) {
       '</div>';
   });
 
+  const orderDateInput = o.date ? new Date(o.date).toISOString().slice(0, 10) : '';
   const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
     '<h3 class="text-base font-bold text-slate-900">✏️ 주문 수정</h3>' +
     '<p class="text-xs text-slate-600 mt-1">수정 이력은 보존됩니다</p></div>' +
     '<div class="px-5 py-4 overflow-y-auto">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 주문 일자</label>' +
+    '<input type="date" id="edit-order-date" value="' + orderDateInput + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" />' +
     '<label class="text-sm font-bold text-slate-700 mb-2 block">메모</label>' +
     '<input type="text" id="edit-order-memo" value="' + escapeHtml(o.memo || '') + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-blue-500" />' +
     itemsHtml +
@@ -2176,6 +2194,9 @@ function saveOrderEdit(orderId) {
 
   const memoEl = document.getElementById('edit-order-memo');
   const newMemo = memoEl ? (memoEl.value || '').trim() : (o.memo || '');
+  const dateEl = document.getElementById('edit-order-date');
+  const dateStr = dateEl && dateEl.value;
+  const newDate = dateStr ? new Date(dateStr + 'T00:00:00.000Z').toISOString() : o.date;
 
   const at = new Date().toISOString();
   const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
@@ -2210,12 +2231,17 @@ function saveOrderEdit(orderId) {
   }
 
   const memoChanged = newMemo !== (o.memo || '');
-  if (changes.length === 0 && !memoChanged) {
+  const dateChanged = newDate !== o.date;
+  if (changes.length === 0 && !memoChanged && !dateChanged) {
     closeModal();
     return;
   }
 
   o.items = newItems;
+  if (dateChanged) {
+    changes.push({ field: 'date', from: o.date, to: newDate });
+    o.date = newDate;
+  }
   if (memoChanged) {
     changes.push({ memoFrom: o.memo || '', memoTo: newMemo });
     o.memo = newMemo;
