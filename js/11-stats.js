@@ -441,10 +441,74 @@ function renderStatsItemList() {
         '<span class="font-bold text-slate-900 shrink-0 w-20 text-right">' + formatWon(t.cost) + '</span>' +
         '</div>';
     });
+    html += '</div>';
 
-    html += '</div></div>';
+    // 날짜별 상세 펼침/접기
+    const itemKey = (it.vendor || '') + '::' + (it.name || '');
+    const expandedMap = window._statsItemExpanded || {};
+    const expanded = !!expandedMap[itemKey];
+
+    html += '<button onclick="toggleStatsItemExpand(\'' + escapeJs(itemKey) + '\')" ' +
+      'class="mt-2 w-full py-1.5 text-[11px] text-slate-500 hover:text-purple-600 hover:bg-slate-50 rounded-lg border border-slate-100">' +
+      (expanded ? '▲ 접기' : '▼ 날짜별 상세 보기') + '</button>';
+
+    if (expanded) {
+      // vendor+name 매칭되는 출고/입고 entries
+      const outEntries = baseHistory
+        .filter(h => (h.vendor || '') === it.vendor && (h.name || '') === it.name)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      const inEntries = baseInbound
+        .filter(h => (h.vendor || '') === it.vendor && (h.name || '') === it.name)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      const fmtDate = (d) => {
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return '?';
+        return (dt.getMonth() + 1) + '/' + dt.getDate();
+      };
+
+      html += '<div class="mt-2 grid grid-cols-2 gap-2 text-[11px]">';
+      // 출고
+      html += '<div class="bg-amber-50/50 rounded-lg p-2">' +
+        '<p class="font-bold text-amber-700 mb-1.5">🔻 출고 (' + outEntries.length + '건)</p>';
+      if (outEntries.length === 0) {
+        html += '<p class="text-slate-400">없음</p>';
+      } else {
+        outEntries.forEach(h => {
+          html += '<div class="flex justify-between gap-1 mb-0.5">' +
+            '<span class="text-slate-500">' + fmtDate(h.date) + '</span>' +
+            '<span class="text-slate-700 truncate">' + escapeHtml((h.team || '') + (h.requester ? '·' + h.requester : '')) + '</span>' +
+            '<span class="text-amber-700 font-bold shrink-0">' + h.qty + '</span>' +
+            '</div>';
+        });
+      }
+      html += '</div>';
+      // 입고
+      html += '<div class="bg-emerald-50/50 rounded-lg p-2">' +
+        '<p class="font-bold text-emerald-700 mb-1.5">🔺 입고 (' + inEntries.length + '건)</p>';
+      if (inEntries.length === 0) {
+        html += '<p class="text-slate-400">없음</p>';
+      } else {
+        inEntries.forEach(h => {
+          html += '<div class="flex justify-between gap-1 mb-0.5">' +
+            '<span class="text-slate-500">' + fmtDate(h.date) + '</span>' +
+            '<span class="text-emerald-700 font-bold shrink-0">+' + h.qty + '</span>' +
+            '</div>';
+        });
+      }
+      html += '</div>';
+      html += '</div>';
+    }
+
+    html += '</div>';
   });
   listEl.innerHTML = html;
+}
+
+// 항목별 카드 날짜별 상세 펼침/접기
+function toggleStatsItemExpand(itemKey) {
+  window._statsItemExpanded = window._statsItemExpanded || {};
+  window._statsItemExpanded[itemKey] = !window._statsItemExpanded[itemKey];
+  renderStatsItemList();
 }
 
 // 주차별 통계 - 각 주차별로 팀별 사용량 (deprecated — 항목별로 대체됨)
