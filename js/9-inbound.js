@@ -903,6 +903,7 @@ function _renderMergedOrderCard(merged) {
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
   if (status === 'pending') {
     html += '<button onclick="openReceiveOrderModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
+      '<button onclick="editOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold" title="묶음 전체 항목 수정">✏️ 주문수정</button>' +
       '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="묶음 전체 일자 수정">📅 일자</button>' +
       '<button onclick="cancelOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
@@ -1149,6 +1150,136 @@ function confirmReceiveOrderMerged() {
   renderInbound();
 }
 
+// 묶음 주문 수정 — 모든 underlying order의 항목 통합해서 한 모달, 저장 시 각 order에 분배
+function editOrderMerged(firstId) {
+  const ids = _getMergedOrderIds(firstId);
+  if (ids.length === 1) return editOrder(firstId);
+
+  const merged = [];  // { sourceOrderId, sourceIdx, item }
+  ids.forEach(oid => {
+    const o = (orders || []).find(x => x.id === oid);
+    if (!o || o.status !== 'pending') return;
+    (o.items || []).forEach((it, idx) => {
+      merged.push({ sourceOrderId: oid, sourceIdx: idx, item: it });
+    });
+  });
+  if (merged.length === 0) { showToast('수정 가능한 항목 없음', 'info'); return; }
+  window._mergedEditCtx = { items: merged, orderIds: ids };
+
+  let itemsHtml = '';
+  merged.forEach((m, idx) => {
+    const it = m.item;
+    itemsHtml += '<div class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+      '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
+      '<p class="text-sm font-bold text-slate-900 mb-2">' + escapeHtml(it.name || '') + '</p>' +
+      '<div class="grid grid-cols-2 gap-2">' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">수량 <span class="text-slate-400 font-normal">(0=항목 제거)</span></label>' +
+      '<input type="number" id="edit-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500" onfocus="this.select()" />' +
+      '</div>' +
+      '<div>' +
+      '<label class="text-[11px] font-bold text-slate-600 mb-1 block">단가 (원)</label>' +
+      '<input type="number" id="edit-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="w-full h-10 px-3 text-base bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500" onfocus="this.select()" />' +
+      '</div>' +
+      '</div>' +
+      '</div>';
+  });
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
+    '<h3 class="text-base font-bold text-slate-900">✏️ 묶음 주문 수정 (' + ids.length + '개 주문)</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">각 항목 수량/단가 변경 가능. 수량 0 → 항목 제거.</p></div>' +
+    '<div class="px-5 py-4 overflow-y-auto flex-1">' +
+    itemsHtml +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="saveOrderEditMerged()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold">저장</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
+}
+
+function saveOrderEditMerged() {
+  const ctx = window._mergedEditCtx;
+  if (!ctx) return;
+  const at = new Date().toISOString();
+  const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  // 각 source order 별로 수정사항 정리
+  const perOrder = {};  // orderId -> Map(sourceIdx -> { qty, price })
+  ctx.items.forEach((m, idx) => {
+    const qtyEl = document.getElementById('edit-qty-' + idx);
+    const priceEl = document.getElementById('edit-price-' + idx);
+    const newQty = parseInt(qtyEl && qtyEl.value);
+    const newPrice = parseInt(priceEl && priceEl.value);
+    const qty = isNaN(newQty) ? (m.item.qty || 0) : newQty;
+    const price = isNaN(newPrice) ? (m.item.price || 0) : newPrice;
+    if (!perOrder[m.sourceOrderId]) perOrder[m.sourceOrderId] = {};
+    perOrder[m.sourceOrderId][m.sourceIdx] = { qty, price };
+  });
+
+  let totalChanges = 0;
+  let emptyOrders = 0;
+
+  Object.keys(perOrder).forEach(oid => {
+    const o = (orders || []).find(x => x.id === oid);
+    if (!o || o.status !== 'pending') return;
+    const adj = perOrder[oid];
+    const changes = [];
+    const newItems = [];
+    o.items.forEach((it, idx) => {
+      const a = adj[idx];
+      const qtyV = a ? a.qty : (it.qty || 0);
+      const priceV = a ? a.price : (it.price || 0);
+      if (qtyV === 0) {
+        changes.push({ itemName: it.name, action: 'removed', qtyFrom: it.qty });
+        return;
+      }
+      if (qtyV !== (it.qty || 0) || priceV !== (it.price || 0)) {
+        changes.push({
+          itemName: it.name,
+          qtyFrom: it.qty, qtyTo: qtyV,
+          priceFrom: it.price, priceTo: priceV
+        });
+      }
+      newItems.push(Object.assign({}, it, { qty: qtyV, price: priceV }));
+    });
+    if (changes.length === 0) return;
+
+    if (newItems.length === 0) {
+      // 모든 항목 제거 → 주문 취소로 전환 (소프트)
+      o.status = 'cancelled';
+      o.cancelledDate = at;
+      o.cancelledBy = by;
+      o.cancelReason = '묶음 수정에서 모든 항목 제거됨';
+      emptyOrders++;
+    } else {
+      o.items = newItems;
+    }
+    o.editHistory = o.editHistory || [];
+    o.editHistory.push({ at, by, changes, type: 'merged_edit' });
+    if (typeof upsertOrderDoc === 'function') upsertOrderDoc(o).catch(() => {});
+    totalChanges += changes.length;
+  });
+
+  if (totalChanges === 0) { closeModal(); return; }
+
+  if (typeof logEvent === 'function') {
+    logEvent('order', 'edit_merged', {
+      summary: '묶음 주문 수정: ' + totalChanges + '건 변경' + (emptyOrders > 0 ? ' (' + emptyOrders + '개 주문 자동 취소)' : ''),
+      orderIds: ctx.orderIds, totalChanges, emptyOrders, by
+    });
+  }
+
+  window._mergedEditCtx = null;
+  saveAll();
+  closeModal();
+  showToast('주문 수정 완료 — ' + totalChanges + '건 변경', 'success');
+  renderInbound();
+}
+
 function _renderOrderCard(o) {
   const status = o.status || 'pending';
   const dt = new Date(o.date);
@@ -1216,7 +1347,7 @@ function _renderOrderCard(o) {
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
   if (status === 'pending') {
     html += '<button onclick="openReceiveOrderModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
-      '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold">✏️ 수정</button>' +
+      '<button onclick="editOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-xs font-bold">✏️ 주문수정</button>' +
       '<button onclick="openEditOrderDatesModal(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="주문일자 수정">📅 일자</button>' +
       '<button onclick="cancelOrder(\'' + escapeJs(o.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
