@@ -955,35 +955,198 @@ function openEditOrderDatesModalMerged(firstId) {
   openEditOrderDatesModal(firstId);
 }
 
+// 묶음 입고완료 — 통합 모달, 확인 시 각 underlying order에 dispatch
 function openReceiveOrderModalMerged(firstId) {
   const ids = _getMergedOrderIds(firstId);
   if (ids.length === 1) return openReceiveOrderModal(firstId);
-  // 가상 merged order 생성해 모달에 전달 — items 통합
-  const mergedItems = [];
-  const itemSrc = [];  // 각 item이 어느 order 의 몇 번째 인지 추적
+
+  const merged = [];  // { sourceOrderId, sourceIdx, item }
   ids.forEach(oid => {
     const o = (orders || []).find(x => x.id === oid);
-    if (!o) return;
+    if (!o || o.status !== 'pending') return;
     (o.items || []).forEach((it, idx) => {
-      mergedItems.push(it);
-      itemSrc.push({ orderId: oid, itemIdx: idx });
+      merged.push({ sourceOrderId: oid, sourceIdx: idx, item: it });
     });
   });
-  window._mergedReceiveSrc = itemSrc;
-  window._mergedReceiveIds = ids;
-  // 가상 order 객체 임시 등록 (모달이 orders에서 lookup하므로)
-  const virtualOrder = {
-    id: 'VMERGE_' + firstId,
-    date: (orders.find(o => o.id === firstId) || {}).date,
-    status: 'pending',
-    orderedBy: (orders.find(o => o.id === firstId) || {}).orderedBy,
-    items: mergedItems,
-    _isVirtualMerged: true,
-    _underlyingIds: ids
-  };
-  // orders 배열에 임시 추가 (모달이 find 가능하도록), 모달 닫을 때 제거
-  orders.push(virtualOrder);
-  openReceiveOrderModal(virtualOrder.id);
+  if (merged.length === 0) { showToast('입고 가능한 항목 없음', 'info'); return; }
+  window._mergedReceiveCtx = { items: merged, orderIds: ids };
+
+  const todayStr = (function() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  })();
+
+  let itemsHtml = '<div class="flex items-center justify-between mb-2 px-1">' +
+    '<label class="flex items-center gap-2 cursor-pointer">' +
+    '<input type="checkbox" id="recv-all" checked onchange="toggleAllReceiveItems(this.checked)" class="w-5 h-5 accent-emerald-600 cursor-pointer" />' +
+    '<span class="text-sm font-bold text-slate-700">전체선택</span>' +
+    '</label>' +
+    '<span class="text-xs text-slate-500">' + merged.length + '종 (' + ids.length + '개 주문 묶음)</span>' +
+    '</div>';
+  merged.forEach((m, idx) => {
+    const it = m.item;
+    itemsHtml += '<div id="recv-row-' + idx + '" class="px-3 py-3 bg-slate-50 rounded-xl mb-2">' +
+      '<div class="flex items-start gap-2 mb-2">' +
+      '<input type="checkbox" id="recv-check-' + idx + '" checked onchange="toggleReceiveItem(' + idx + ', this.checked)" class="w-5 h-5 accent-emerald-600 cursor-pointer mt-1 shrink-0" />' +
+      '<div class="flex-1 min-w-0">' +
+      '<p class="text-xs text-slate-500">' + escapeHtml(it.vendor || '') + '</p>' +
+      '<p class="text-sm font-bold text-slate-900">' + escapeHtml(it.name || '') + '</p>' +
+      '<p class="text-[10px] text-slate-500 mt-0.5">주문: ' + (it.qty || 0) + (it.unit || '') + ' × ' + (it.price || 0).toLocaleString() + '원</p>' +
+      '</div></div>' +
+      '<div class="flex items-center gap-2 mb-2 pl-7">' +
+      '<span class="text-[11px] font-bold text-slate-600 w-16 shrink-0">실제 수량</span>' +
+      '<button onclick="adjustReceiveQty(' + idx + ', -1, ' + (it.qty || 0) + ')" class="w-9 h-9 bg-slate-200 hover:bg-slate-300 rounded-lg text-lg font-bold">−</button>' +
+      '<input type="number" id="recv-qty-' + idx + '" value="' + (it.qty || 0) + '" min="0" class="w-16 h-9 text-center font-bold bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '<button onclick="adjustReceiveQty(' + idx + ', 1, ' + (it.qty || 0) + ')" class="w-9 h-9 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-lg font-bold">+</button>' +
+      '<span class="text-[11px] text-slate-500">/ ' + (it.qty || 0) + '</span>' +
+      '</div>' +
+      '<div class="flex items-center gap-2 pl-7">' +
+      '<span class="text-[11px] font-bold text-slate-600 w-16 shrink-0">실제 단가</span>' +
+      '<input type="number" id="recv-price-' + idx + '" value="' + (it.price || 0) + '" min="0" class="flex-1 h-9 px-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-emerald-500" onfocus="this.select()" />' +
+      '<span class="text-[11px] text-slate-500">원</span>' +
+      '</div>' +
+      '</div>';
+  });
+
+  const html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
+    '<div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
+    '<div class="px-5 py-4 bg-emerald-50 border-b border-emerald-200">' +
+    '<h3 class="text-base font-bold text-slate-900">✅ 입고 완료 (' + ids.length + '개 주문 묶음)</h3>' +
+    '<p class="text-xs text-slate-600 mt-1">체크 항목만 처리. 잔여는 [주문 대기]에 유지.</p></div>' +
+    '<div class="px-5 py-4 overflow-y-auto">' +
+    '<label class="text-sm font-bold text-slate-700 mb-2 block">📅 입고 일자</label>' +
+    '<input type="date" id="recv-date" value="' + todayStr + '" class="w-full mb-4 px-4 py-3 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-emerald-500" />' +
+    itemsHtml +
+    '</div>' +
+    '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
+    '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
+    '<button onclick="confirmReceiveOrderMerged()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold">✅ 입고 완료</button>' +
+    '</div></div></div>';
+  document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
+}
+
+function confirmReceiveOrderMerged() {
+  const ctx = window._mergedReceiveCtx;
+  if (!ctx) return;
+  const dateInput = document.getElementById('recv-date');
+  const receivedDate = dateInput && dateInput.value
+    ? new Date(dateInput.value + 'T00:00:00.000Z').toISOString()
+    : new Date().toISOString();
+  const receivedBy = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+
+  // 각 source order별 입력값 파싱
+  const perOrder = {};
+  ctx.items.forEach((m, idx) => {
+    const qtyEl = document.getElementById('recv-qty-' + idx);
+    const priceEl = document.getElementById('recv-price-' + idx);
+    const checkEl = document.getElementById('recv-check-' + idx);
+    const isChecked = checkEl ? checkEl.checked : true;
+    const actualQty = isChecked ? (parseInt(qtyEl && qtyEl.value) || 0) : 0;
+    const actualPrice = parseInt(priceEl && priceEl.value) || (m.item.price || 0);
+    if (!perOrder[m.sourceOrderId]) perOrder[m.sourceOrderId] = {};
+    perOrder[m.sourceOrderId][m.sourceIdx] = { actualQty, actualPrice };
+  });
+
+  const anyReceived = Object.values(perOrder).some(a => Object.values(a).some(x => x.actualQty > 0));
+  if (!anyReceived) {
+    showAlert('입고할 항목 없음', '최소 1개 이상 체크 + 수량 입력하세요.');
+    return;
+  }
+
+  let totalQty = 0, totalCost = 0, totalCount = 0, totalRemaining = 0;
+
+  Object.keys(perOrder).forEach(oid => {
+    const o = (orders || []).find(x => x.id === oid);
+    if (!o || o.status !== 'pending') return;
+    const adj = perOrder[oid];
+
+    const receivedItems = [];
+    const remainingItems = [];
+    o.items.forEach((it, idx) => {
+      const a = adj[idx];
+      if (!a || a.actualQty <= 0) {
+        remainingItems.push(Object.assign({}, it));
+        return;
+      }
+      const invItem = inventory.find(i => i.id === it.itemId);
+      if (invItem) {
+        if (typeof adjustInventoryStock === 'function') {
+          adjustInventoryStock(invItem.id, a.actualQty);
+        } else {
+          invItem.stock += a.actualQty;
+          if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(invItem).catch(() => {});
+        }
+        if (a.actualPrice > 0 && a.actualPrice !== invItem.price) {
+          invItem.price = a.actualPrice;
+          if (typeof upsertInventoryDoc === 'function') upsertInventoryDoc(invItem).catch(() => {});
+        }
+      }
+      const histId = 'H' + Date.now() + '_' + idx + '_' + it.itemId + '_' + Math.random().toString(36).slice(2, 5);
+      const histRec = {
+        id: histId, type: 'in', date: receivedDate,
+        itemId: it.itemId, vendor: it.vendor, name: it.name,
+        qty: a.actualQty, unit: it.unit || '', price: a.actualPrice,
+        weekKey: (typeof getWeekKey === 'function') ? getWeekKey(receivedDate) : '',
+        orderId: oid
+      };
+      history.push(histRec);
+      if (typeof upsertHistoryDoc === 'function') {
+        upsertHistoryDoc(histRec).catch(() => {});
+        if (window._historyHashes) window._historyHashes.set(histRec.id, JSON.stringify(histRec));
+      }
+      receivedItems.push(Object.assign({}, it, {
+        qty: a.actualQty, price: a.actualPrice,
+        actualQty: a.actualQty, actualPrice: a.actualPrice, historyId: histId
+      }));
+      const leftover = (it.qty || 0) - a.actualQty;
+      if (leftover > 0) remainingItems.push(Object.assign({}, it, { qty: leftover }));
+      totalQty += a.actualQty;
+      totalCost += a.actualQty * a.actualPrice;
+      totalCount++;
+    });
+
+    if (remainingItems.length === 0 && receivedItems.length > 0) {
+      o.status = 'received';
+      o.receivedDate = receivedDate;
+      o.receivedBy = receivedBy;
+      o.items = receivedItems;
+      if (typeof upsertOrderDoc === 'function') upsertOrderDoc(o).catch(() => {});
+    } else if (receivedItems.length > 0) {
+      const newRecvId = oid + '_recv_' + Date.now();
+      const newRecv = {
+        id: newRecvId, date: o.date, parentOrderId: oid,
+        status: 'received', orderedBy: o.orderedBy, memo: o.memo,
+        items: receivedItems, receivedDate: receivedDate, receivedBy: receivedBy
+      };
+      orders.push(newRecv);
+      if (typeof upsertOrderDoc === 'function') upsertOrderDoc(newRecv).catch(() => {});
+      o.items = remainingItems;
+      o.partialReceiveHistory = o.partialReceiveHistory || [];
+      o.partialReceiveHistory.push({
+        at: receivedDate, by: receivedBy, receivedOrderId: newRecvId,
+        receivedItemCount: receivedItems.length,
+        receivedQty: receivedItems.reduce((s, x) => s + (x.qty || 0), 0)
+      });
+      if (typeof upsertOrderDoc === 'function') upsertOrderDoc(o).catch(() => {});
+      totalRemaining++;
+    }
+  });
+
+  if (typeof logEvent === 'function') {
+    logEvent('order', 'receive_merged', {
+      summary: '묶음 입고: ' + totalCount + '종 · ' + totalQty + '개 · ' + totalCost.toLocaleString() + '원',
+      orderIds: ctx.orderIds, totalQty, totalCost, receivedBy
+    });
+  }
+
+  window._mergedReceiveCtx = null;
+  saveAll();
+  updateHeaderStats();
+  closeModal();
+  showToast('입고 완료! ' + totalCount + '종 ' + totalQty + '개' + (totalRemaining > 0 ? ' (잔여 대기 유지)' : ''), 'success');
+  window._orderStatusTab = (totalRemaining > 0) ? 'pending' : 'received';
+  renderInbound();
 }
 
 function _renderOrderCard(o) {
@@ -2008,6 +2171,46 @@ function saveOrderDates(orderId) {
     return;
   }
   const newOrderDate = new Date(newOrderStr + 'T00:00:00.000Z').toISOString();
+
+  // 묶음 일자 수정: window._dateEditMergedIds 가 있으면 모든 underlying 에도 동일 적용
+  const mergedIds = window._dateEditMergedIds;
+  if (mergedIds && mergedIds.length > 1) {
+    window._dateEditMergedIds = null;
+    const newRecvDate = (o.status === 'received' && newRecvStr)
+      ? new Date(newRecvStr + 'T00:00:00.000Z').toISOString() : null;
+    const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+    mergedIds.forEach(id => {
+      const oi = (orders || []).find(x => x.id === id);
+      if (!oi || oi.status === 'cancelled') return;
+      oi.date = newOrderDate;
+      if (newRecvDate && oi.status === 'received') {
+        oi.receivedDate = newRecvDate;
+        (oi.items || []).forEach(it => {
+          if (!it.historyId) return;
+          const h = (history || []).find(x => x.id === it.historyId);
+          if (!h) return;
+          h.date = newRecvDate;
+          if (typeof getWeekKey === 'function') h.weekKey = getWeekKey(newRecvDate);
+          if (typeof upsertHistoryDoc === 'function') {
+            upsertHistoryDoc(h).catch(() => {});
+            if (window._historyHashes) window._historyHashes.set(h.id, JSON.stringify(h));
+          }
+        });
+      }
+      if (typeof upsertOrderDoc === 'function') upsertOrderDoc(oi).catch(() => {});
+    });
+    if (typeof logEvent === 'function') {
+      logEvent('order', 'edit_dates_merged', {
+        summary: '묶음 일자 수정: ' + mergedIds.length + '개 주문',
+        orderIds: mergedIds, newOrderDate, newRecvDate, by
+      });
+    }
+    saveAll();
+    closeModal();
+    showToast(mergedIds.length + '개 주문 일자 수정 완료', 'success');
+    renderInbound();
+    return;
+  }
 
   const changes = [];
   let orderChanged = false;
