@@ -415,8 +415,14 @@ function renderInbound() {
         '<span class="ml-auto text-xs text-slate-600">' + groupOrders.length + '건 · ' + weekQty + '개' + weekCostStr + '</span>' +
         '</button>' +
         '<div class="' + (expanded ? '' : 'hidden') + ' divide-y divide-slate-100">';
-      groupOrders.forEach(o => {
-        orderHistHtml += _renderOrderCard(o);
+      // 같은 날짜+업체+담당자+상태면 한 카드로 묶음 (display 레벨)
+      const merged = _mergeOrdersForDisplay(groupOrders);
+      merged.forEach(m => {
+        if (m.orders.length === 1) {
+          orderHistHtml += _renderOrderCard(m.orders[0]);
+        } else {
+          orderHistHtml += _renderMergedOrderCard(m);
+        }
       });
       orderHistHtml += '</div></div>';
     });
@@ -809,6 +815,177 @@ function adjustQty(delta) {
 // ============================================
 // 주문 카드 렌더링 (대기/완료/취소 공통)
 // ============================================
+// 같은 날짜(YYYY-MM-DD) + 같은 vendor (단일) + 같은 orderedBy + 같은 status 인 주문을 묶음
+// 결과: [{ orders: [o1, o2, ...] }, ...] — 단일이든 다중이든 동일 구조
+function _mergeOrdersForDisplay(orders) {
+  const groups = [];
+  const groupMap = {};
+  orders.forEach(o => {
+    const items = o.items || [];
+    const vendors = [...new Set(items.map(it => it.vendor || ''))];
+    const singleVendor = vendors.length === 1 ? vendors[0] : null;
+    const dateStr = o.date ? o.date.slice(0, 10) : '';
+    const key = singleVendor ? (dateStr + '|' + singleVendor + '|' + (o.orderedBy || '') + '|' + (o.status || 'pending')) : null;
+    if (!key) {
+      groups.push({ orders: [o] });
+      return;
+    }
+    if (!groupMap[key]) {
+      const g = { orders: [o], key: key };
+      groups.push(g);
+      groupMap[key] = g;
+    } else {
+      groupMap[key].orders.push(o);
+    }
+  });
+  return groups;
+}
+
+// 묶인 주문 카드 — 여러 주문의 items를 통합해 한 카드로 표시
+// 버튼은 묶음 전체에 일괄 적용 (각 underlying order에 dispatch)
+function _renderMergedOrderCard(merged) {
+  const orders = merged.orders;
+  const first = orders[0];
+  const status = first.status || 'pending';
+  const dt = new Date(first.date);
+  const dateStr = isNaN(dt.getTime()) ? '' : (dt.getMonth() + 1) + '/' + dt.getDate();
+
+  // 모든 items 통합
+  const allItems = [];
+  orders.forEach(o => (o.items || []).forEach(it => allItems.push(it)));
+  const totalQty = allItems.reduce((s, it) => s + (it.qty || 0), 0);
+  const totalCost = allItems.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+  const orderIdsStr = orders.map(o => o.id).join(',');
+
+  // 캐시에 group 저장 (action handler가 lookup)
+  window._mergedOrderCache = window._mergedOrderCache || {};
+  window._mergedOrderCache[first.id] = orders.map(o => o.id);
+
+  let bgCls = 'bg-white hover:bg-slate-50';
+  let badgeHtml = '';
+  if (status === 'received') {
+    bgCls = 'bg-emerald-50/40';
+    const rdt = first.receivedDate ? new Date(first.receivedDate) : null;
+    const rstr = rdt && !isNaN(rdt.getTime()) ? ' · ' + (rdt.getMonth() + 1) + '/' + rdt.getDate() + ' 입고' : '';
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold">✅ 완료' + rstr + '</span>';
+  } else if (status === 'cancelled') {
+    bgCls = 'bg-slate-50 opacity-70';
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded font-bold">❌ 취소</span>';
+  } else {
+    badgeHtml = '<span class="text-[10px] px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded font-bold">⏳ 대기</span>';
+  }
+
+  let html = '<div class="px-4 py-3 ' + bgCls + '">' +
+    '<div class="flex items-center gap-2 mb-2">' +
+    '<span class="text-xs text-slate-500">' + dateStr + '</span>' +
+    badgeHtml +
+    (first.orderedBy ? '<span class="text-xs text-slate-600">👤 ' + escapeHtml(first.orderedBy) + '</span>' : '') +
+    '<span class="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded font-bold">🔗 ' + orders.length + '개 묶음</span>' +
+    '<span class="text-xs text-slate-500">' + allItems.length + '종 · ' + totalQty + '개</span>' +
+    '<span class="ml-auto text-sm font-bold text-slate-800">' + totalCost.toLocaleString() + '원</span>' +
+    '</div>';
+
+  // 항목 리스트
+  html += '<div class="space-y-0.5 mb-2">';
+  allItems.forEach(it => {
+    const lineCost = (it.qty || 0) * (it.price || 0);
+    const strike = status === 'cancelled' ? 'line-through text-slate-400' : '';
+    html += '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
+      '<span class="text-slate-500 truncate flex-shrink min-w-0">' + escapeHtml(it.vendor || '') + ' · </span>' +
+      '<span class="text-slate-800 font-medium truncate flex-1 min-w-0">' + escapeHtml(it.name || '') + '</span>' +
+      '<span class="text-slate-600 whitespace-nowrap">' + (it.qty || 0) + (it.unit || '') + ' × ' +
+      (it.price || 0).toLocaleString() + '원 = <strong>' + lineCost.toLocaleString() + '원</strong></span>' +
+      '</div>';
+  });
+  html += '</div>';
+
+  // 액션 버튼 — 묶음에 일괄 적용
+  html += '<div class="flex flex-wrap gap-1.5 pt-1">';
+  if (status === 'pending') {
+    html += '<button onclick="openReceiveOrderModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료 (' + orders.length + '개)</button>' +
+      '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="묶음 전체 일자 수정">📅 일자</button>' +
+      '<button onclick="cancelOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소 (' + orders.length + '개)</button>';
+  } else if (status === 'received') {
+    html += '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold">📅 일자</button>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+// 묶음 action — underlying orders 모두에 dispatch
+function _getMergedOrderIds(firstId) {
+  return (window._mergedOrderCache && window._mergedOrderCache[firstId]) || [firstId];
+}
+
+function cancelOrderMerged(firstId) {
+  const ids = _getMergedOrderIds(firstId);
+  if (ids.length === 1) return cancelOrder(firstId);
+  askConfirmWithReason('주문 묶음 취소',
+    ids.length + '개 주문을 모두 취소합니다.\n\n· 데이터 보존 ([취소] 탭으로 이동)\n· 재고 변동 없음',
+    '예: 발주 보류, 거래처 변경',
+    function(reason) {
+      const at = new Date().toISOString();
+      const by = (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '') || '관리자';
+      ids.forEach(id => {
+        const o = (orders || []).find(x => x.id === id);
+        if (!o || o.status !== 'pending') return;
+        o.status = 'cancelled';
+        o.cancelledDate = at;
+        o.cancelledBy = by;
+        if (reason) o.cancelReason = reason;
+        if (typeof upsertOrderDoc === 'function') upsertOrderDoc(o).catch(() => {});
+      });
+      if (typeof logEvent === 'function') {
+        logEvent('order', 'cancel_merged', {
+          summary: '주문 묶음 취소: ' + ids.length + '개', orderIds: ids, reason: reason || '', cancelledBy: by
+        });
+      }
+      saveAll();
+      showToast(ids.length + '개 주문 취소 완료', 'success');
+      window._orderStatusTab = 'cancelled';
+      renderInbound();
+    }, '예, 취소', 'red');
+}
+
+function openEditOrderDatesModalMerged(firstId) {
+  const ids = _getMergedOrderIds(firstId);
+  if (ids.length === 1) return openEditOrderDatesModal(firstId);
+  // 첫 주문 모달 열고 저장 시 모든 underlying 에 적용 (플래그)
+  window._dateEditMergedIds = ids;
+  openEditOrderDatesModal(firstId);
+}
+
+function openReceiveOrderModalMerged(firstId) {
+  const ids = _getMergedOrderIds(firstId);
+  if (ids.length === 1) return openReceiveOrderModal(firstId);
+  // 가상 merged order 생성해 모달에 전달 — items 통합
+  const mergedItems = [];
+  const itemSrc = [];  // 각 item이 어느 order 의 몇 번째 인지 추적
+  ids.forEach(oid => {
+    const o = (orders || []).find(x => x.id === oid);
+    if (!o) return;
+    (o.items || []).forEach((it, idx) => {
+      mergedItems.push(it);
+      itemSrc.push({ orderId: oid, itemIdx: idx });
+    });
+  });
+  window._mergedReceiveSrc = itemSrc;
+  window._mergedReceiveIds = ids;
+  // 가상 order 객체 임시 등록 (모달이 orders에서 lookup하므로)
+  const virtualOrder = {
+    id: 'VMERGE_' + firstId,
+    date: (orders.find(o => o.id === firstId) || {}).date,
+    status: 'pending',
+    orderedBy: (orders.find(o => o.id === firstId) || {}).orderedBy,
+    items: mergedItems,
+    _isVirtualMerged: true,
+    _underlyingIds: ids
+  };
+  // orders 배열에 임시 추가 (모달이 find 가능하도록), 모달 닫을 때 제거
+  orders.push(virtualOrder);
+  openReceiveOrderModal(virtualOrder.id);
+}
+
 function _renderOrderCard(o) {
   const status = o.status || 'pending';
   const dt = new Date(o.date);
@@ -1138,23 +1315,74 @@ function submitOrder() {
     : new Date().toISOString();
   const memo = memoInput ? (memoInput.value || '').trim() : '';
 
-  const orderId = 'O' + Date.now();
+  const newItems = orderCart.map(c => ({
+    itemId: c.itemId,
+    vendor: c.vendor,
+    name: c.name,
+    unit: c.unit || '',
+    qty: c.qty,
+    price: c.price || 0,
+    memo: c.memo || ''
+  }));
 
+  // 같은 날짜 + 같은 vendor (단일) + 같은 orderedBy + pending 상태인 기존 주문이 있으면 거기 합치기
+  // (중복 카드 방지)
+  const cartVendors = [...new Set(newItems.map(it => it.vendor || ''))];
+  const singleVendor = cartVendors.length === 1 ? cartVendors[0] : null;
+  const dateKey = orderDate.slice(0, 10);
+  let mergeTarget = null;
+  if (singleVendor) {
+    mergeTarget = (orders || []).find(o =>
+      (o.status || 'pending') === 'pending' &&
+      o.orderedBy === orderedBy &&
+      (o.date || '').slice(0, 10) === dateKey &&
+      Array.isArray(o.items) && o.items.length > 0 &&
+      o.items.every(it => (it.vendor || '') === singleVendor)
+    );
+  }
+
+  if (mergeTarget) {
+    // 기존 주문에 items 추가
+    mergeTarget.items = (mergeTarget.items || []).concat(newItems);
+    if (memo) {
+      mergeTarget.memo = mergeTarget.memo ? (mergeTarget.memo + ' / ' + memo) : memo;
+    }
+    mergeTarget.editHistory = mergeTarget.editHistory || [];
+    mergeTarget.editHistory.push({
+      at: new Date().toISOString(),
+      by: orderedBy,
+      type: 'merge_added',
+      changes: [{ action: 'added_items', count: newItems.length }]
+    });
+    if (typeof upsertOrderDoc === 'function') {
+      upsertOrderDoc(mergeTarget).catch(err => console.warn('order merge upsert 실패:', err));
+    }
+    if (typeof logEvent === 'function') {
+      const totalCost = newItems.reduce((s, it) => s + (it.qty || 0) * (it.price || 0), 0);
+      logEvent('order', 'merge_add', {
+        summary: '기존 주문에 ' + newItems.length + '종 추가 · ' + totalCost.toLocaleString() + '원',
+        orderId: mergeTarget.id, itemCount: newItems.length, totalCost: totalCost, orderedBy: orderedBy
+      });
+    }
+    orderCart.length = 0;
+    window._pendingOrderer = null;
+    saveAll();
+    closeModal();
+    showToast('기존 주문에 ' + newItems.length + '종 추가됨 (' + orderedBy + ')', 'success');
+    window._orderStatusTab = 'pending';
+    renderInbound();
+    return;
+  }
+
+  // 신규 주문 생성
+  const orderId = 'O' + Date.now();
   const newOrder = {
     id: orderId,
     date: orderDate,
     status: 'pending',
     orderedBy: orderedBy,
     memo: memo,
-    items: orderCart.map(c => ({
-      itemId: c.itemId,
-      vendor: c.vendor,
-      name: c.name,
-      unit: c.unit || '',
-      qty: c.qty,
-      price: c.price || 0,
-      memo: c.memo || ''
-    })),
+    items: newItems,
     editHistory: []
   };
 
@@ -1186,6 +1414,70 @@ function submitOrder() {
   window._orderStatusTab = 'pending';
   renderInbound();
 }
+
+// 기존 중복 주문을 첫 번째 doc으로 통합 (콘솔에서 1회 실행)
+// 같은 날짜 + 같은 vendor + 같은 orderedBy + pending 상태 doc들을 첫 번째 doc으로 합침
+window.mcMergeDuplicateOrders = async function() {
+  if (typeof orders === 'undefined' || !Array.isArray(orders)) {
+    console.error('orders 배열 없음');
+    return;
+  }
+  const groups = {};
+  orders.forEach(o => {
+    if ((o.status || 'pending') !== 'pending') return;
+    const items = o.items || [];
+    if (items.length === 0) return;
+    const vendors = [...new Set(items.map(it => it.vendor || ''))];
+    if (vendors.length !== 1) return;  // 다중 vendor는 묶지 않음
+    const key = (o.date || '').slice(0, 10) + '|' + vendors[0] + '|' + (o.orderedBy || '');
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(o);
+  });
+
+  let mergedCount = 0;
+  let removedCount = 0;
+  for (const key of Object.keys(groups)) {
+    const grp = groups[key];
+    if (grp.length < 2) continue;
+    // 첫 번째를 primary로, 나머지 items 합치고 나머지 삭제
+    grp.sort((a, b) => (a.id || '').localeCompare(b.id || ''));  // ID 작은 게 primary
+    const primary = grp[0];
+    const subordinates = grp.slice(1);
+    subordinates.forEach(sub => {
+      primary.items = primary.items.concat(sub.items || []);
+      if (sub.memo) primary.memo = primary.memo ? (primary.memo + ' / ' + sub.memo) : sub.memo;
+    });
+    primary.editHistory = primary.editHistory || [];
+    primary.editHistory.push({
+      at: new Date().toISOString(),
+      by: '관리자(콘솔)',
+      type: 'merge_consolidate',
+      changes: [{ mergedFromIds: subordinates.map(s => s.id), itemsAdded: subordinates.reduce((s, x) => s + (x.items || []).length, 0) }]
+    });
+    if (typeof upsertOrderDoc === 'function') {
+      await upsertOrderDoc(primary).catch(err => console.warn('merge primary upsert 실패:', err));
+    }
+    // subordinates 메모리 + Firestore 삭제
+    for (const sub of subordinates) {
+      const idx = orders.indexOf(sub);
+      if (idx >= 0) orders.splice(idx, 1);
+      if (window.firebaseReady && window.firebaseDeleteDoc) {
+        try {
+          await window.firebaseDeleteDoc(window.firebaseDoc(window.firebaseDB, 'orders', sub.id));
+          removedCount++;
+        } catch (err) {
+          console.warn('merge sub delete 실패:', sub.id, err);
+        }
+      }
+    }
+    mergedCount++;
+    console.log('✓ 통합:', key, '→', primary.id, '(추가된 항목:', subordinates.reduce((s, x) => s + (x.items || []).length, 0), '개)');
+  }
+  saveAll();
+  if (typeof renderInbound === 'function') renderInbound();
+  console.log('🟢 완료:', mergedCount, '개 그룹 통합, ', removedCount, '개 중복 doc 삭제');
+  return { mergedGroups: mergedCount, removedDocs: removedCount };
+};
 
 // ============================================
 // 입고 완료 모달 (per-item 실제 입고 수량/단가/일자)
