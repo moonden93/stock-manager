@@ -487,6 +487,9 @@ function openAddItemDialog(fromCustomReqId) {
     '<input type="number" id="new-item-min" placeholder="0" min="0" class="w-full px-3 py-2.5 text-base bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500" /></div>' +
     '</div>' +
     '<p class="text-xs text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">💡 재고가 "부족 기준" 이하가 되면 🟡 부족 표시가 나타나요</p>' +
+    // 메모 (주문 링크, 거래처 연락처, 특이사항 등)
+    '<div><label class="text-sm font-bold text-slate-700 mb-1 block">📝 메모 <span class="font-normal text-slate-400">(주문 링크, 거래처 연락처 등)</span></label>' +
+    '<textarea id="new-item-memo" rows="3" placeholder="예: 쿠팡 https://...\n새한치재 02-xxxx-xxxx" class="w-full px-3 py-2.5 text-sm bg-slate-50 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-teal-500 resize-y"></textarea></div>' +
     '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
@@ -526,9 +529,11 @@ function addItem() {
   const newCat = newCatEl ? (newCatEl.value || '').trim() : '';
   const selCat = catSelEl ? (catSelEl.value || '').trim() : '';
   const category = newCat || selCat;
+  const memoEl = document.getElementById('new-item-memo');
+  const memo = memoEl ? (memoEl.value || '').trim() : '';
   const newItem = {
     id: 'M' + Date.now(),
-    vendor, name, unit, price, stock, minStock, category
+    vendor, name, unit, price, stock, minStock, category, memo
   };
   inventory.push(newItem);
 
