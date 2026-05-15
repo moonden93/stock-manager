@@ -19,7 +19,7 @@ async function switchTab(name) {
   // - 관리자: 비밀번호 입력으로 반출관리/입고/재고/설정 진입
   const protectedLabels = {
     manage: '반출관리',
-    inbound: '입고',
+    inbound: '주문/입고',
     inventory: '재고',
     settings: '설정 화면'
   };
