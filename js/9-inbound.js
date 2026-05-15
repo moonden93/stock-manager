@@ -902,9 +902,9 @@ function _renderMergedOrderCard(merged) {
   // 액션 버튼 — 묶음에 일괄 적용
   html += '<div class="flex flex-wrap gap-1.5 pt-1">';
   if (status === 'pending') {
-    html += '<button onclick="openReceiveOrderModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료 (' + orders.length + '개)</button>' +
+    html += '<button onclick="openReceiveOrderModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold">✅ 입고 완료</button>' +
       '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold" title="묶음 전체 일자 수정">📅 일자</button>' +
-      '<button onclick="cancelOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소 (' + orders.length + '개)</button>';
+      '<button onclick="cancelOrderMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-xs font-bold">❌ 취소</button>';
   } else if (status === 'received') {
     html += '<button onclick="openEditOrderDatesModalMerged(\'' + escapeJs(first.id) + '\')" class="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg text-xs font-bold">📅 일자</button>';
   }
