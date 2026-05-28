@@ -53,6 +53,10 @@ function loadData() {
     const o = localStorage.getItem('mc_orders');
     if (o) orders = JSON.parse(o);
 
+    // 입고 주문 장바구니 (디바이스 단위 — localStorage 영구 보존)
+    const oc = localStorage.getItem('mc_order_cart');
+    if (oc) orderCart = JSON.parse(oc);
+
     // ============================================
     // 팀 로드 + 마이그레이션
     // ============================================
@@ -322,6 +326,7 @@ function saveToLocalStorage() {
     localStorage.setItem('mc_history', JSON.stringify(history));
     localStorage.setItem('mc_requests', JSON.stringify(requests));
     localStorage.setItem('mc_orders', JSON.stringify(orders));
+    localStorage.setItem('mc_order_cart', JSON.stringify(orderCart));
     localStorage.setItem('mc_teams', JSON.stringify(teams));
     localStorage.setItem('mc_team_members', JSON.stringify(teamMembers));
   } catch (e) {
