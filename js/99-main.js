@@ -189,9 +189,23 @@ function debouncedReRenderCurrentTab() {
 
 // 사용자 인터랙션 추적 (debouncedReRenderCurrentTab에서 사용)
 // 클릭 직후 listener echo 재렌더로 인한 버튼 disappear/lag 방지
+//
+// B: 같은 버튼 빠른 더블탭 방지 — 클릭 후 500ms 동안 같은 버튼 비활성화 (시각적 피드백 + 중복 클릭 차단)
+//    inline onclick 처리는 capture phase에서 동작하므로 여기서 막을 수 없음 →
+//    handler 실행 후 짧게 시각적으로만 비활성화 (opacity + pointer-events)
 if (typeof window !== 'undefined' && !window._userInteractionTrackerAttached) {
-  document.addEventListener('click', function() {
+  document.addEventListener('click', function(e) {
     window._lastUserInteractionTime = Date.now();
+    const btn = e.target && e.target.closest ? e.target.closest('button') : null;
+    if (btn && !btn.disabled && !btn.dataset.noGuard) {
+      // 시각적 비활성화 + 클릭 차단 (500ms)
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+      setTimeout(function() {
+        btn.style.opacity = '';
+        btn.style.pointerEvents = '';
+      }, 500);
+    }
   }, true);
   window._userInteractionTrackerAttached = true;
 }
