@@ -308,6 +308,18 @@ function applyCloudData(data) {
     teamMembers = cloudMembers || {};
   }
   // (cloud 비어있고 local에 있으면) 로컬 유지 → 다음 saveAll 시 자동으로 클라우드에 반영
+
+  // 주문 장바구니 (orderCart) — 기기간 공유. itemId 기준 union 머지.
+  // 같은 itemId면 cloud의 qty 사용 (한쪽이 수정했을 가능성 우선)
+  // local-only 항목은 보존 (다른 기기에서 추가한 게 cloud로 아직 안 갔을 수도)
+  if (Array.isArray(data.orderCart)) {
+    const cloudCart = data.orderCart;
+    const cloudIdSet = new Set(cloudCart.map(c => c.itemId));
+    const localOnly = (orderCart || []).filter(c => c && c.itemId && !cloudIdSet.has(c.itemId));
+    orderCart.length = 0;
+    cloudCart.forEach(c => orderCart.push(c));
+    localOnly.forEach(c => orderCart.push(c));
+  }
 }
 
 // ============================================
@@ -388,6 +400,7 @@ async function saveToFirebase() {
     // 이전 구현(setDoc 통째로)은 한 기기의 빈 teamMembers가 클라우드를 덮어쓰는 사고를 냈음.
     const payload = {
       requests: requests,
+      orderCart: orderCart,  // 주문 장바구니 — 기기간 공유 (2026-05-15)
       lastUpdated: window.firebaseServerTimestamp()
     };
 

@@ -172,6 +172,12 @@ function markModalOpened() {
 function debouncedReRenderCurrentTab() {
   if (window._reRenderDebounceTimer) clearTimeout(window._reRenderDebounceTimer);
   window._reRenderDebounceTimer = setTimeout(() => {
+    // A: 사용자가 최근 800ms 안에 클릭했으면 한 번 더 미룸 — 클릭 도중 DOM 재구성 막아 lag 해소
+    if (window._lastUserInteractionTime && Date.now() - window._lastUserInteractionTime < 800) {
+      window._reRenderDebounceTimer = null;
+      debouncedReRenderCurrentTab();  // 재스케줄
+      return;
+    }
     window._reRenderDebounceTimer = null;
     if (typeof currentTab !== 'undefined') {
       const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
@@ -179,6 +185,15 @@ function debouncedReRenderCurrentTab() {
       if (typeof renderFn === 'function') renderFn();
     }
   }, 200);
+}
+
+// 사용자 인터랙션 추적 (debouncedReRenderCurrentTab에서 사용)
+// 클릭 직후 listener echo 재렌더로 인한 버튼 disappear/lag 방지
+if (typeof window !== 'undefined' && !window._userInteractionTrackerAttached) {
+  document.addEventListener('click', function() {
+    window._lastUserInteractionTime = Date.now();
+  }, true);
+  window._userInteractionTrackerAttached = true;
 }
 
 
