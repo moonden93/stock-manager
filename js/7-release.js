@@ -84,14 +84,25 @@ function _releaseItemRowHtml(item) {
     orderBadge = ' · <span class="text-orange-600 font-bold">📝 주문필요</span>';
   }
 
-  let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : '') + '">' +
+  // 숨김 항목 시각 표시 — 요청 전에 사용자가 확인할 수 있게
+  // (안 시키는 제품인데 요청 들어오는 사고 방지)
+  const hiddenBadge = item.hidden
+    ? '<span class="ml-1 text-[10px] px-1.5 py-0.5 bg-slate-300 text-slate-700 rounded font-bold">🙈 숨김</span>'
+    : '';
+  const hiddenBgClass = item.hidden ? ' bg-slate-100 opacity-70' : '';
+  const hiddenWarning = item.hidden
+    ? '<p class="text-[11px] text-amber-700 font-bold mt-0.5">⚠️ 숨김 항목 — 요청 전 확인 필요</p>'
+    : '';
+
+  let html = '<div class="px-4 py-3 hover:bg-slate-50 ' + (insufficient ? 'bg-amber-50' : hiddenBgClass) + '">' +
     '<div class="flex items-center gap-3">' +
     '<div class="flex-1 min-w-0">' +
     '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(item.category) + escapeHtml(item.vendor) + '</p>' +
-    '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + '</p>' +
+    '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(item.name) + hiddenBadge + '</p>' +
     '<p class="text-xs ' + stockColor + ' mt-0.5">재고 <strong>' + item.stock + '</strong>' +
     (item.stock === 0 ? ' · 🔴 품절' : item.stock < item.minStock ? ' · 🟡 부족' : '') +
-    orderBadge + '</p></div>' +
+    orderBadge + '</p>' +
+    hiddenWarning + '</div>' +
     '<div class="flex items-center gap-2">';
 
   if (cartQty > 0) {
