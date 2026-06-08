@@ -247,16 +247,19 @@ function renderInbound() {
   const customByKey = {};
   (requests || []).forEach(r => {
     if ((r.status || 'completed') !== 'pending') return;
+    const reqDate = r.date ? new Date(r.date).getTime() : Date.now();
     if (r.isCustom) {
       const key = (r.vendor || '') + '||' + (r.name || '');
-      if (!customByKey[key]) customByKey[key] = { vendor: r.vendor, name: r.name, qty: 0, requesters: new Set(), reqIds: [] };
+      if (!customByKey[key]) customByKey[key] = { vendor: r.vendor, name: r.name, qty: 0, requesters: new Set(), reqIds: [], oldestDate: reqDate };
       customByKey[key].qty += (r.qty || 0);
       customByKey[key].requesters.add(r.team || '');
       customByKey[key].reqIds.push(r.id);
+      if (reqDate < customByKey[key].oldestDate) customByKey[key].oldestDate = reqDate;
     } else if (r.itemId) {
-      if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set() };
+      if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set(), oldestDate: reqDate };
       requestedByItem[r.itemId].qty += (r.qty || 0);
       requestedByItem[r.itemId].requesters.add(r.team || '');
+      if (reqDate < requestedByItem[r.itemId].oldestDate) requestedByItem[r.itemId].oldestDate = reqDate;
     }
   });
   // 주문 필요 항목 추출
@@ -271,28 +274,63 @@ function renderInbound() {
     if (!isShort) return;
     needsOrderList.push({
       kind: 'inv', item: item, reqQty: reqQty,
-      teamCount: requestedByItem[itemId].requesters.size
+      teamCount: requestedByItem[itemId].requesters.size,
+      oldestDate: requestedByItem[itemId].oldestDate
     });
   });
   // 직접요청 항목 (재고 미등록 — 무조건 주문 필요)
   Object.values(customByKey).forEach(g => {
     needsOrderList.push({
       kind: 'custom', vendor: g.vendor, name: g.name, reqQty: g.qty,
-      teamCount: g.requesters.size, primaryReqId: g.reqIds[0]
+      teamCount: g.requesters.size, primaryReqId: g.reqIds[0],
+      oldestDate: g.oldestDate
     });
   });
-  // 정렬: custom(미등록) > 품절 > 부족 순, 같은 등급은 요청 수량 큰 순
+  // 정렬: 오래된 요청일수록 위로 (urgency 최우선)
+  // 그 다음: custom(미등록) > 품절 > 부족, 같은 등급에선 요청 수량 큰 순
   needsOrderList.sort((a, b) => {
+    // 1차: 오래된 요청 (날짜 작은 게 먼저)
+    const aDate = a.oldestDate || Date.now();
+    const bDate = b.oldestDate || Date.now();
+    // 같은 날짜(밀리초)면 다음 기준
+    if (Math.abs(aDate - bDate) > 86400000) {  // 1일 이상 차이나면 날짜 우선
+      return aDate - bDate;
+    }
     const sev = (n) => {
-      if (n.kind === 'custom') return 0;  // 재고 미등록이 가장 시급
-      if (n.item.stock === 0) return 1;   // 품절
-      if (n.item.stock < n.item.minStock) return 2;  // 부족
+      if (n.kind === 'custom') return 0;
+      if (n.item.stock === 0) return 1;
+      if (n.item.stock < n.item.minStock) return 2;
       return 3;
     };
     const aSev = sev(a), bSev = sev(b);
     if (aSev !== bSev) return aSev - bSev;
     return b.reqQty - a.reqQty;
   });
+
+  // "N일 전 요청" 라벨 + 색상 (오래될수록 빨강)
+  const daysAgoLabel = (oldestDate) => {
+    if (!oldestDate) return { text: '', cls: 'text-slate-500' };
+    const diffMs = Date.now() - oldestDate;
+    const days = Math.floor(diffMs / 86400000);
+    let text, cls;
+    if (days <= 0) {
+      text = '오늘 요청';
+      cls = 'text-slate-500';
+    } else if (days === 1) {
+      text = '어제 요청';
+      cls = 'text-slate-600';
+    } else if (days <= 3) {
+      text = days + '일 전 요청';
+      cls = 'text-amber-700 font-bold';
+    } else if (days <= 7) {
+      text = days + '일 전 요청';
+      cls = 'text-orange-700 font-bold';
+    } else {
+      text = '⚠️ ' + days + '일 전 요청';
+      cls = 'text-red-700 font-bold';
+    }
+    return { text, cls };
+  };
 
   let needsOrderHtml = '';
   if (needsOrderList.length > 0) {
@@ -303,6 +341,12 @@ function renderInbound() {
       '</div>' +
       '<div class="divide-y divide-orange-200">';
     needsOrderList.forEach(n => {
+      const dayLbl = daysAgoLabel(n.oldestDate);
+      const dateStr = n.oldestDate ? new Date(n.oldestDate).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '';
+      const datePill = dayLbl.text
+        ? '<span class="' + dayLbl.cls + ' ml-1">📅 ' + dayLbl.text + (dateStr ? ' (' + dateStr + ')' : '') + '</span>'
+        : '';
+
       if (n.kind === 'custom') {
         // 직접요청 — 재고 미등록 → 📦 품목 추가 흐름
         needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
@@ -312,6 +356,7 @@ function renderInbound() {
           '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(n.name) + '</p>' +
           '<p class="text-xs text-slate-600 mt-0.5">📦 재고 미등록 · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
           (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
+          datePill +
           '</p></div>' +
           '<button onclick="openInventoryAddFromCustom(\'' + escapeJs(n.primaryReqId) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">📦 품목 추가</button>' +
           '</div>';
@@ -327,6 +372,7 @@ function renderInbound() {
           ' · 재고 <strong>' + it.stock + '</strong>/' + (it.minStock || 0) +
           ' · 요청 <strong class="text-orange-700">' + n.reqQty + '개</strong>' +
           (n.teamCount > 1 ? ' (' + n.teamCount + '팀)' : '') +
+          datePill +
           '</p></div>' +
           '<button onclick="openOrderItemDialog(\'' + escapeJs(it.id) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">+ 주문 담기</button>' +
           '</div>';
