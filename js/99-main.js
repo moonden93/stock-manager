@@ -210,6 +210,34 @@ if (typeof window !== 'undefined' && !window._userInteractionTrackerAttached) {
   window._userInteractionTrackerAttached = true;
 }
 
+// ============================================
+// 전역 render 지연 wrapper — 모든 full render를 requestAnimationFrame으로 일괄 처리
+// ============================================
+// 효과:
+// - 클릭/입력 핸들러가 즉시 끝남 (render 안 기다림)
+// - 같은 프레임 내 여러 render 호출 → 한 번만 실행 (coalesce)
+// - 사용자가 input/button 클릭하는 도중에 render가 DOM 부수는 사고 방지
+//   → "한 번 클릭해도 안 되고 한 번 더 클릭해야" 증상 해소
+//
+// 부분 갱신 (renderXxxItems) 은 wrapping 안 함 — IME 안전성 위해 즉시 실행
+window.addEventListener('load', function() {
+  ['Release', 'Manage', 'Inbound', 'Inventory', 'Stats', 'Settings'].forEach(function(name) {
+    const fnName = 'render' + name;
+    const original = window[fnName];
+    if (typeof original !== 'function') return;
+    const flagKey = '_' + fnName + 'Q';
+    window[fnName] = function() {
+      if (window[flagKey]) return;
+      window[flagKey] = true;
+      requestAnimationFrame(function() {
+        window[flagKey] = false;
+        try { original(); } catch (e) { console.error(fnName + ' 실패:', e); }
+      });
+    };
+  });
+  console.log('✓ render 지연 wrapping 활성화');
+});
+
 
 // ============================================
 // 안내/경고 모달 (확인 버튼 1개)

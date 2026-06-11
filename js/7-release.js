@@ -825,13 +825,30 @@ function removeMyRequestItem(itemId, groupId) {
     }, '예, 항목 취소', 'red');
 }
 
-// 수정 모달
+// 수정 모달 — 직접요청은 요청시와 동일한 모든 필드 수정 가능
 function openEditMyRequest(groupId) {
   const items = requests.filter(r =>
     (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
   );
   if (items.length === 0) return;
-  const memo = items.find(it => it.memo) ? items.find(it => it.memo).memo : '';
+
+  // 직접요청 이미지 편집 상태 (modal 동안만 유지)
+  window._editReqImages = window._editReqImages || {};
+  items.forEach((it) => {
+    if (it.isCustom) {
+      window._editReqImages[it.id] = Array.isArray(it.customImages) ? it.customImages.slice() : [];
+    }
+  });
+
+  _renderEditMyRequestModal(groupId);
+}
+
+// 모달 렌더 (이미지 추가/제거 시 재호출됨)
+function _renderEditMyRequestModal(groupId) {
+  const items = requests.filter(r =>
+    (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
+  );
+  if (items.length === 0) { closeModal(); return; }
 
   let html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
@@ -841,31 +858,73 @@ function openEditMyRequest(groupId) {
     '<div class="px-5 py-4 space-y-3 overflow-y-auto">';
 
   items.forEach((it, idx) => {
-    html += '<div class="border border-slate-200 rounded-lg p-3">' +
-      '<div class="flex items-start gap-2 mb-2">' +
+    html += '<div class="border border-slate-200 rounded-lg p-3 space-y-2">' +
+      '<div class="flex items-start gap-2">' +
       '<div class="flex-1 min-w-0">' +
-      '<p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) + '</p>' +
-      '<p class="text-[11px] text-slate-500">' + escapeHtml(it.vendor) + '</p>' +
+      (it.isCustom ? '<p class="text-[10px] text-teal-700 font-bold mb-1">🆕 직접 요청</p>' : '') +
       '</div>' +
       '<button onclick="removeMyRequestItem(\'' + escapeJs(it.id) + '\', \'' + escapeJs(groupId) + '\')" ' +
       'class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold flex-shrink-0" ' +
       'title="이 항목을 요청에서 뺍니다">❌ 항목 취소</button>' +
-      '</div>' +
-      '<div class="flex items-center gap-2">' +
-      '<span class="text-xs text-slate-600">수량:</span>' +
-      '<input type="number" id="edit-req-qty-' + idx + '" data-id="' + escapeJs(it.id) + '" value="' + it.qty + '" min="1" inputmode="numeric" ' +
-      'class="w-20 h-9 text-center text-sm font-bold bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
-      '<span class="text-xs text-slate-500">' + escapeHtml(it.unit || '개') + '</span>' +
-      '</div></div>';
+      '</div>';
+
+    if (it.isCustom) {
+      // 직접요청 — 모든 필드 편집 가능 (요청시 폼과 동일)
+      const images = window._editReqImages[it.id] || [];
+      let imgPreview = '';
+      if (images.length > 0) {
+        imgPreview = '<div class="grid grid-cols-3 sm:grid-cols-4 gap-2 mt-1">';
+        images.forEach((img, imgIdx) => {
+          imgPreview += '<div class="relative aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200">' +
+            '<img src="' + img.data + '" alt="' + escapeHtml(img.name || '') + '" class="w-full h-full object-cover" />' +
+            '<button onclick="removeEditReqImage(\'' + escapeJs(it.id) + '\', ' + imgIdx + ', \'' + escapeJs(groupId) + '\')" class="absolute top-1 right-1 w-5 h-5 bg-black/60 hover:bg-red-500 text-white rounded-full text-[10px] flex items-center justify-center">×</button>' +
+            '</div>';
+        });
+        imgPreview += '</div>';
+      }
+
+      html += '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">품목명 *</label>' +
+        '<input type="text" id="edit-req-name-' + idx + '" data-id="' + escapeJs(it.id) + '" value="' + escapeHtml(it.name || '') + '" ' +
+        'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-2">' +
+        '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">업체명</label>' +
+        '<input type="text" id="edit-req-vendor-' + idx + '" value="' + escapeHtml(it.vendor || '') + '" ' +
+        'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+        '</div>' +
+        '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">단위</label>' +
+        '<input type="text" id="edit-req-unit-' + idx + '" value="' + escapeHtml(it.unit || '') + '" placeholder="ea, box" ' +
+        'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+        '</div></div>' +
+        '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">수량 *</label>' +
+        '<input type="number" id="edit-req-qty-' + idx + '" value="' + it.qty + '" min="1" inputmode="numeric" ' +
+        'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+        '</div>' +
+        '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">상세 설명</label>' +
+        '<textarea id="edit-req-desc-' + idx + '" rows="3" ' +
+        'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded resize-none focus:outline-none focus:border-blue-500">' +
+        escapeHtml(it.customDescription || '') + '</textarea></div>' +
+        '<div><label class="text-[11px] font-bold text-slate-700 mb-0.5 block">참고 사진</label>' +
+        '<label class="block w-full px-3 py-2 text-[11px] text-center text-slate-500 bg-white border-2 border-dashed border-slate-300 rounded hover:border-blue-400 hover:bg-blue-50 cursor-pointer">📸 사진 추가' +
+        '<input type="file" multiple accept="image/*" onchange="handleEditReqImages(event, \'' + escapeJs(it.id) + '\', \'' + escapeJs(groupId) + '\')" class="hidden" /></label>' +
+        imgPreview +
+        '</div>';
+    } else {
+      // 일반 요청 — 품명/업체 readonly, 수량만 편집
+      html += '<div><p class="text-sm font-medium text-slate-900">' + escapeHtml(it.name) + '</p>' +
+        '<p class="text-[11px] text-slate-500">' + escapeHtml(it.vendor) + '</p></div>' +
+        '<div class="flex items-center gap-2">' +
+        '<span class="text-xs text-slate-600">수량:</span>' +
+        '<input type="number" id="edit-req-qty-' + idx + '" data-id="' + escapeJs(it.id) + '" value="' + it.qty + '" min="1" inputmode="numeric" ' +
+        'class="w-20 h-9 text-center text-sm font-bold bg-slate-50 border-2 border-slate-200 rounded focus:outline-none focus:border-blue-500" />' +
+        '<span class="text-xs text-slate-500">' + escapeHtml(it.unit || '개') + '</span>' +
+        '</div>';
+    }
+
+    html += '</div>';
   });
 
-  html += '<div>' +
-    '<label class="text-xs font-bold text-slate-700 mb-1 block">📝 메모 (선택)</label>' +
-    '<textarea id="edit-req-memo" rows="3" maxlength="300" ' +
-    'class="w-full px-3 py-2 text-sm bg-slate-50 border-2 border-slate-200 rounded-lg resize-none focus:outline-none focus:border-blue-500">' +
-    escapeHtml(memo) + '</textarea>' +
-    '</div>' +
-    '</div>' +
+  html += '</div>' +
     '<div class="px-5 py-3 bg-slate-50 border-t flex gap-2">' +
     '<button onclick="closeModal()" class="flex-1 py-3 bg-white border border-slate-300 rounded-lg font-bold text-slate-700">취소</button>' +
     '<button onclick="saveMyRequestEdit(\'' + escapeJs(groupId) + '\')" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold">저장</button>' +
@@ -874,45 +933,90 @@ function openEditMyRequest(groupId) {
   if (typeof markModalOpened === 'function') markModalOpened();
 }
 
+// 직접요청 수정 모달 — 이미지 추가
+function handleEditReqImages(event, reqId, groupId) {
+  const files = event.target.files;
+  if (!files || files.length === 0) return;
+  window._editReqImages = window._editReqImages || {};
+  window._editReqImages[reqId] = window._editReqImages[reqId] || [];
+  const promises = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (f.size > 5 * 1024 * 1024) { showToast(f.name + ': 5MB 초과', 'error'); continue; }
+    promises.push(readFileAsBase64(f).then(data => ({ name: f.name, data: data })));
+  }
+  Promise.all(promises).then(imgs => {
+    imgs.forEach(im => window._editReqImages[reqId].push(im));
+    _renderEditMyRequestModal(groupId);
+  });
+}
+
+// 직접요청 수정 모달 — 이미지 제거
+function removeEditReqImage(reqId, imgIdx, groupId) {
+  if (!window._editReqImages || !window._editReqImages[reqId]) return;
+  window._editReqImages[reqId].splice(imgIdx, 1);
+  _renderEditMyRequestModal(groupId);
+}
+
 function saveMyRequestEdit(groupId) {
   const items = requests.filter(r =>
     (r.requestId || r.id) === groupId && (r.status || 'completed') === 'pending'
   );
   if (items.length === 0) { closeModal(); return; }
-  const newMemo = (document.getElementById('edit-req-memo').value || '').trim();
   const changes = [];
   const editAt = new Date().toISOString();
 
   items.forEach((it, idx) => {
-    const input = document.getElementById('edit-req-qty-' + idx);
-    if (!input) return;
-    const newQty = parseInt(input.value, 10);
+    const qtyEl = document.getElementById('edit-req-qty-' + idx);
+    if (!qtyEl) return;
+    const newQty = parseInt(qtyEl.value, 10);
     if (isNaN(newQty) || newQty < 1) return;
-    const oldMemo = it.memo || '';
     const qtyChanged = (newQty !== it.qty);
-    const memoChanged = (oldMemo !== newMemo);
-    if (qtyChanged || memoChanged) {
-      // 수정 이력을 항목에 직접 보존 (반출관리에서 표시)
+
+    let anyChange = qtyChanged;
+    const customChanges = {};
+
+    // 직접요청: 모든 필드 편집 가능
+    if (it.isCustom) {
+      const nameEl = document.getElementById('edit-req-name-' + idx);
+      const vendorEl = document.getElementById('edit-req-vendor-' + idx);
+      const unitEl = document.getElementById('edit-req-unit-' + idx);
+      const descEl = document.getElementById('edit-req-desc-' + idx);
+      const newName = nameEl ? (nameEl.value || '').trim() : it.name;
+      const newVendor = vendorEl ? (vendorEl.value || '').trim() : it.vendor;
+      const newUnit = unitEl ? (unitEl.value || '').trim() : it.unit;
+      const newDesc = descEl ? (descEl.value || '').trim() : (it.customDescription || '');
+      const newImages = (window._editReqImages && window._editReqImages[it.id]) || it.customImages || [];
+
+      if (newName && newName !== it.name) { customChanges.name = { from: it.name, to: newName }; it.name = newName; anyChange = true; }
+      if (newVendor !== (it.vendor || '')) { customChanges.vendor = { from: it.vendor, to: newVendor }; it.vendor = newVendor; anyChange = true; }
+      if (newUnit !== (it.unit || '')) { customChanges.unit = { from: it.unit, to: newUnit }; it.unit = newUnit; anyChange = true; }
+      if (newDesc !== (it.customDescription || '')) { customChanges.description = { from: it.customDescription, to: newDesc }; it.customDescription = newDesc; anyChange = true; }
+      // 이미지: 길이/내용 비교는 비용 커서 단순히 교체
+      it.customImages = newImages;
+    }
+
+    if (anyChange) {
       if (!Array.isArray(it.editHistory)) it.editHistory = [];
       it.editHistory.push({
         at: editAt,
         qtyFrom: it.qty,
         qtyTo: newQty,
-        memoFrom: oldMemo,
-        memoTo: newMemo,
+        customChanges: Object.keys(customChanges).length > 0 ? customChanges : undefined,
         by: it.requester || it.member || '본인'
       });
       if (qtyChanged) {
         changes.push({ name: it.name, before: it.qty, after: newQty });
         it.qty = newQty;
       }
-      it.memo = newMemo;
-      // 🔒 즉시 컬렉션 push (debounce 우회 — listener echo race 차단)
       if (typeof upsertRequestDoc === 'function') {
         upsertRequestDoc(it).catch(err => console.warn('edit immediate upsert 실패:', err));
       }
     }
   });
+
+  // 메모 필드 제거됨 — saveMyRequestEdit 끝에 newMemo 참조 안 함
+  const newMemo = '';
 
   // audit log
   if (typeof logEvent === 'function') {

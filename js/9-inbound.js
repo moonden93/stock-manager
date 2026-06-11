@@ -250,19 +250,22 @@ function renderInbound() {
   (requests || []).forEach(r => {
     if ((r.status || 'completed') !== 'pending') return;
     const reqDate = r.date ? new Date(r.date).getTime() : Date.now();
+    // "팀 · 담당자" 형태로 요청자 표시
+    const requesterLabel = (r.team || '') + (r.requester ? ' · ' + r.requester : '');
     if (r.isCustom) {
       const key = (r.vendor || '') + '||' + (r.name || '');
       if (!customByKey[key]) customByKey[key] = {
         vendor: r.vendor, name: r.name, qty: 0,
         requesters: new Set(), reqIds: [], oldestDate: reqDate,
-        descriptions: [], memos: [], images: []
+        descriptions: [], memos: [], images: [],
+        requesterLabels: new Set()
       };
       const g = customByKey[key];
       g.qty += (r.qty || 0);
       g.requesters.add(r.team || '');
+      g.requesterLabels.add(requesterLabel);
       g.reqIds.push(r.id);
       if (reqDate < g.oldestDate) g.oldestDate = reqDate;
-      // 상세 설명/메모/사진 수집 (중복 제거)
       if (r.customDescription && g.descriptions.indexOf(r.customDescription) < 0) {
         g.descriptions.push(r.customDescription);
       }
@@ -272,13 +275,14 @@ function renderInbound() {
       }
     } else if (r.itemId) {
       if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = {
-        qty: 0, requesters: new Set(), oldestDate: reqDate, memos: []
+        qty: 0, requesters: new Set(), oldestDate: reqDate, memos: [],
+        requesterLabels: new Set()
       };
       const ri = requestedByItem[r.itemId];
       ri.qty += (r.qty || 0);
       ri.requesters.add(r.team || '');
+      ri.requesterLabels.add(requesterLabel);
       if (reqDate < ri.oldestDate) ri.oldestDate = reqDate;
-      // 일반 요청 메모도 수집
       if (r.memo && ri.memos.indexOf(r.memo) < 0) ri.memos.push(r.memo);
     }
   });
@@ -297,7 +301,8 @@ function renderInbound() {
       kind: 'inv', item: item, reqQty: reqQty,
       teamCount: requestedByItem[itemId].requesters.size,
       oldestDate: requestedByItem[itemId].oldestDate,
-      memos: requestedByItem[itemId].memos || []
+      memos: requestedByItem[itemId].memos || [],
+      requesterLabels: Array.from(requestedByItem[itemId].requesterLabels || [])
     });
   });
   // 직접요청 항목 (재고 미등록 — 무조건 주문 필요)
@@ -306,7 +311,8 @@ function renderInbound() {
       kind: 'custom', vendor: g.vendor, name: g.name, reqQty: g.qty,
       teamCount: g.requesters.size, primaryReqId: g.reqIds[0],
       oldestDate: g.oldestDate,
-      descriptions: g.descriptions || [], memos: g.memos || [], images: g.images || []
+      descriptions: g.descriptions || [], memos: g.memos || [], images: g.images || [],
+      requesterLabels: Array.from(g.requesterLabels || [])
     });
   });
   // 정렬: 오래된 요청일수록 위로 (urgency 최우선)
@@ -370,8 +376,13 @@ function renderInbound() {
         ? '<span class="' + dayLbl.cls + ' ml-1">📅 ' + dayLbl.text + (dateStr ? ' (' + dateStr + ')' : '') + '</span>'
         : '';
 
-      // 상세 설명 + 메모 + 사진 (직접요청 + 일반요청 메모 공통)
+      // 요청자 + 상세 설명 + 메모 + 사진
       let extraHtml = '';
+      // 요청자 (팀·담당자) 표시 — 여러 명이면 모두 나열
+      if (Array.isArray(n.requesterLabels) && n.requesterLabels.length > 0) {
+        extraHtml += '<p class="text-[11px] text-slate-600 mt-1">👤 ' +
+          n.requesterLabels.map(l => escapeHtml(l)).join(', ') + '</p>';
+      }
       const allMemos = (n.descriptions || []).concat(n.memos || []);
       if (allMemos.length > 0) {
         extraHtml += '<div class="mt-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-slate-700">';
