@@ -321,18 +321,17 @@ if (typeof window !== 'undefined') {
         // 클라우드 기준선(cache)이 아직 없으면 배치 skip — 즉시 upsert가 실제 변경을
         // 이미 처리하므로 손실 없음. (캐시 없이 전체를 쓰면 stale localStorage가
         // 클라우드를 덮을 수 있음)
-        if (!window._reqHashCacheReady) {
-          return;
-        }
         if (Array.isArray(requests) && requests.length > 0) {
-          // ⚠️ 변경된 항목만 upsert (전체 재기록 금지).
-          // 전체를 다시 쓰면 다른 기기가 방금 한 변경(취소 등)을
-          // 이 기기의 stale 메모리로 덮어쓰는 race가 생김.
+          // 변경된 항목만 upsert (전체 재기록은 다른 기기 변경 덮어쓰기 race).
+          // 단, 캐시 미준비(listener 아직 안 옴)면 안전하게 전체 재기록 —
+          // upsert는 삭제를 안 하므로 데이터 누락 위험 없음 (영속성 우선).
           window._reqHashCache = window._reqHashCache || {};
-          const changed = requests.filter(r => {
-            if (!r || !r.id) return false;
-            return window._reqHashCache[r.id] !== _reqHash(r);
-          });
+          let changed;
+          if (window._reqHashCacheReady) {
+            changed = requests.filter(r => r && r.id && window._reqHashCache[r.id] !== _reqHash(r));
+          } else {
+            changed = requests.filter(r => r && r.id);  // 전체
+          }
           if (changed.length > 0) {
             changed.forEach(r => { window._reqHashCache[r.id] = _reqHash(r); });
             upsertRequestsBatch(changed);
@@ -351,6 +350,45 @@ if (typeof window !== 'undefined') {
     setTimeout(patchSaveAll, 500);
   }
 })();
+
+// 콘솔 진단: 동기화 전반 상태 + quota 초과 여부 한 번에 점검
+//   mcDiagnoseSync()
+window.mcDiagnoseSync = async function() {
+  console.log('=== 동기화 종합 진단 ===');
+  console.log('Firebase 준비:', window.firebaseReady);
+  console.log('requests listener 활성:', !!window._requestsCollectionListenerActive);
+  console.log('orders listener 활성:', !!window._ordersCollectionListenerActive);
+  console.log('hash 캐시 준비:', !!window._reqHashCacheReady);
+  const mem = (requests || []);
+  const memPending = mem.filter(r => (r.status || 'completed') === 'pending').length;
+  console.log('[메모리] requests 총 ' + mem.length + '건 (대기 ' + memPending + ')');
+  try {
+    if (!window.firebaseGetDocs) {
+      const { getDocs } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js');
+      window.firebaseGetDocs = getDocs;
+    }
+    const col = window.firebaseCollection(window.firebaseDB, 'requests');
+    const snap = await window.firebaseGetDocs(col);
+    let total = 0, pending = 0;
+    snap.forEach(d => { total++; if ((d.data().status || 'completed') === 'pending') pending++; });
+    console.log('[클라우드 컬렉션] requests 총 ' + total + '건 (대기 ' + pending + ')');
+    console.log('---');
+    if (total >= mem.length) {
+      console.log('✅ 클라우드에 데이터 안전. 화면이 다르면 새로고침(Ctrl+Shift+R)으로 해결.');
+    } else {
+      console.log('⚠️ 메모리가 클라우드보다 많음 — 이 기기 변경이 아직 안 올라갔을 수 있음.');
+    }
+  } catch (err) {
+    const msg = (err && err.message) || String(err);
+    console.error('❌ 클라우드 읽기 실패:', msg);
+    if (/quota|resource-exhausted|exhausted/i.test(msg)) {
+      console.error('🛑 Firestore 일일 무료 quota 초과로 보입니다. 자정 PT(≈한국 17시) 리셋까지 동기화 중단.');
+      console.error('   데이터는 안전(append-only). 리셋 후 자동 복구. 그때까지 한 기기에서만 작업 권장.');
+    } else if (/permission/i.test(msg)) {
+      console.error('🛑 권한 오류 — Firestore 규칙 확인 필요.');
+    }
+  }
+};
 
 // 콘솔 진단: Phase 2 상태 한 번에 확인
 window.mcCheckPhase2Status = function() {
