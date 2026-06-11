@@ -546,7 +546,10 @@ function renderInbound() {
       '<div class="divide-y divide-amber-200">';
     orderCart.forEach((c, idx) => {
       const lineCost = (c.qty || 0) * (c.price || 0);
-      cartHtml += '<div class="px-4 py-3 flex items-center gap-2">' +
+      const cartRef = getOrderRefForItem(c.itemId);
+      const cartRefHtml = orderRefHasContent_(cartRef) ? orderRefBlockHtml_(cartRef, { showRequester: true }) : '';
+      cartHtml += '<div class="px-4 py-3">' +
+        '<div class="flex items-center gap-2">' +
         '<div class="flex-1 min-w-0">' +
         '<p class="text-xs text-slate-500">' + escapeHtml(c.vendor || '') + '</p>' +
         '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(c.name || '') + '</p>' +
@@ -555,6 +558,8 @@ function renderInbound() {
         '</div>' +
         '<button onclick="openOrderItemDialog(\'' + escapeJs(c.itemId) + '\')" class="text-[11px] px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded font-bold">✏️</button>' +
         '<button onclick="removeOrderCartItem(' + idx + ')" class="text-[11px] px-2 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded font-bold">🗑️</button>' +
+        '</div>' +
+        cartRefHtml +
         '</div>';
     });
     cartHtml += '</div>' +
@@ -994,11 +999,14 @@ function _renderMergedOrderCard(merged) {
   allItems.forEach(it => {
     const lineCost = (it.qty || 0) * (it.price || 0);
     const strike = status === 'cancelled' ? 'line-through text-slate-400' : '';
-    html += '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
+    html += '<div class="' + (strike ? '' : 'border-b border-slate-50 pb-1 last:border-0') + '">' +
+      '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
       '<span class="text-slate-500 truncate flex-shrink min-w-0">' + escapeHtml(it.vendor || '') + ' · </span>' +
       '<span class="text-slate-800 font-medium truncate flex-1 min-w-0">' + escapeHtml(it.name || '') + '</span>' +
       '<span class="text-slate-600 whitespace-nowrap">' + (it.qty || 0) + (it.unit || '') + ' × ' +
       (it.price || 0).toLocaleString() + '원 = <strong>' + lineCost.toLocaleString() + '원</strong></span>' +
+      '</div>' +
+      (status !== 'cancelled' && orderRefHasContent_(it.ref) ? orderRefBlockHtml_(it.ref, { showRequester: true }) : '') +
       '</div>';
   });
   html += '</div>';
@@ -1436,11 +1444,14 @@ function _renderOrderCard(o) {
   items.forEach(it => {
     const lineCost = (it.qty || 0) * (it.price || 0);
     const strike = status === 'cancelled' ? 'line-through text-slate-400' : '';
-    html += '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
+    html += '<div class="' + (strike ? '' : 'border-b border-slate-50 pb-1 last:border-0') + '">' +
+      '<div class="flex items-center gap-2 text-xs ' + strike + '">' +
       '<span class="text-slate-500 truncate flex-shrink min-w-0">' + escapeHtml(it.vendor || '') + ' · </span>' +
       '<span class="text-slate-800 font-medium truncate flex-1 min-w-0">' + escapeHtml(it.name || '') + '</span>' +
       '<span class="text-slate-600 whitespace-nowrap">' + (it.qty || 0) + (it.unit || '') + ' × ' +
       (it.price || 0).toLocaleString() + '원 = <strong>' + lineCost.toLocaleString() + '원</strong></span>' +
+      '</div>' +
+      (status !== 'cancelled' && orderRefHasContent_(it.ref) ? orderRefBlockHtml_(it.ref, { showRequester: true }) : '') +
       '</div>';
   });
   html += '</div>';
@@ -1481,6 +1492,63 @@ function _renderOrderCard(o) {
 // ============================================
 // 장바구니 추가/수정 모달 (수량 + 단가 + 메모)
 // ============================================
+// ============================================
+// 주문 참고 정보 — 대기 요청에서 상세설명/메모/사진/요청자를 모은다.
+// 주문 담기/장바구니/주문 카드에서 "무엇을 왜 주문하는지" 그대로 보이게 함.
+// ============================================
+function getOrderRefForItem(itemId) {
+  const ref = { descriptions: [], memos: [], images: [], requesterLabels: [] };
+  if (!itemId) return ref;
+  (requests || []).forEach(r => {
+    if ((r.status || 'completed') !== 'pending') return;
+    if (r.itemId !== itemId) return;
+    const label = (r.team || '') + (r.requester ? ' · ' + r.requester : '');
+    if (label && ref.requesterLabels.indexOf(label) < 0) ref.requesterLabels.push(label);
+    if (r.customDescription && ref.descriptions.indexOf(r.customDescription) < 0) ref.descriptions.push(r.customDescription);
+    if (r.memo && ref.memos.indexOf(r.memo) < 0) ref.memos.push(r.memo);
+    if (Array.isArray(r.customImages)) {
+      r.customImages.forEach(img => { if (img && img.data) ref.images.push(img); });
+    }
+  });
+  return ref;
+}
+
+// 참고 정보 블록 HTML (요청자 / 상세설명·메모 / 사진) — 주문 표시 공통
+function orderRefBlockHtml_(ref, opts) {
+  opts = opts || {};
+  if (!ref) return '';
+  let html = '';
+  if (opts.showRequester && Array.isArray(ref.requesterLabels) && ref.requesterLabels.length > 0) {
+    html += '<p class="text-[11px] text-slate-600 mt-1">👤 ' + ref.requesterLabels.map(l => escapeHtml(l)).join(', ') + '</p>';
+  }
+  const memos = (ref.descriptions || []).concat(ref.memos || []);
+  if (memos.length > 0) {
+    html += '<div class="mt-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-slate-700">';
+    memos.forEach((m, i) => { html += (i > 0 ? '<br>' : '') + '📝 ' + escapeHtml(m); });
+    html += '</div>';
+  }
+  if (Array.isArray(ref.images) && ref.images.length > 0) {
+    html += '<div class="mt-1 flex flex-wrap gap-1">';
+    ref.images.forEach(img => {
+      if (img && img.data) {
+        html += '<img src="' + escapeHtml(img.data) + '" alt="참고 사진" ' +
+          'class="w-12 h-12 object-cover rounded border border-slate-200 cursor-pointer hover:opacity-80" ' +
+          'onclick="window.open(\'' + img.data + '\',\'_blank\')" title="참고 사진" />';
+      }
+    });
+    html += '</div>';
+  }
+  return html;
+}
+
+// 참고 정보가 비어있는지 (요청자만 있으면 비어있는 것으로 안 봄)
+function orderRefHasContent_(ref) {
+  if (!ref) return false;
+  return (ref.descriptions && ref.descriptions.length > 0) ||
+         (ref.memos && ref.memos.length > 0) ||
+         (ref.images && ref.images.length > 0);
+}
+
 function openOrderItemDialog(itemId) {
   const item = inventory.find(i => i.id === itemId);
   if (!item) { showToast('품목을 찾을 수 없습니다', 'error'); return; }
@@ -1500,6 +1568,14 @@ function openOrderItemDialog(itemId) {
     '</div>' +
     '<p class="text-base font-bold text-slate-900 mb-1">' + escapeHtml(item.name) + '</p>' +
     '<p class="text-sm text-slate-500 mb-4">현재 재고: <strong>' + item.stock + '</strong> · 기준: ' + (item.minStock || 0) + '</p>' +
+    // 요청 참고 정보 (상세설명 / 사진 / 요청자)
+    (function() {
+      const ref = getOrderRefForItem(itemId);
+      if (!orderRefHasContent_(ref) && !(ref.requesterLabels && ref.requesterLabels.length)) return '';
+      return '<div class="mb-4 px-3 py-2 bg-teal-50 border border-teal-200 rounded-xl">' +
+        '<p class="text-[11px] font-bold text-teal-800 mb-0.5">📋 요청 참고 정보</p>' +
+        orderRefBlockHtml_(ref, { showRequester: true }) + '</div>';
+    })() +
     // 수량
     '<label class="text-sm font-bold text-slate-700 mb-1 block">주문 수량</label>' +
     '<div class="flex items-center gap-2 mb-3">' +
@@ -1728,15 +1804,24 @@ function submitOrder() {
     : new Date().toISOString();
   const memo = memoInput ? (memoInput.value || '').trim() : '';
 
-  const newItems = orderCart.map(c => ({
-    itemId: c.itemId,
-    vendor: c.vendor,
-    name: c.name,
-    unit: c.unit || '',
-    qty: c.qty,
-    price: c.price || 0,
-    memo: c.memo || ''
-  }));
+  const newItems = orderCart.map(c => {
+    // 요청 참고 정보(상세설명/사진/요청자)를 주문 시점에 스냅샷으로 보존.
+    // 이후 요청이 처리(상태 변경)돼도 주문 카드에서 무엇을 왜 샀는지 확인 가능.
+    const ref = getOrderRefForItem(c.itemId);
+    const item = {
+      itemId: c.itemId,
+      vendor: c.vendor,
+      name: c.name,
+      unit: c.unit || '',
+      qty: c.qty,
+      price: c.price || 0,
+      memo: c.memo || ''
+    };
+    if (orderRefHasContent_(ref) || (ref.requesterLabels && ref.requesterLabels.length)) {
+      item.ref = ref;
+    }
+    return item;
+  });
 
   // 같은 날짜 + 같은 vendor (단일) + 같은 orderedBy + pending 상태인 기존 주문이 있으면 거기 합치기
   // (중복 카드 방지)
