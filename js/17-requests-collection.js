@@ -390,6 +390,66 @@ window.mcDiagnoseSync = async function() {
   }
 };
 
+// 콘솔 복구: audit log(events/)에서 특정 팀의 누락 요청을 찾아 복구.
+// 모든 요청 생성은 events/에 기록되므로, 컬렉션에서 사라진 요청을 되살릴 수 있음.
+//   mcRecoverTeamRequests('이승주')        — 미리보기 (무엇이 누락됐는지만)
+//   mcRecoverTeamRequests('이승주', true)   — 실제 복구
+window.mcRecoverTeamRequests = async function(teamQuery, doWrite) {
+  if (!teamQuery) { console.log('사용법: mcRecoverTeamRequests("팀이름") 또는 mcRecoverTeamRequests("팀이름", true)'); return; }
+  console.log('=== "' + teamQuery + '" 요청 복구 ' + (doWrite ? '(실제 복구)' : '(미리보기)') + ' ===');
+  const events = await fetchRecentEvents(['request'], 3000);
+  const creates = events.filter(e => e.action === 'create' && e.payload && (e.payload.team || '').indexOf(teamQuery) >= 0);
+  console.log('audit log의 "' + teamQuery + '" 요청 생성 기록: ' + creates.length + '건');
+  if (creates.length === 0) {
+    console.log('→ 생성 기록 자체가 없음. 제출이 안 됐을 수 있음 (해당 팀 재신청 필요).');
+    return [];
+  }
+  const existingIds = new Set((requests || []).map(r => r.id));
+  const missing = creates.filter(e => e.payload.requestId && !existingIds.has(e.payload.requestId));
+  console.log('현재 컬렉션에 없는(누락) 요청: ' + missing.length + '건');
+  missing.forEach(e => {
+    const p = e.payload;
+    console.log('  · ' + p.team + ' / ' + (p.requester || '?') + ' / ' + p.item + ' x' + p.qty +
+      ' (' + (e.clientTime || '').slice(0, 10) + ')');
+  });
+  if (missing.length === 0) {
+    console.log('→ 누락 없음. audit 기록의 요청이 모두 컬렉션에 있음 (완료/취소 포함).');
+    return [];
+  }
+  if (!doWrite) {
+    console.log('---');
+    console.log('이 ' + missing.length + '건을 복구하려면: mcRecoverTeamRequests("' + teamQuery + '", true)');
+    return missing;
+  }
+  let recovered = 0;
+  for (const e of missing) {
+    const p = e.payload, id = p.requestId;
+    const us = id.indexOf('_');
+    const reqId = us >= 0 ? id.slice(0, us) : id;
+    const itemId = us >= 0 ? id.slice(us + 1) : (p.itemId || '');
+    const rec = {
+      id: id, requestId: reqId, status: 'pending',
+      date: e.clientTime || new Date().toISOString(),
+      itemId: itemId, vendor: p.vendor || '', name: p.item || '',
+      qty: p.qty || 1, team: p.team || '', requester: p.requester || '',
+      memo: '', _recoveredFromAudit: true
+    };
+    if (p.isCustom) { rec.isCustom = true; rec.customDescription = ''; rec.customImages = []; }
+    requests.push(rec);
+    if (typeof upsertRequestDoc === 'function') await upsertRequestDoc(rec);
+    recovered++;
+  }
+  if (typeof saveAll === 'function') saveAll();
+  if (typeof logEvent === 'function') logEvent('system', 'recover', { summary: teamQuery + ' 요청 ' + recovered + '건 audit log에서 복구' });
+  if (typeof currentTab !== 'undefined') {
+    const fn = window['render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1)];
+    if (typeof fn === 'function') fn();
+  }
+  console.log('✅ ' + recovered + '건 복구 완료. 반출관리/요청 탭에서 확인하세요.');
+  console.log('⚠️ 단위/상세설명/사진은 audit에 없어 비어있을 수 있음 (수량·품목·팀·요청자는 정확).');
+  return missing;
+};
+
 // 콘솔 진단: Phase 2 상태 한 번에 확인
 window.mcCheckPhase2Status = function() {
   console.log('=== Phase 2 상태 ===');
