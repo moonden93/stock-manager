@@ -171,14 +171,20 @@ function markModalOpened() {
 //    각자 listener echo가 돌아오면 renderXxx가 3번 연속 호출되어 그 사이 사용자 클릭이 누락됨
 function debouncedReRenderCurrentTab() {
   if (window._reRenderDebounceTimer) clearTimeout(window._reRenderDebounceTimer);
+  // 최초 동기화 요청 시각 기록 — 너무 오래 밀리면 강제 갱신 (stale UI 방지)
+  if (!window._reRenderFirstRequestedAt) window._reRenderFirstRequestedAt = Date.now();
   window._reRenderDebounceTimer = setTimeout(() => {
     // A: 사용자가 최근 800ms 안에 클릭했으면 한 번 더 미룸 — 클릭 도중 DOM 재구성 막아 lag 해소
-    if (window._lastUserInteractionTime && Date.now() - window._lastUserInteractionTime < 800) {
+    // 단, 동기화가 1.5초 넘게 밀렸으면 강제 갱신 — 활발히 클릭하는 동안에도
+    //    다른 기기 변경/삭제가 화면에 반드시 반영되게 (무한 연기 방지)
+    const deferredTooLong = (Date.now() - window._reRenderFirstRequestedAt) > 1500;
+    if (!deferredTooLong && window._lastUserInteractionTime && Date.now() - window._lastUserInteractionTime < 800) {
       window._reRenderDebounceTimer = null;
       debouncedReRenderCurrentTab();  // 재스케줄
       return;
     }
     window._reRenderDebounceTimer = null;
+    window._reRenderFirstRequestedAt = null;
     if (typeof currentTab !== 'undefined') {
       const fnName = 'render' + currentTab.charAt(0).toUpperCase() + currentTab.slice(1);
       const renderFn = window[fnName];

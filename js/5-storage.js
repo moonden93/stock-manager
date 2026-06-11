@@ -400,9 +400,16 @@ async function saveToFirebase() {
     // 이전 구현(setDoc 통째로)은 한 기기의 빈 teamMembers가 클라우드를 덮어쓰는 사고를 냈음.
     const payload = {
       requests: requests,
-      orderCart: orderCart,  // 주문 장바구니 — 기기간 공유 (2026-05-15)
       lastUpdated: window.firebaseServerTimestamp()
     };
+
+    // 주문 장바구니 (orderCart) — 기기간 공유. 단, 이 기기가 실제로 카트를
+    // 바꿨을 때만 씀 (window._orderCartDirty). 매번 통째로 쓰면 빈/stale 카트를
+    // 가진 기기가 다른 기기의 카트 추가를 덮어쓰는 race가 생김.
+    if (window._orderCartDirty) {
+      payload.orderCart = orderCart;
+      window._orderCartDirty = false;
+    }
 
     // Phase 3: 단일 문서 쓰기 토글 — 컬렉션 백필+검증 후 활성화하면 1MB 한도 영구 해소.
     // 토글 OFF (기본): 단일 문서에도 계속 쓰기 (안전망 + 옛 클라이언트 호환).

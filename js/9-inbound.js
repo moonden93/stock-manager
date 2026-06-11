@@ -1638,6 +1638,7 @@ function saveOrderCartItem(itemId) {
       memo: memo
     });
   }
+  window._orderCartDirty = true;  // 이 기기가 카트 변경 → 클라우드에 반영
   saveAll();
   closeModal();
   renderInbound();
@@ -1646,6 +1647,7 @@ function saveOrderCartItem(itemId) {
 function removeOrderCartItem(idx) {
   if (idx < 0 || idx >= orderCart.length) return;
   orderCart.splice(idx, 1);
+  window._orderCartDirty = true;
   saveAll();
   renderInbound();
 }
@@ -1654,6 +1656,7 @@ function removeOrderCartItemById(itemId) {
   const idx = orderCart.findIndex(c => c.itemId === itemId);
   if (idx >= 0) {
     orderCart.splice(idx, 1);
+    window._orderCartDirty = true;
     saveAll();
     closeModal();
     renderInbound();
@@ -1664,6 +1667,7 @@ function clearOrderCart() {
   if (orderCart.length === 0) return;
   askConfirm('장바구니 비우기', '담긴 ' + orderCart.length + '종을 모두 빼시겠습니까?', function() {
     orderCart.length = 0;
+    window._orderCartDirty = true;
     saveAll();
     renderInbound();
   }, '예, 비웁니다', 'amber');
@@ -1863,6 +1867,7 @@ function submitOrder() {
       });
     }
     orderCart.length = 0;
+    window._orderCartDirty = true;
     window._pendingOrderer = null;
     saveAll();
     closeModal();
@@ -1905,6 +1910,7 @@ function submitOrder() {
   }
 
   orderCart.length = 0;
+  window._orderCartDirty = true;
   window._pendingOrderer = null;
   saveAll();
   closeModal();

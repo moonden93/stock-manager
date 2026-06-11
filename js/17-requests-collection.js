@@ -12,6 +12,14 @@
 //   - 단일 문서가 wipe돼도 컬렉션에 백업 자동 존재
 //   - 개별 요청 단위로 감사/조회 가능
 
+// 요청 내용 해시 캐시 — 이 기기가 마지막으로 클라우드와 동기화한 상태.
+// 디바운스 배치가 "이 기기가 실제로 바꾼 항목만" 쓰도록 diff 기준이 됨.
+// (배치가 전체를 다시 쓰면 다른 기기의 최근 변경을 덮어쓰는 race 발생)
+window._reqHashCache = window._reqHashCache || {};
+function _reqHash(req) {
+  try { return JSON.stringify(req); } catch (e) { return ''; }
+}
+
 // 단일 요청을 컬렉션에 upsert (멱등 — 같은 id로 여러 번 호출해도 안전)
 async function upsertRequestDoc(req) {
   if (!window.firebaseReady || !window.firebaseSetDoc || !req || !req.id) return;
@@ -24,6 +32,8 @@ async function upsertRequestDoc(req) {
       _deviceLabel: (typeof getDeviceLabel === 'function' ? getDeviceLabel() : '')
     });
     await window.firebaseSetDoc(docRef, payload);
+    // 이 기기가 방금 클라우드에 쓴 상태 = 동기화됨. 배치 diff에서 제외.
+    window._reqHashCache[req.id] = _reqHash(req);
   } catch (err) {
     // 병렬 쓰기 실패는 silent (메인 흐름 막지 않음)
     console.warn('Phase 2 컬렉션 upsert 실패:', req.id, err && err.message);
@@ -149,6 +159,11 @@ function _applyRequestsSync(newReqs) {
   }
   requests.length = 0;
   newReqs.forEach(r => requests.push(r));
+  // hash 캐시를 클라우드 상태로 갱신 — 이 항목들은 방금 클라우드에서 받았으므로
+  // 이미 동기화된 상태. 배치 diff가 이걸 다시 안 써서 다른 기기 변경을 덮지 않음.
+  window._reqHashCache = {};
+  newReqs.forEach(r => { if (r && r.id) window._reqHashCache[r.id] = _reqHash(r); });
+  window._reqHashCacheReady = true;  // 클라우드 기준선 확보 — 이제 배치 diff 신뢰 가능
   // 대량 감소 가드 기준선 갱신 — listener가 메모리를 교체했으므로 다음 saveToFirebase는
   // 이 새 기준에서 비교해야 함 (안 그러면 옛 단일문서 카운트 vs 새 컬렉션 카운트로 false alarm)
   if (window._lastCloudSnapshot) window._lastCloudSnapshot.requestsCount = newReqs.length;
@@ -259,8 +274,25 @@ if (typeof window !== 'undefined') {
           console.log('⏸️ reset 중 — Phase 2 push 건너뜀');
           return;
         }
+        // 클라우드 기준선(cache)이 아직 없으면 배치 skip — 즉시 upsert가 실제 변경을
+        // 이미 처리하므로 손실 없음. (캐시 없이 전체를 쓰면 stale localStorage가
+        // 클라우드를 덮을 수 있음)
+        if (!window._reqHashCacheReady) {
+          return;
+        }
         if (Array.isArray(requests) && requests.length > 0) {
-          upsertRequestsBatch(requests);
+          // ⚠️ 변경된 항목만 upsert (전체 재기록 금지).
+          // 전체를 다시 쓰면 다른 기기가 방금 한 변경(취소 등)을
+          // 이 기기의 stale 메모리로 덮어쓰는 race가 생김.
+          window._reqHashCache = window._reqHashCache || {};
+          const changed = requests.filter(r => {
+            if (!r || !r.id) return false;
+            return window._reqHashCache[r.id] !== _reqHash(r);
+          });
+          if (changed.length > 0) {
+            changed.forEach(r => { window._reqHashCache[r.id] = _reqHash(r); });
+            upsertRequestsBatch(changed);
+          }
         }
       }, 300);
       return r;
