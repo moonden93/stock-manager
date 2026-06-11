@@ -243,6 +243,9 @@ function renderInbound() {
   const pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
   // 장바구니에 담긴 itemId 집합 — 곧 주문될 것으로 간주, 주문 필요에서 제외 ("정리" UX)
   const cartItemIds = new Set((orderCart || []).map(c => c.itemId).filter(Boolean));
+  // 직접요청은 itemId가 CUSTOM_ 이거나 카트의 inventory id와 달라 itemId 매칭이 안 됨.
+  // vendor+name 키로도 카트를 확인해 제외 (예: 직접요청 "인상재 건"을 품목 등록 후 카트에 담은 경우).
+  const cartNameKeys = new Set((orderCart || []).map(c => (c.vendor || '') + '||' + (c.name || '')));
   // 일반 요청: itemId별 총 요청 수량 집계
   const requestedByItem = {};
   // 직접요청: vendor+name 으로 그룹핑 (같은 항목 여러 팀 요청 합산)
@@ -256,7 +259,7 @@ function renderInbound() {
       const key = (r.vendor || '') + '||' + (r.name || '');
       if (!customByKey[key]) customByKey[key] = {
         vendor: r.vendor, name: r.name, qty: 0,
-        requesters: new Set(), reqIds: [], oldestDate: reqDate,
+        requesters: new Set(), reqIds: [], itemIds: [], oldestDate: reqDate,
         descriptions: [], memos: [], images: [],
         requesterLabels: new Set()
       };
@@ -265,6 +268,7 @@ function renderInbound() {
       g.requesters.add(r.team || '');
       g.requesterLabels.add(requesterLabel);
       g.reqIds.push(r.id);
+      if (r.itemId) g.itemIds.push(r.itemId);
       if (reqDate < g.oldestDate) g.oldestDate = reqDate;
       if (r.customDescription && g.descriptions.indexOf(r.customDescription) < 0) {
         g.descriptions.push(r.customDescription);
@@ -306,7 +310,11 @@ function renderInbound() {
     });
   });
   // 직접요청 항목 (재고 미등록 — 무조건 주문 필요)
-  Object.values(customByKey).forEach(g => {
+  Object.entries(customByKey).forEach(([key, g]) => {
+    // 장바구니에 같은 항목(vendor+name)이 담겨 있으면 제외 (곧 주문될 것)
+    if (cartNameKeys.has(key)) return;
+    // 그룹의 어떤 요청이든 itemId가 카트에 있으면 제외
+    if (Array.isArray(g.itemIds) && g.itemIds.some(id => cartItemIds.has(id))) return;
     needsOrderList.push({
       kind: 'custom', vendor: g.vendor, name: g.name, reqQty: g.qty,
       teamCount: g.requesters.size, primaryReqId: g.reqIds[0],
