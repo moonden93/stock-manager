@@ -314,8 +314,49 @@ window.mcCheckPhase2Status = function() {
   console.log('Firebase 준비:', window.firebaseReady);
   console.log('컬렉션 listener 활성:', window._requestsCollectionListenerActive);
   console.log('병렬 쓰기 hook:', !!(window.saveAll && window.saveAll._phase2Patched));
+  console.log('hash 캐시 준비:', !!window._reqHashCacheReady);
   console.log('현재 requests 수:', (requests || []).length);
   console.log('---');
   console.log('만약 listener 비활성이면: setupRequestsCollectionListener() 직접 호출 시도');
   console.log('또는 페이지 하드 리로드 (Ctrl+Shift+R)');
+};
+
+// 콘솔 진단: 특정 요청이 메모리 vs 클라우드 컬렉션에서 어떤 상태인지 비교.
+// "취소했는데 안 사라짐" 진단용 — 클라우드에 cancelled가 박혔는지 직접 확인.
+//   mcDiagnoseRequest('test2')
+window.mcDiagnoseRequest = async function(nameOrId) {
+  const q = (nameOrId || '').toLowerCase();
+  console.log('=== 요청 진단: "' + nameOrId + '" ===');
+  // 1) 메모리
+  const memMatches = (requests || []).filter(r =>
+    (r.name || '').toLowerCase().includes(q) ||
+    (r.id || '').toLowerCase().includes(q) ||
+    (r.requestId || '').toLowerCase().includes(q));
+  console.log('[메모리] ' + memMatches.length + '건:');
+  memMatches.forEach(r => console.log('  · id=' + r.id + ' status=' + (r.status || 'completed') + ' qty=' + r.qty + ' team=' + r.team));
+  // 2) 클라우드 컬렉션
+  try {
+    if (!window.firebaseGetDocs) {
+      const { getDocs } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js');
+      window.firebaseGetDocs = getDocs;
+    }
+    const col = window.firebaseCollection(window.firebaseDB, 'requests');
+    const snap = await window.firebaseGetDocs(col);
+    const cloudMatches = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      if ((d.name || '').toLowerCase().includes(q) ||
+          (doc.id || '').toLowerCase().includes(q) ||
+          (d.requestId || '').toLowerCase().includes(q)) {
+        cloudMatches.push({ docId: doc.id, status: d.status || 'completed', qty: d.qty, device: d._deviceLabel || d._device });
+      }
+    });
+    console.log('[클라우드 컬렉션] ' + cloudMatches.length + '건:');
+    cloudMatches.forEach(c => console.log('  · docId=' + c.docId + ' status=' + c.status + ' qty=' + c.qty + ' lastDevice=' + c.device));
+    console.log('---');
+    console.log('해석: 클라우드 status가 cancelled면 정상 (다른 기기는 새로고침하면 반영).');
+    console.log('      클라우드가 pending인데 메모리는 cancelled면 → 저장이 막힌 것. 알려주세요.');
+  } catch (err) {
+    console.warn('클라우드 조회 실패:', err && err.message);
+  }
 };
