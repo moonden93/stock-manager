@@ -992,7 +992,21 @@ function saveMyRequestEdit(groupId) {
       if (newVendor !== (it.vendor || '')) { customChanges.vendor = { from: it.vendor, to: newVendor }; it.vendor = newVendor; anyChange = true; }
       if (newUnit !== (it.unit || '')) { customChanges.unit = { from: it.unit, to: newUnit }; it.unit = newUnit; anyChange = true; }
       if (newDesc !== (it.customDescription || '')) { customChanges.description = { from: it.customDescription, to: newDesc }; it.customDescription = newDesc; anyChange = true; }
-      // 이미지: 길이/내용 비교는 비용 커서 단순히 교체
+      // 이미지 변경 감지 — 개수 또는 내용(data)이 바뀌면 변경으로 처리해야
+      // 즉시 upsert가 호출되어 listener echo race로 사진이 사라지지 않음
+      const oldImages = Array.isArray(it.customImages) ? it.customImages : [];
+      let imagesChanged = oldImages.length !== newImages.length;
+      if (!imagesChanged) {
+        for (let i = 0; i < newImages.length; i++) {
+          const a = oldImages[i] && oldImages[i].data;
+          const b = newImages[i] && newImages[i].data;
+          if (a !== b) { imagesChanged = true; break; }
+        }
+      }
+      if (imagesChanged) {
+        customChanges.images = { fromCount: oldImages.length, toCount: newImages.length };
+        anyChange = true;
+      }
       it.customImages = newImages;
     }
 
