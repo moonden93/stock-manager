@@ -627,6 +627,48 @@ if (typeof window !== 'undefined' && !window._mainDocForceFetchAttached) {
 }
 
 // ============================================
+// 장바구니 진단 + 양방향 통합 (콘솔)
+// ============================================
+// 다른 기기 카트가 안 보일 때 ground truth 확인용.
+//   mcDiagnoseCart()  — 이 기기 카트 vs 클라우드 카트 비교 출력
+window.mcDiagnoseCart = async function() {
+  console.log('=== 장바구니 진단 ===');
+  console.log('[이 기기] ' + (orderCart || []).length + '종:');
+  (orderCart || []).forEach(c => console.log('  · ' + (c.name || c.itemId) + ' x' + c.qty));
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    const snap = await window.firebaseGetDoc(docRef);
+    const cloud = (snap.exists() && Array.isArray(snap.data().orderCart)) ? snap.data().orderCart : [];
+    console.log('[클라우드] ' + cloud.length + '종:');
+    cloud.forEach(c => console.log('  · ' + (c.name || c.itemId) + ' x' + c.qty));
+    console.log('---');
+    console.log('클라우드가 비어있으면 → 카트를 담은 컴퓨터에서 mcSyncCart() 실행하세요.');
+    console.log('클라우드에 있는데 이 기기에 없으면 → forceFetchMainDoc() 실행하세요.');
+  } catch (e) { console.warn('클라우드 조회 실패:', e && e.message); }
+};
+
+// 이 기기 카트 + 클라우드 카트를 itemId 기준 합쳐(union) 양쪽에 반영.
+// "다른 컴퓨터에서 담았는데 사라진" 카트 복구용 — 카트 있는 기기에서 실행하면
+// 클라우드로 올라가고, 다른 기기는 forceFetchMainDoc / 포커스로 받아감.
+window.mcSyncCart = async function() {
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    const snap = await window.firebaseGetDoc(docRef);
+    const cloud = (snap.exists() && Array.isArray(snap.data().orderCart)) ? snap.data().orderCart : [];
+    const byId = {};
+    cloud.forEach(c => { if (c && c.itemId) byId[c.itemId] = c; });
+    (orderCart || []).forEach(c => { if (c && c.itemId) byId[c.itemId] = c; });  // 로컬 우선
+    const merged = Object.values(byId);
+    orderCart.length = 0;
+    merged.forEach(c => orderCart.push(c));
+    window._orderCartDirty = true;
+    if (typeof saveAll === 'function') saveAll();
+    if (typeof renderInbound === 'function') renderInbound();
+    console.log('🛒 장바구니 통합 완료: ' + merged.length + '종 (클라우드+이 기기). 다른 기기는 포커스 시 따라옴.');
+  } catch (e) { console.warn('카트 통합 실패:', e && e.message); }
+};
+
+// ============================================
 // 백업 복구 (콘솔에서 mcRestoreFromBackup() 호출)
 // ============================================
 // 만약 또 teamMembers가 사라지면 F12 → Console에서 mcRestoreFromBackup() 입력 → Enter
