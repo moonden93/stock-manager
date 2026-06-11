@@ -450,6 +450,33 @@ window.mcRecoverTeamRequests = async function(teamQuery, doWrite) {
   return missing;
 };
 
+// 콘솔 진단: 특정 팀의 audit 요청 생성 기록 전체를 날짜별로 + 컬렉션 존재여부 표시.
+// "6월 요청이 사라졌다" → audit에 6월 기록이 있는지부터 확인 (있으면 복구, 없으면 미제출).
+//   mcAuditTeamRequests('이승주')
+window.mcAuditTeamRequests = async function(teamQuery) {
+  if (!teamQuery) { console.log('사용법: mcAuditTeamRequests("팀이름")'); return; }
+  console.log('=== "' + teamQuery + '" audit 요청 생성 기록 (날짜별) ===');
+  const events = await fetchRecentEvents(['request'], 5000);
+  const creates = events.filter(e => e.action === 'create' && e.payload && (e.payload.team || '').indexOf(teamQuery) >= 0);
+  // 날짜 오름차순 정렬
+  creates.sort((a, b) => (a.clientTime || '').localeCompare(b.clientTime || ''));
+  const existingIds = new Set((requests || []).map(r => r.id));
+  const byMonth = {};
+  creates.forEach(e => {
+    const p = e.payload;
+    const ym = (e.clientTime || '').slice(0, 7);
+    byMonth[ym] = (byMonth[ym] || 0) + 1;
+    const inCol = existingIds.has(p.requestId) ? '✓컬렉션' : '✗누락';
+    console.log('  [' + (e.clientTime || '').slice(0, 10) + '] ' + (p.requester || '?') + ' / ' + p.item + ' x' + p.qty + ' — ' + inCol);
+  });
+  console.log('--- 월별 생성 건수 ---');
+  Object.keys(byMonth).sort().forEach(ym => console.log('  ' + ym + ': ' + byMonth[ym] + '건'));
+  console.log('총 ' + creates.length + '건 (audit 최근 5000 이벤트 기준)');
+  console.log('→ 6월(2026-06) 기록이 여기 없으면: 제출 자체가 안 된 것 (재신청 필요).');
+  console.log('→ 6월 기록이 ✗누락으로 있으면: mcRecoverTeamRequests("' + teamQuery + '", true) 로 복구.');
+  return creates;
+};
+
 // 콘솔 진단: Phase 2 상태 한 번에 확인
 window.mcCheckPhase2Status = function() {
   console.log('=== Phase 2 상태 ===');
