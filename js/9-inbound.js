@@ -241,6 +241,8 @@ function renderInbound() {
   // (직접요청도 포함 — 재고 미등록은 항상 주문 필요)
   // ============================================
   const pendingOrderMap = (typeof getPendingOrderMap === 'function') ? getPendingOrderMap() : {};
+  // 장바구니에 담긴 itemId 집합 — 곧 주문될 것으로 간주, 주문 필요에서 제외 ("정리" UX)
+  const cartItemIds = new Set((orderCart || []).map(c => c.itemId).filter(Boolean));
   // 일반 요청: itemId별 총 요청 수량 집계
   const requestedByItem = {};
   // 직접요청: vendor+name 으로 그룹핑 (같은 항목 여러 팀 요청 합산)
@@ -267,6 +269,7 @@ function renderInbound() {
   // 일반 inventory 항목
   Object.keys(requestedByItem).forEach(itemId => {
     if (pendingOrderMap[itemId] > 0) return;  // 이미 발주됨
+    if (cartItemIds.has(itemId)) return;  // 장바구니에 담김 (곧 주문될 것)
     const item = (inventory || []).find(i => i.id === itemId);
     if (!item) return;
     const reqQty = requestedByItem[itemId].qty;
