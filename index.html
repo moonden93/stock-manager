@@ -132,7 +132,7 @@
   (async () => {
     try {
       const { initializeApp } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js");
-      const { getFirestore, doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, writeBatch, increment } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js");
+      const { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDoc, setDoc, onSnapshot, serverTimestamp, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, writeBatch, increment } = await import("https://www.gstatic.com/firebasejs/12.12.1/firebase-firestore.js");
 
       const firebaseConfig = {
         apiKey: "AIzaSyCTbS9JLCiGIjqviYrW5_KMIZOSA95oYSU",
@@ -144,7 +144,20 @@
       };
 
       const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
+      // 오프라인 영속 캐시(IndexedDB): 앱을 다시 열어도 로컬 캐시에서 읽고 서버에선
+      // "지난번 이후 바뀐 것만" 가져옴 → Firestore read 비용 급감 (무료 한도 보호).
+      // listener는 그대로 실시간 동기화. persistentMultipleTabManager로 여러 탭 안전.
+      // 비지원 환경(시크릿/구형 브라우저)에서 실패하면 메모리 캐시로 폴백 — 동작은 동일, 절감만 없음.
+      let db;
+      try {
+        db = initializeFirestore(app, {
+          localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+        });
+        console.log('✅ Firestore 오프라인 캐시 활성화');
+      } catch (e) {
+        console.warn('⚠️ 오프라인 캐시 활성화 실패 — 메모리 캐시로 폴백:', e && e.message);
+        db = getFirestore(app);
+      }
 
       window.firebaseDB = db;
       window.firebaseDoc = doc;

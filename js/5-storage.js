@@ -395,11 +395,22 @@ async function saveToFirebase() {
   if (checkMassDecrease('history', prev.historyCount, history.length)) return;
 
   try {
+    // 단일 문서(appData/main)에는 이제 teams / teamMembers / orderCart 만 남긴다.
+    // requests / history / inventory 는 각자 per-doc 컬렉션이 source of truth →
+    // 단일 문서에 또 통째로 쓰는 건 "매 동작마다 발생하는 중복 쓰기"였고 쓰기 한도 소진의 주범.
+    // (history·inventory는 이미 토글로 제외했고, requests만 남아있었음 → 여기서 제거)
+    // 기존 단일 문서의 requests 필드는 merge:true라 지워지지 않고 백업으로 그대로 남는다.
+    //
+    // 변경 없으면 쓰기 skip: teams/teamMembers가 직전에 쓴 값과 같고 장바구니도 안 바뀌었으면
+    // 불필요한 쓰기를 하지 않는다. 장바구니 변경(_orderCartDirty)은 항상 반영.
+    const mainSig = JSON.stringify(teams) + '||' + JSON.stringify(teamMembers);
+    if (!window._orderCartDirty && mainSig === window._lastMainDocSig) {
+      return;
+    }
     // setDoc + merge:true: payload에 포함된 필드만 갱신. 빈 teams/teamMembers를
     // 아예 payload에서 빼면 클라우드의 기존 값이 보존됨.
     // 이전 구현(setDoc 통째로)은 한 기기의 빈 teamMembers가 클라우드를 덮어쓰는 사고를 냈음.
     const payload = {
-      requests: requests,
       lastUpdated: window.firebaseServerTimestamp()
     };
 
@@ -411,15 +422,11 @@ async function saveToFirebase() {
       window._orderCartDirty = false;
     }
 
-    // Phase 3: 단일 문서 쓰기 토글 — 컬렉션 백필+검증 후 활성화하면 1MB 한도 영구 해소.
-    // 토글 OFF (기본): 단일 문서에도 계속 쓰기 (안전망 + 옛 클라이언트 호환).
-    // 토글 ON: 컬렉션이 source of truth. 단일 문서의 기존 필드는 그대로 유지됨 (덮어쓰지 않음).
-    if (!window._disableSingleDocInventorySync) {
-      payload.inventory = inventory;
-    }
-    if (!window._disableSingleDocHistorySync) {
-      payload.history = history;
-    }
+    // history / inventory 는 단일 문서에 쓰지 않는다 (컬렉션이 source of truth, 단일 문서의
+    // 기존 history/inventory 필드는 이미 삭제됨 — 2026-05-09). 예전엔 per-device localStorage
+    // 토글(_disableSingleDoc*Sync)에 의존했는데, 토글이 안 켜진 새 기기가 history 1,500건을
+    // 단일 문서에 통째로 써서 1MB 초과 + 대량 쓰기를 일으킬 위험이 있었음.
+    // 그래서 기기 상태와 무관하게 코드에서 항상 제외한다. (requests도 위에서 같은 이유로 제거)
 
     // teams는 비어있을 때만 제외 (PREBUILT가 있어서 정상 상태에선 절대 비지 않음)
     if (Array.isArray(teams) && teams.length > 0) {
@@ -437,6 +444,8 @@ async function saveToFirebase() {
 
     const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
     await window.firebaseSetDoc(docRef, payload, { merge: true });
+    // 다음 save 때 "변경 없으면 skip" 비교 기준 갱신
+    window._lastMainDocSig = mainSig;
     console.log('✅ Firebase 저장 성공');
     if (typeof setFirebaseStatus === 'function') setFirebaseStatus('connected');
     // 성공 시 snapshot 갱신 (다음 save 비교 기준)

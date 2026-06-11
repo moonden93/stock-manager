@@ -183,12 +183,9 @@ window.addEventListener('online', () => {
   if (window._ordersCollectionListenerActive) forceFetchOrdersCollection();
 });
 
-// 폴링 (30초 — Phase 2 패턴)
-window._ordersPollTimer = window._ordersPollTimer || setInterval(() => {
-  if (document.visibilityState === 'visible' && window._ordersCollectionListenerActive) {
-    forceFetchOrdersCollection();
-  }
-}, 30000);
+// 주기 타이머 폴링 제거 (2026-06-11): 컬렉션 전체 재읽기라 무료 read 한도 소진 기여.
+// 실시간은 onSnapshot listener(델타), 깨우기는 visibility/focus/online 핸들러가 담당.
+// window._ordersPollTimer 제거됨.
 
 // Firebase 준비되면 listener 활성화
 if (typeof window !== 'undefined') {

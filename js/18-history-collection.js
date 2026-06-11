@@ -332,22 +332,11 @@ if (typeof window !== 'undefined') {
   }
 })();
 
-// 이벤트 핸들러 (visibility / focus / online)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && window._historyCollectionListenerActive) {
-    forceFetchHistoryCollection();
-  }
-});
-window.addEventListener('focus', () => {
-  if (window._historyCollectionListenerActive) forceFetchHistoryCollection();
-});
-window.addEventListener('online', () => {
-  if (window._historyCollectionListenerActive) forceFetchHistoryCollection();
-});
+// 깨우기 fetch(visibility/focus/online) 제거 (2026-06-11): history는 약 1500건이라
+// 깨어날 때마다 전체 재읽기하면 무료 read 한도 소진. onSnapshot listener가 재연결 시
+// 밀린 변경분을 스스로 따라잡으므로 중복이었음. forceFetchHistoryCollection은
+// 콘솔 수동 호출용 / 백필 등 내부 용도로는 그대로 남겨둠.
 
-// 폴링 (60초 — listener 잠들 때 안전망, history는 변동 적어서 더 길게)
-window._phase3HistoryPollTimer = window._phase3HistoryPollTimer || setInterval(() => {
-  if (document.visibilityState === 'visible' && window._historyCollectionListenerActive) {
-    forceFetchHistoryCollection();
-  }
-}, 60000);
+// 주기 타이머 폴링 제거 (2026-06-11): 컬렉션 전체(약 1500건) 재읽기라 무료 read 한도 폭파범.
+// 실시간은 onSnapshot listener(델타), 깨우기는 visibility/focus/online 핸들러가 담당.
+// window._phase3HistoryPollTimer 제거됨.

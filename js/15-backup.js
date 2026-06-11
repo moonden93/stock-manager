@@ -1095,33 +1095,12 @@ if (typeof window !== 'undefined') {
     await _checkResidual('history', history.length);
     if (!keepInventory) await _checkResidual('inventory', inventory.length);
 
-    // 6. listener / 폴링 재개
+    // 6. listener 재개 (주기 타이머 폴링은 2026-06-11 제거 — 무료 read 한도 보호)
     window._resetInProgress = false;
     window._requestsCollectionListenerActive = wasReqListenerActive;
     window._historyCollectionListenerActive = wasHistListenerActive;
     window._inventoryCollectionListenerActive = wasInvListenerActive;
-    if (!window._phase2PollTimer) {
-      window._phase2PollTimer = setInterval(() => {
-        if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive && typeof forceFetchRequestsCollection === 'function') {
-          forceFetchRequestsCollection();
-        }
-      }, 30000);
-    }
-    if (!window._phase3HistoryPollTimer) {
-      window._phase3HistoryPollTimer = setInterval(() => {
-        if (document.visibilityState === 'visible' && window._historyCollectionListenerActive && typeof forceFetchHistoryCollection === 'function') {
-          forceFetchHistoryCollection();
-        }
-      }, 60000);
-    }
-    if (!window._phase3InventoryPollTimer) {
-      window._phase3InventoryPollTimer = setInterval(() => {
-        if (document.visibilityState === 'visible' && window._inventoryCollectionListenerActive && typeof forceFetchInventoryCollection === 'function') {
-          forceFetchInventoryCollection();
-        }
-      }, 45000);
-    }
-    console.log('▶️ Phase 2/3 폴링 재개');
+    console.log('▶️ Phase 2/3 listener 재개');
 
     if (typeof updateHeaderStats === 'function') updateHeaderStats();
     if (typeof switchTab === 'function') switchTab(currentTab);

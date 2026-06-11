@@ -277,16 +277,12 @@ window.addEventListener('online', () => {
   forceFetchRequestsCollection();
 });
 
-// 폴링 백업: listener가 어떤 이유로든 잠들어도 따라잡기용 안전망.
-// 탭이 활성일 때만 동작 (백그라운드일 땐 visibility 핸들러가 처리).
-// 30초 간격 — Firestore 비용 절약 (50명 동시접속 시 5초 폴링은 무료 한도 초과 위험).
-//   listener는 변경분만 read 비용 (거의 무료) → 평소엔 listener에 의존, 폴링은 안전망.
-//   사용자 행동(visibility/focus/online) 시점엔 즉시 fetch되므로 30초여도 체감 OK.
-window._phase2PollTimer = window._phase2PollTimer || setInterval(() => {
-  if (document.visibilityState === 'visible' && window._requestsCollectionListenerActive) {
-    forceFetchRequestsCollection();
-  }
-}, 30000);
+// 주기 타이머 폴링 제거 (2026-06-11): forceFetch가 컬렉션 전체를 재읽기라
+// 탭만 켜둬도 Firestore 무료 read 한도를 빠르게 소진시킴 (quota exceeded 원인).
+// 실시간 동기화는 onSnapshot listener(델타만, 거의 공짜)가 담당하고,
+// 잠들었다 깨는 케이스는 visibility/focus/online 핸들러가 fetch로 커버하므로
+// 주기 폴링은 중복 안전망이었음.
+// window._phase2PollTimer 제거됨.
 
 // Firebase 준비되면 listener 활성화
 if (typeof window !== 'undefined') {

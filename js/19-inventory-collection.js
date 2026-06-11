@@ -402,24 +402,14 @@ if (typeof window !== 'undefined') {
   }
 })();
 
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && window._inventoryCollectionListenerActive) {
-    forceFetchInventoryCollection();
-  }
-});
-window.addEventListener('focus', () => {
-  if (window._inventoryCollectionListenerActive) forceFetchInventoryCollection();
-});
-window.addEventListener('online', () => {
-  if (window._inventoryCollectionListenerActive) forceFetchInventoryCollection();
-});
+// 깨우기 fetch(visibility/focus/online) 제거 (2026-06-11): inventory는 약 568건이라
+// 깨어날 때마다 전체 재읽기하면 무료 read 한도 소진. onSnapshot listener가 재연결 시
+// 밀린 변경분을 스스로 따라잡으므로 중복이었음. forceFetchInventoryCollection은
+// 콘솔 수동 호출용 / 내부 용도로는 그대로 남겨둠.
 
-// 폴링 (45초)
-window._phase3InventoryPollTimer = window._phase3InventoryPollTimer || setInterval(() => {
-  if (document.visibilityState === 'visible' && window._inventoryCollectionListenerActive) {
-    forceFetchInventoryCollection();
-  }
-}, 45000);
+// 주기 타이머 폴링 제거 (2026-06-11): 컬렉션 전체(약 568건) 재읽기라 무료 read 한도 소진.
+// 실시간은 onSnapshot listener(델타), 깨우기는 visibility/focus/online 핸들러가 담당.
+// window._phase3InventoryPollTimer 제거됨.
 
 // ============================================
 // Phase 3 종합 진단
