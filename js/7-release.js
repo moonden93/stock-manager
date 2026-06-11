@@ -24,6 +24,46 @@ function readFileAsBase64(file) {
   });
 }
 
+// 이미지를 canvas로 축소 + JPEG 압축 → base64 data URL.
+// 폰 고해상도 사진(5~12MB)도 받아들이고, Firestore 문서 1MB 한도 안에
+// 들어가도록 작게 만든다 (기본 1280px / 품질 0.7 → 보통 100~300KB).
+// 이미지가 아니거나 압축 실패 시 원본 base64로 폴백.
+function compressImageFile(file, maxDim, quality) {
+  maxDim = maxDim || 1280;
+  quality = quality || 0.7;
+  return new Promise(function(resolve, reject) {
+    if (!file.type || !file.type.startsWith('image/')) {
+      readFileAsBase64(file).then(resolve, reject);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = function() {
+      const img = new Image();
+      img.onload = function() {
+        try {
+          let w = img.width, h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w >= h) { h = Math.round(h * maxDim / w); w = maxDim; }
+            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (err) {
+          // 압축 실패 시 원본 사용
+          resolve(reader.result);
+        }
+      };
+      img.onerror = function() { resolve(reader.result); };
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 // ============================================
 // 팀 그리드 레이아웃 정의 (3행 × 5열)
 // ============================================
@@ -359,7 +399,7 @@ function renderCustomItemForm() {
     '<div><label class="text-xs font-bold text-slate-700 mb-1 block">참고 사진</label>' +
     '<label class="block w-full px-3 py-3 text-xs text-center text-slate-500 bg-white border-2 border-dashed border-slate-300 rounded-xl hover:border-teal-400 hover:bg-teal-50 cursor-pointer transition">' +
     '<div class="text-2xl mb-1">📸</div>' +
-    '<p class="font-medium">사진 추가 (여러 장 가능, 각 5MB 이하)</p>' +
+    '<p class="font-medium">사진 추가 (여러 장 가능, 자동 압축됨)</p>' +
     '<input type="file" multiple accept="image/*" onchange="handleCustomImages(event)" class="hidden" />' +
     '</label>' +
     imagePreview +
@@ -393,16 +433,16 @@ async function handleCustomImages(e) {
       showToast('"' + file.name + '"은(는) 이미지 파일이 아닙니다', 'error');
       continue;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      showToast('"' + file.name + '"은(는) 5MB 초과', 'error');
+    if (file.size > 25 * 1024 * 1024) {
+      showToast('"' + file.name + '"은(는) 25MB 초과', 'error');
       continue;
     }
     try {
-      const base64 = await readFileAsBase64(file);
+      const base64 = await compressImageFile(file);
       window._pendingCustomImages.push({
         name: file.name,
-        type: file.type,
-        size: file.size,
+        type: 'image/jpeg',
+        size: base64.length,
         data: base64
       });
     } catch (err) {
@@ -942,13 +982,15 @@ function handleEditReqImages(event, reqId, groupId) {
   const promises = [];
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
-    if (f.size > 5 * 1024 * 1024) { showToast(f.name + ': 5MB 초과', 'error'); continue; }
-    promises.push(readFileAsBase64(f).then(data => ({ name: f.name, data: data })));
+    if (!f.type || !f.type.startsWith('image/')) { showToast('"' + f.name + '"은(는) 이미지가 아닙니다', 'error'); continue; }
+    if (f.size > 25 * 1024 * 1024) { showToast(f.name + ': 25MB 초과', 'error'); continue; }
+    promises.push(compressImageFile(f).then(data => ({ name: f.name, data: data })));
   }
+  event.target.value = '';
   Promise.all(promises).then(imgs => {
     imgs.forEach(im => window._editReqImages[reqId].push(im));
     _renderEditMyRequestModal(groupId);
-  });
+  }).catch(err => { console.warn('이미지 처리 실패:', err); showToast('사진 처리 실패', 'error'); });
 }
 
 // 직접요청 수정 모달 — 이미지 제거
