@@ -198,13 +198,13 @@ if (typeof window !== 'undefined' && !window._userInteractionTrackerAttached) {
     window._lastUserInteractionTime = Date.now();
     const btn = e.target && e.target.closest ? e.target.closest('button') : null;
     if (btn && !btn.disabled && !btn.dataset.noGuard) {
-      // 시각적 비활성화 + 클릭 차단 (500ms)
+      // 시각적 비활성화 + 클릭 차단 (250ms — 짧게)
       btn.style.opacity = '0.5';
       btn.style.pointerEvents = 'none';
       setTimeout(function() {
         btn.style.opacity = '';
         btn.style.pointerEvents = '';
-      }, 500);
+      }, 250);
     }
   }, true);
   window._userInteractionTrackerAttached = true;

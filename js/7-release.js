@@ -455,7 +455,10 @@ function addCustomItemToCart() {
   window._pendingCustomImages = [];
   releaseShowCustomForm = false;
   showToast('직접 요청 항목 담김: ' + name);
-  renderRelease();
+  // 가벼운 갱신 — renderRelease 대신 cart bar만 (full 재렌더는 다음 사용자 액션 때)
+  if (typeof renderCartBar === 'function') renderCartBar();
+  // 직접 요청 폼이 닫혀야 하니 한 번은 full render 필요. setTimeout으로 미뤄 사용자 클릭 빠르게 처리
+  setTimeout(renderRelease, 0);
 }
 
 function selectReleaseTeam(team) {
