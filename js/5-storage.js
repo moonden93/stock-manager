@@ -597,6 +597,36 @@ function setupFirebaseSync() {
 }
 
 // ============================================
+// 단일 문서(appData/main) 강제 fetch — orderCart / teams / teamMembers 동기화 안전망.
+// onSnapshot 리스너가 잠들거나 한 번 놓쳐도 따라잡게 함 (requests/orders 컬렉션과 동일 패턴).
+// 단일 문서는 그동안 force-fetch가 없어서 다른 기기의 장바구니가 안 따라오는 문제가 있었음.
+// ============================================
+window.forceFetchMainDoc = forceFetchMainDoc;
+async function forceFetchMainDoc() {
+  if (!window.firebaseReady || !window.firebaseGetDoc || !window.firebaseDoc) return;
+  try {
+    const docRef = window.firebaseDoc(window.firebaseDB, 'appData', 'main');
+    const snap = await window.firebaseGetDoc(docRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (isDataSuspicious(data)) return;
+    if (_isUserTyping()) { _pendingSync = data; return; }
+    _applySyncData(data);
+  } catch (err) {
+    console.warn('단일 문서 force fetch 실패:', err && err.message);
+  }
+}
+
+if (typeof window !== 'undefined' && !window._mainDocForceFetchAttached) {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') forceFetchMainDoc();
+  });
+  window.addEventListener('focus', () => forceFetchMainDoc());
+  window.addEventListener('online', () => forceFetchMainDoc());
+  window._mainDocForceFetchAttached = true;
+}
+
+// ============================================
 // 백업 복구 (콘솔에서 mcRestoreFromBackup() 호출)
 // ============================================
 // 만약 또 teamMembers가 사라지면 F12 → Console에서 mcRestoreFromBackup() 입력 → Enter
