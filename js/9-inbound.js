@@ -252,16 +252,34 @@ function renderInbound() {
     const reqDate = r.date ? new Date(r.date).getTime() : Date.now();
     if (r.isCustom) {
       const key = (r.vendor || '') + '||' + (r.name || '');
-      if (!customByKey[key]) customByKey[key] = { vendor: r.vendor, name: r.name, qty: 0, requesters: new Set(), reqIds: [], oldestDate: reqDate };
-      customByKey[key].qty += (r.qty || 0);
-      customByKey[key].requesters.add(r.team || '');
-      customByKey[key].reqIds.push(r.id);
-      if (reqDate < customByKey[key].oldestDate) customByKey[key].oldestDate = reqDate;
+      if (!customByKey[key]) customByKey[key] = {
+        vendor: r.vendor, name: r.name, qty: 0,
+        requesters: new Set(), reqIds: [], oldestDate: reqDate,
+        descriptions: [], memos: [], images: []
+      };
+      const g = customByKey[key];
+      g.qty += (r.qty || 0);
+      g.requesters.add(r.team || '');
+      g.reqIds.push(r.id);
+      if (reqDate < g.oldestDate) g.oldestDate = reqDate;
+      // 상세 설명/메모/사진 수집 (중복 제거)
+      if (r.customDescription && g.descriptions.indexOf(r.customDescription) < 0) {
+        g.descriptions.push(r.customDescription);
+      }
+      if (r.memo && g.memos.indexOf(r.memo) < 0) g.memos.push(r.memo);
+      if (Array.isArray(r.customImages) && r.customImages.length > 0) {
+        r.customImages.forEach(img => g.images.push(img));
+      }
     } else if (r.itemId) {
-      if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = { qty: 0, requesters: new Set(), oldestDate: reqDate };
-      requestedByItem[r.itemId].qty += (r.qty || 0);
-      requestedByItem[r.itemId].requesters.add(r.team || '');
-      if (reqDate < requestedByItem[r.itemId].oldestDate) requestedByItem[r.itemId].oldestDate = reqDate;
+      if (!requestedByItem[r.itemId]) requestedByItem[r.itemId] = {
+        qty: 0, requesters: new Set(), oldestDate: reqDate, memos: []
+      };
+      const ri = requestedByItem[r.itemId];
+      ri.qty += (r.qty || 0);
+      ri.requesters.add(r.team || '');
+      if (reqDate < ri.oldestDate) ri.oldestDate = reqDate;
+      // 일반 요청 메모도 수집
+      if (r.memo && ri.memos.indexOf(r.memo) < 0) ri.memos.push(r.memo);
     }
   });
   // 주문 필요 항목 추출
@@ -278,7 +296,8 @@ function renderInbound() {
     needsOrderList.push({
       kind: 'inv', item: item, reqQty: reqQty,
       teamCount: requestedByItem[itemId].requesters.size,
-      oldestDate: requestedByItem[itemId].oldestDate
+      oldestDate: requestedByItem[itemId].oldestDate,
+      memos: requestedByItem[itemId].memos || []
     });
   });
   // 직접요청 항목 (재고 미등록 — 무조건 주문 필요)
@@ -286,7 +305,8 @@ function renderInbound() {
     needsOrderList.push({
       kind: 'custom', vendor: g.vendor, name: g.name, reqQty: g.qty,
       teamCount: g.requesters.size, primaryReqId: g.reqIds[0],
-      oldestDate: g.oldestDate
+      oldestDate: g.oldestDate,
+      descriptions: g.descriptions || [], memos: g.memos || [], images: g.images || []
     });
   });
   // 정렬: 오래된 요청일수록 위로 (urgency 최우선)
@@ -350,9 +370,32 @@ function renderInbound() {
         ? '<span class="' + dayLbl.cls + ' ml-1">📅 ' + dayLbl.text + (dateStr ? ' (' + dateStr + ')' : '') + '</span>'
         : '';
 
+      // 상세 설명 + 메모 + 사진 (직접요청 + 일반요청 메모 공통)
+      let extraHtml = '';
+      const allMemos = (n.descriptions || []).concat(n.memos || []);
+      if (allMemos.length > 0) {
+        extraHtml += '<div class="mt-1 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-slate-700">';
+        allMemos.forEach((m, i) => {
+          extraHtml += (i > 0 ? '<br>' : '') + '📝 ' + escapeHtml(m);
+        });
+        extraHtml += '</div>';
+      }
+      if (n.images && n.images.length > 0) {
+        extraHtml += '<div class="mt-1 flex flex-wrap gap-1">';
+        n.images.forEach((img, idx) => {
+          if (img && img.data) {
+            extraHtml += '<img src="' + escapeHtml(img.data) + '" alt="' + escapeHtml(img.name || '참고 사진') +
+              '" class="w-12 h-12 object-cover rounded border border-slate-200 cursor-pointer hover:opacity-80" ' +
+              'onclick="window.open(\'' + img.data + '\',\'_blank\')" title="' + escapeHtml(img.name || '참고 사진') + '" />';
+          }
+        });
+        extraHtml += '</div>';
+      }
+
       if (n.kind === 'custom') {
         // 직접요청 — 재고 미등록 → 📦 품목 추가 흐름
-        needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
+        needsOrderHtml += '<div class="px-4 py-3 hover:bg-orange-100/50">' +
+          '<div class="flex items-center gap-3">' +
           '<div class="flex-1 min-w-0">' +
           '<p class="text-xs text-slate-500"><span class="px-1.5 py-0.5 bg-teal-100 text-teal-700 rounded text-[10px] font-bold mr-1">🆕 직접 요청</span>' +
           escapeHtml(n.vendor || '업체 미지정') + '</p>' +
@@ -362,12 +405,13 @@ function renderInbound() {
           datePill +
           '</p></div>' +
           '<button onclick="openInventoryAddFromCustom(\'' + escapeJs(n.primaryReqId) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">📦 품목 추가</button>' +
-          '</div>';
+          '</div>' + extraHtml + '</div>';
       } else {
         const it = n.item;
         const statusIcon = it.stock === 0 ? '🔴' : '🟡';
         const statusText = it.stock === 0 ? '품절' : '부족';
-        needsOrderHtml += '<div class="px-4 py-3 flex items-center gap-3 hover:bg-orange-100/50">' +
+        needsOrderHtml += '<div class="px-4 py-3 hover:bg-orange-100/50">' +
+          '<div class="flex items-center gap-3">' +
           '<div class="flex-1 min-w-0">' +
           '<p class="text-xs text-slate-500">' + categoryBadgeHtml_(it.category) + escapeHtml(it.vendor || '') + '</p>' +
           '<p class="text-sm font-medium text-slate-900 truncate">' + escapeHtml(it.name) + '</p>' +
@@ -378,7 +422,7 @@ function renderInbound() {
           datePill +
           '</p></div>' +
           '<button onclick="openOrderItemDialog(\'' + escapeJs(it.id) + '\')" class="px-3 h-10 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold whitespace-nowrap">+ 주문 담기</button>' +
-          '</div>';
+          '</div>' + extraHtml + '</div>';
       }
     });
     needsOrderHtml += '</div></div>';

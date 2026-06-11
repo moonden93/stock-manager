@@ -830,7 +830,7 @@ function openEditMyRequest(groupId) {
   if (items.length === 0) return;
   const memo = items.find(it => it.memo) ? items.find(it => it.memo).memo : '';
 
-  let html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModal()">' +
+  let html = '<div class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onclick="closeModalFromBackdrop()">' +
     '<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">' +
     '<div class="px-5 py-4 bg-blue-50 border-b border-blue-200">' +
     '<h3 class="text-base font-bold text-slate-900">✏️ 요청 수정</h3>' +
@@ -868,6 +868,7 @@ function openEditMyRequest(groupId) {
     '<button onclick="saveMyRequestEdit(\'' + escapeJs(groupId) + '\')" class="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold">저장</button>' +
     '</div></div></div>';
   document.getElementById('modal-container').innerHTML = html;
+  if (typeof markModalOpened === 'function') markModalOpened();
 }
 
 function saveMyRequestEdit(groupId) {
