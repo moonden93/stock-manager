@@ -20,9 +20,38 @@ function _reqHash(req) {
   try { return JSON.stringify(req); } catch (e) { return ''; }
 }
 
+// 취소 tombstone — 최근 취소한 요청 id → 시각. localStorage에 저장해
+// 새로고침 직후에도 stale pending이 취소를 되살리지 못하게 함.
+window._recentlyCancelledReqs = window._recentlyCancelledReqs || {};
+(function loadCancelTombstones() {
+  try {
+    const raw = localStorage.getItem('mc_cancel_tombstones');
+    if (raw) {
+      const obj = JSON.parse(raw);
+      const now = Date.now();
+      // 5분 이내 것만 유효 (오래된 건 무시 — 정상 동기화됐을 것)
+      for (const id in obj) {
+        if (now - obj[id] < 300000) window._recentlyCancelledReqs[id] = obj[id];
+      }
+    }
+  } catch (e) {}
+})();
+function _persistCancelTombstones() {
+  try { localStorage.setItem('mc_cancel_tombstones', JSON.stringify(window._recentlyCancelledReqs || {})); } catch (e) {}
+}
+
 // 단일 요청을 컬렉션에 upsert (멱등 — 같은 id로 여러 번 호출해도 안전)
 async function upsertRequestDoc(req) {
   if (!window.firebaseReady || !window.firebaseSetDoc || !req || !req.id) return;
+  // tombstone은 write 성공 여부와 무관하게 먼저 기록 — write가 실패해도
+  // 취소 의도가 보존되어 stale echo / 새로고침에도 사수됨.
+  window._recentlyCancelledReqs = window._recentlyCancelledReqs || {};
+  if (req.status === 'cancelled') {
+    window._recentlyCancelledReqs[req.id] = Date.now();
+  } else {
+    delete window._recentlyCancelledReqs[req.id];  // 되돌리기 등 정상 해제
+  }
+  _persistCancelTombstones();
   try {
     const docRef = window.firebaseDoc(window.firebaseDB, 'requests', req.id);
     // 클라이언트가 메타 추가 (서버 시각, device id)
@@ -156,6 +185,21 @@ function _applyRequestsSync(newReqs) {
   if (window._resetInProgress) {
     console.log('⏸️ reset 중 — listener echo 무시');
     return;
+  }
+  // 취소 사수: 최근(60초) 이 기기에서 취소한 요청이 stale echo로 pending으로
+  // 돌아오면 다시 cancelled로 강제하고 클라우드도 고침 (자가복구).
+  const tomb = window._recentlyCancelledReqs || {};
+  const now = Date.now();
+  const reasserts = [];
+  newReqs.forEach(r => {
+    if (r && r.id && tomb[r.id] && (now - tomb[r.id] < 60000) && (r.status || 'completed') !== 'cancelled') {
+      r.status = 'cancelled';
+      reasserts.push(r);
+    }
+  });
+  if (reasserts.length > 0) {
+    console.warn('🛡️ 취소 사수: ' + reasserts.length + '건이 pending으로 되돌아와 다시 취소 강제 + 클라우드 복구');
+    reasserts.forEach(r => { if (typeof upsertRequestDoc === 'function') upsertRequestDoc(r); });
   }
   requests.length = 0;
   newReqs.forEach(r => requests.push(r));
