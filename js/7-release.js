@@ -26,11 +26,12 @@ function readFileAsBase64(file) {
 
 // 이미지를 canvas로 축소 + JPEG 압축 → base64 data URL.
 // 폰 고해상도 사진(5~12MB)도 받아들이고, Firestore 문서 1MB 한도 안에
-// 들어가도록 작게 만든다 (기본 1280px / 품질 0.7 → 보통 100~300KB).
+// 여러 장 들어가도 안전하도록 강하게 줄인다 (기본 1024px / 품질 0.55
+// → 보통 40~120KB). 참고용 사진이라 이 정도로도 품목 식별 충분.
 // 이미지가 아니거나 압축 실패 시 원본 base64로 폴백.
 function compressImageFile(file, maxDim, quality) {
-  maxDim = maxDim || 1280;
-  quality = quality || 0.7;
+  maxDim = maxDim || 1024;
+  quality = quality || 0.55;
   return new Promise(function(resolve, reject) {
     if (!file.type || !file.type.startsWith('image/')) {
       readFileAsBase64(file).then(resolve, reject);
