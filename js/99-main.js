@@ -246,6 +246,49 @@ window.addEventListener('load', function() {
 
 
 // ============================================
+// 자동 업데이트 — 새 배포 감지 시 기기가 스스로 새로고침
+// ============================================
+// 각 층 컴퓨터가 앱을 하루종일 켜두면 옛 코드를 계속 써서 새 배포가 안 퍼짐.
+// index.html의 ETag(배포마다 바뀜)를 확인해 새 버전이면 자동 reload.
+// → 정적 파일 HEAD 요청이라 Firestore quota와 무관 (비용 0).
+// 입력 중에는 안 하고, 탭 복귀/포커스/주기 점검 때 안전하게 갱신.
+(function setupAutoUpdate() {
+  let baselineTag = null;
+  let reloading = false;
+  async function getTag() {
+    try {
+      const res = await fetch('/index.html', { method: 'HEAD', cache: 'no-store' });
+      return res.headers.get('etag') || res.headers.get('last-modified');
+    } catch (e) { return null; }
+  }
+  async function check() {
+    if (reloading) return;
+    const tag = await getTag();
+    if (!tag) return;
+    if (baselineTag === null) { baselineTag = tag; return; }  // 최초 기준값
+    if (tag === baselineTag) return;
+    // 새 버전 감지 — 입력 중이거나 모달 열려있으면 미룸 (작업 방해 방지)
+    const el = document.activeElement;
+    const typing = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+    const modalOpen = (function() {
+      const m = document.getElementById('modal-container');
+      return m && m.innerHTML.trim().length > 0;
+    })();
+    if (typing || modalOpen) return;
+    reloading = true;
+    console.log('🔄 새 버전 감지 — 자동 새로고침');
+    location.reload();
+  }
+  check();  // 최초 기준값 설정
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') check();
+  });
+  window.addEventListener('focus', check);
+  setInterval(check, 10 * 60 * 1000);  // 10분마다 백업 점검 (정적 요청, 무료)
+})();
+
+
+// ============================================
 // 안내/경고 모달 (확인 버튼 1개)
 // ============================================
 // - 단순 토스트로는 놓치기 쉬운 "사용자 행동이 필요한" 상황에서 사용.
